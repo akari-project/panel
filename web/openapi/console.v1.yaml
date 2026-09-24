@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.1.0'
+  version: '0.3.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -9083,7 +9083,7 @@ components:
       type: apiKey
       in: cookie
       name: __Host-console_access_token
-      description: '受众为 `console` 的 PASETO v4.public 访问令牌（AUTH-21），由 `POST /v1/sessions` 以 HttpOnly、Secure、SameSite=Strict Cookie 下发；刷新令牌 Cookie `__Host-console_refresh_token` 只用于 `POST /v1/oauth/token`（AUTH-08）'
+      description: '受众为 `console` 的 PASETO v4.public 访问令牌（AUTH-21），由 `POST /v1/sessions` 以 HttpOnly、Secure、SameSite=Strict、Path=/ 的 Cookie 下发；刷新令牌 Cookie `__Host-console_refresh_token` 随每个同源请求发送，服务端只在 `POST /v1/oauth/token` 读取它（AUTH-08）'
   parameters:
     Limit:
       name: limit

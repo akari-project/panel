@@ -31,7 +31,7 @@ LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Comm
 
 GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen
 
-.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-generated test test-property e2e conformance lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-spec-version check-generated test test-property e2e conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -75,8 +75,15 @@ gen-clientapi:
 	{ printf '// SPDX-License-Identifier: AGPL-3.0-or-later\n'; cat internal/clientapi/gen/api.gen.go; } > "$$tmp/api.gen.go" && \
 	mv "$$tmp/api.gen.go" internal/clientapi/gen/api.gen.go
 
+# 后端（server/go.mod）与前端（web/openapi/lock.json）必须使用同一版本的 panel-spec 契约。
+check-spec-version:
+	@mod="$$(cd $(SERVER) && go list -m -f '{{.Version}}' github.com/akari-project/panel-spec)"; \
+	web="$$(sed -n 's/.*"ref": *"\([^"]*\)".*/\1/p' $(WEB)/openapi/lock.json)"; \
+	if [ "$$mod" != "$$web" ]; then echo "panel-spec 版本不一致：server/go.mod 为 $$mod，web/openapi/lock.json 为 $$web"; exit 1; fi; \
+	echo "check-spec-version: $$mod"
+
 # 生成物必须已提交且与源一致。
-check-generated: gen
+check-generated: gen check-spec-version
 	git diff --exit-code -- $(GENERATED)
 	@untracked="$$(git ls-files --others --exclude-standard -- $(GENERATED))"; \
 	if [ -n "$$untracked" ]; then echo "未提交的生成文件："; echo "$$untracked"; exit 1; fi
