@@ -19,6 +19,7 @@ import (
 	"github.com/akari-project/panel/server/internal/mfa"
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
+	"github.com/akari-project/panel/server/internal/ratelimit"
 )
 
 // 二次验证挑战（AUTH-20）：5 分钟有效，最多尝试 5 次。重新验证（AUTH-23）5 分钟内有效。
@@ -27,6 +28,9 @@ const (
 	ChallengeMaxAttempts = 5
 	ReauthTTL            = 5 * time.Minute
 )
+
+// ReauthPerSession 限制每个会话的重新验证尝试次数（包括成功）。
+var ReauthPerSession = ratelimit.Rule{Name: "reauth-session", Limit: 5, Window: 15 * time.Minute}
 
 type challenge struct {
 	Account   uuid.UUID `json:"a"`
@@ -129,10 +133,17 @@ func (s *Service) MFALogin(ctx context.Context, in MFALogin) (Result, error) {
 		if err != nil {
 			return err
 		}
-		status = a.Status
+		// 先检查账号状态：被暂停的账号不消耗恢复码。
+		if status = a.Status; status != "active" {
+			return nil
+		}
 		ok, err = s.MFA.Verify(ctx, q, c.Account, in.TOTPCode, in.RecoveryCode)
 		return err
 	})
+	if err == nil && status != "active" {
+		s.dropChallenge(ctx, in.ChallengeID)
+		return Result{}, apierr.New(403, "account_suspended")
+	}
 	if err != nil {
 		return Result{}, err
 	}
@@ -184,10 +195,15 @@ func (s *Service) Reauthenticate(ctx context.Context, p auth.Principal, in Reaut
 		return time.Time{}, err
 	}
 	email, _ := normalize(a.Email)
-	if err := s.reserveAttempt(ctx, in.IP, email); err != nil {
-		return time.Time{}, err
+	// 重新验证不受登录冷却影响（AUTH-09：冷却期间已登录的会话不受影响，他人无法借此锁死账号），
+	// 改为按会话限制尝试次数；失败仍计入账号的失败次数。
+	ok, retry, err := s.Limiter.Allow(ctx, ReauthPerSession, p.SessionID.String())
+	if err != nil {
+		return time.Time{}, apierr.Unavailable(err)
 	}
-	var ok bool
+	if !ok {
+		return time.Time{}, apierr.RateLimited(retry)
+	}
 	field := "password"
 	switch {
 	case in.Password != "":
@@ -211,10 +227,10 @@ func (s *Service) Reauthenticate(ctx context.Context, p auth.Principal, in Reaut
 		}
 	}
 	if !ok {
+		if err := s.recordFailure(ctx, email); err != nil {
+			return time.Time{}, err
+		}
 		return time.Time{}, apierr.Invalid(apierr.Field(field, "incorrect"))
-	}
-	if err := s.clearAttempts(ctx, email); err != nil {
-		return time.Time{}, err
 	}
 	expires := s.Clock.Now().Add(ReauthTTL)
 	v := strconv.FormatInt(expires.Unix(), 10)

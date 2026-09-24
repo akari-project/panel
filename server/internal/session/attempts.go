@@ -35,8 +35,33 @@ end
 return {1, 0}
 `)
 
-func cooldownKey(email string) string { return "login:cool:" + email }
-func attemptsKey(email string) string { return "login:fail:" + email }
+// 两个键带相同的 hash tag，在 Valkey 集群中位于同一槽位，Lua 脚本可以同时访问。
+func cooldownKey(email string) string { return "login:{" + email + "}:cool" }
+func attemptsKey(email string) string { return "login:{" + email + "}:fail" }
+
+// record 只记录一次失败，不检查冷却；达到上限时开始冷却。用于重新验证：已登录的会话不受冷却影响，
+// 但失败仍计入账号的失败次数（AUTH-09、AUTH-23）。
+var record = valkey.NewLuaScript(`
+local n = redis.call('INCR', KEYS[2])
+if n == 1 then redis.call('PEXPIRE', KEYS[2], ARGV[2]) end
+if n >= tonumber(ARGV[1]) then
+  redis.call('SET', KEYS[1], '1', 'PX', ARGV[2])
+  redis.call('DEL', KEYS[2])
+end
+return n
+`)
+
+// recordFailure 记录一次重新验证失败。
+func (s *Service) recordFailure(ctx context.Context, email string) error {
+	kctx, cancel := context.WithTimeout(ctx, auth.Timeout)
+	defer cancel()
+	err := record.Exec(kctx, s.KV, []string{cooldownKey(email), attemptsKey(email)},
+		[]string{strconv.Itoa(MaxFailures), strconv.FormatInt(LoginCooldown.Milliseconds(), 10)}).Error()
+	if err != nil {
+		return apierr.Unavailable(err)
+	}
+	return nil
+}
 
 // reserveAttempt 执行登录限流：同一 IP 每分钟 20 次，以及按邮箱的失败冷却。冷却按邮箱计数，
 // 对不存在的邮箱同样生效，返回相同的 429（AUTH-09）。

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/valkey-io/valkey-go"
 
@@ -34,10 +36,9 @@ const (
 	EnrollmentTTL = 10 * time.Minute
 )
 
-var (
-	secretAD     = []byte("mfa_totp.secret_enc")
-	enrollmentAD = []byte("mfa.enrollment")
-)
+// 附加数据包含账号 ID：密文不能在账号之间搬用。
+func secretAD(account uuid.UUID) []byte     { return []byte("mfa_totp.secret_enc:" + account.String()) }
+func enrollmentAD(account uuid.UUID) []byte { return []byte("mfa.enrollment:" + account.String()) }
 
 // Service 管理账号的二次验证。
 type Service struct {
@@ -77,7 +78,7 @@ func (s *Service) StartEnrollment(ctx context.Context, account uuid.UUID) (Enrol
 	if _, err := rand.Read(secret); err != nil {
 		return Enrollment{}, err
 	}
-	enc, err := s.Keys.Seal(secret, enrollmentAD)
+	enc, err := s.Keys.Seal(secret, enrollmentAD(account))
 	if err != nil {
 		return Enrollment{}, err
 	}
@@ -107,7 +108,7 @@ func (s *Service) Activate(ctx context.Context, account uuid.UUID, code string) 
 	if err != nil {
 		return nil, apierr.Unavailable(err)
 	}
-	secret, err := s.Keys.Open(raw, enrollmentAD)
+	secret, err := s.Keys.Open(raw, enrollmentAD(account))
 	if err != nil {
 		return nil, apierr.InvalidState
 	}
@@ -119,7 +120,7 @@ func (s *Service) Activate(ctx context.Context, account uuid.UUID, code string) 
 	if err != nil {
 		return nil, err
 	}
-	enc, err := s.Keys.Seal(secret, secretAD)
+	enc, err := s.Keys.Seal(secret, secretAD(account))
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +143,10 @@ func (s *Service) Activate(ctx context.Context, account uuid.UUID, code string) 
 		}
 		return s.notify(ctx, q, account, notify.TemplateMFAEnabled, nil)
 	})
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && pg.Code == "23505" {
+		return nil, apierr.InvalidState // 并发的另一次确认已启用
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -182,11 +187,13 @@ func (s *Service) Disable(ctx context.Context, account uuid.UUID) error {
 }
 
 // RegenerateRecoveryCodes 重新生成恢复码，旧恢复码立即作废（调用方已检查重新验证，AUTH-23）。
+// 属于二次验证设置变化：发送安全通知（OPS-04），吊销管理会话（AUTH-21）。
 func (s *Service) RegenerateRecoveryCodes(ctx context.Context, account uuid.UUID) ([]string, error) {
 	codes, hashes, err := newRecoveryCodes()
 	if err != nil {
 		return nil, err
 	}
+	var revoked []uuid.UUID
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
 		if _, err := q.GetTotp(ctx, account); errors.Is(err, pgx.ErrNoRows) {
@@ -194,12 +201,19 @@ func (s *Service) RegenerateRecoveryCodes(ctx context.Context, account uuid.UUID
 		} else if err != nil {
 			return err
 		}
-		return q.SetRecoveryHashes(ctx, sqlc.SetRecoveryHashesParams{AccountID: account, RecoveryHashes: hashes})
+		if err := q.SetRecoveryHashes(ctx, sqlc.SetRecoveryHashesParams{AccountID: account, RecoveryHashes: hashes}); err != nil {
+			return err
+		}
+		now := s.Clock.Now()
+		if revoked, err = q.RevokeConsoleSessions(ctx, sqlc.RevokeConsoleSessionsParams{AccountID: account, Now: &now}); err != nil {
+			return err
+		}
+		return s.notify(ctx, q, account, notify.TemplateRecoveryCodesRegenerated, nil)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return codes, nil
+	return codes, s.afterRevoke(ctx, revoked)
 }
 
 func (s *Service) afterRevoke(ctx context.Context, sids []uuid.UUID) error {
@@ -244,7 +258,7 @@ func (s *Service) Verify(ctx context.Context, q *sqlc.Queries, account uuid.UUID
 	}
 	switch {
 	case totpCode != "":
-		secret, err := s.Keys.Open(t.SecretEnc, secretAD)
+		secret, err := s.Keys.Open(t.SecretEnc, secretAD(account))
 		if err != nil {
 			return false, err
 		}
@@ -257,9 +271,8 @@ func (s *Service) Verify(ctx context.Context, q *sqlc.Queries, account uuid.UUID
 		h := recoveryHash(recoveryCode)
 		idx := -1
 		for i, x := range t.RecoveryHashes {
-			if x == h {
+			if subtle.ConstantTimeCompare([]byte(x), []byte(h)) == 1 {
 				idx = i
-				break
 			}
 		}
 		if idx < 0 {

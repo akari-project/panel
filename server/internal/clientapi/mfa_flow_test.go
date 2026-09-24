@@ -219,15 +219,41 @@ func TestRecoveryCodesLow(t *testing.T) {
 	e := newEnv(t)
 	e.register(t, "low@example.com", "correct horse battery")
 	s := e.appLogin(t, "low@example.com", "correct horse battery")
+	s2 := e.appLogin(t, "low@example.com", "correct horse battery")
 	_, codes := e.enableTOTP(t, s.AccessToken)
 	for i := range 8 {
-		w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: s.AccessToken, body: jsonBody(map[string]string{"recovery_code": codes[i]})})
+		// 每个会话 15 分钟内最多 5 次重新验证，分两个会话进行。
+		tok := s.AccessToken
+		if i >= 4 {
+			tok = s2.AccessToken
+		}
+		w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: tok, body: jsonBody(map[string]string{"recovery_code": codes[i]})})
 		if w.Code != 200 {
 			t.Fatalf("code %d: %d %s", i, w.Code, w.Body)
 		}
 	}
 	if n := e.count(t, `SELECT count(*) FROM notification_outbox WHERE template = 'recovery_codes_low' AND variables->>'remaining' = '2'`); n != 1 {
 		t.Fatalf("low notifications = %d", n)
+	}
+}
+
+// AUTH-09：他人输错密码使账号进入登录冷却时，已登录的会话仍可重新验证并修改密码。
+func TestReauthNotBlockedByLoginCooldown(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "victim@example.com", "correct horse battery")
+	s := e.appLogin(t, "victim@example.com", "correct horse battery")
+	for range 6 {
+		_ = e.login(t, "victim@example.com", "attacker guess!", webDevice)
+	}
+	if w := e.login(t, "victim@example.com", "correct horse battery", webDevice); w.Code != 429 {
+		t.Fatalf("login during cooldown: %d", w.Code)
+	}
+	w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: s.AccessToken, body: `{"password":"correct horse battery"}`})
+	if w.Code != 200 {
+		t.Fatalf("reauth during cooldown: %d %s", w.Code, w.Body)
+	}
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: s.AccessToken, body: `{"new_password":"a brand new password"}`}); w.Code != 204 {
+		t.Fatalf("change password during cooldown: %d %s", w.Code, w.Body)
 	}
 }
 

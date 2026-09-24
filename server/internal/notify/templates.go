@@ -24,6 +24,8 @@ const (
 	TemplateMFADisabled = "mfa_disabled"
 	// TemplateRecoveryCodesLow：恢复码剩余不足 3 个（AUTH-11）。变量：remaining。
 	TemplateRecoveryCodesLow = "recovery_codes_low"
+	// TemplateRecoveryCodesRegenerated：恢复码已重新生成（OPS-04 安全类）。无变量。
+	TemplateRecoveryCodesRegenerated = "recovery_codes_regenerated"
 )
 
 // DefaultLocale 是模板缺少请求的语言时使用的语言。
@@ -96,6 +98,12 @@ var builtin = map[string]template{
 		locales: map[string]content{
 			"zh-CN": {subject: "{{site_name}}：已停用二次验证", body: "你的账号已停用二次验证。\n\n如果这不是你本人的操作，请立即修改密码并重新启用二次验证。\n"},
 			"en":    {subject: "{{site_name}}: two-factor authentication disabled", body: "Two-factor authentication was disabled on your account.\n\nIf this wasn't you, change your password and enable two-factor authentication again right away.\n"},
+		},
+	},
+	TemplateRecoveryCodesRegenerated: {
+		locales: map[string]content{
+			"zh-CN": {subject: "{{site_name}}：恢复码已重新生成", body: "你的二次验证恢复码已重新生成，旧恢复码全部作废。\n\n如果这不是你本人的操作，请立即修改密码。\n"},
+			"en":    {subject: "{{site_name}}: recovery codes regenerated", body: "Your two-factor recovery codes were regenerated, and the old ones no longer work.\n\nIf this wasn't you, change your password right away.\n"},
 		},
 	},
 	TemplateRecoveryCodesLow: {
