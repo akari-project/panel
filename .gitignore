@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+/bin/
+/.worktrees/
+# 嵌入产物由 make build 生成（spec/40 DEP-01），只提交占位文件
+/server/internal/webui/dist/*
+!/server/internal/webui/dist/.gitkeep
