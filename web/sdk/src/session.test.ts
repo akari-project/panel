@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it, vi } from 'vitest';
-import { createClientApi, unwrap } from './index';
+import { createClientApi, unwrap, type Problem } from './index';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -64,7 +64,7 @@ describe('访问令牌过期', () => {
     const s = fakeServer({ refreshOk: false });
     const api = createClientApi({ baseUrl: 'https://api.example.invalid', fetch: s.fetch });
     const expired = vi.fn();
-    api.hooks.sessionExpired = expired;
+    api.setSessionHooks({ sessionExpired: expired });
     await expect(unwrap(api.GET('/v1/me'))).rejects.toMatchObject({ problem: { code: 'unauthenticated' } });
     expect(expired).toHaveBeenCalledTimes(1);
   });
@@ -84,13 +84,14 @@ describe('重新验证', () => {
     const s = fakeServer({ reauthRequired: true });
     s.setAccess(true);
     const api = createClientApi({ baseUrl: 'https://api.example.invalid', fetch: s.fetch });
-    api.hooks.reauthenticate = vi.fn(async (p) => {
+    const reauthenticate = vi.fn(async (p: Problem) => {
       expect(p.body.methods).toEqual(['totp', 'recovery_code']);
       await unwrap(api.POST('/v1/me/reauthentications', { body: { password: 'secret' } }));
       return true;
     });
+    api.setSessionHooks({ reauthenticate });
     await unwrap(api.PUT('/v1/me/password', { body: { new_password: 'new-password-123' } }));
-    expect(api.hooks.reauthenticate).toHaveBeenCalledTimes(1);
+    expect(reauthenticate).toHaveBeenCalledTimes(1);
     expect(s.calls.map((c) => c.path)).toEqual(['/v1/me/password', '/v1/me/reauthentications', '/v1/me/password']);
   });
 
@@ -98,9 +99,20 @@ describe('重新验证', () => {
     const s = fakeServer({ reauthRequired: true });
     s.setAccess(true);
     const api = createClientApi({ baseUrl: 'https://api.example.invalid', fetch: s.fetch });
-    api.hooks.reauthenticate = async () => false;
+    const undo = api.setSessionHooks({ reauthenticate: async () => false });
     await expect(unwrap(api.PUT('/v1/me/password', { body: { new_password: 'new-password-123' } }))).rejects.toMatchObject({
       problem: { code: 'mfa_required' },
     });
+    undo();
+  });
+
+  it('没有提供重新验证框时直接返回 mfa_required', async () => {
+    const s = fakeServer({ reauthRequired: true });
+    s.setAccess(true);
+    const api = createClientApi({ baseUrl: 'https://api.example.invalid', fetch: s.fetch });
+    await expect(unwrap(api.PUT('/v1/me/password', { body: { new_password: 'new-password-123' } }))).rejects.toMatchObject({
+      problem: { code: 'mfa_required' },
+    });
+    expect(s.calls).toHaveLength(1);
   });
 });

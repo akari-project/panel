@@ -3,8 +3,13 @@
 // 先运行 pnpm -r build。
 import { defineConfig, devices } from '@playwright/test';
 
+// 预装的 Chromium 与 Playwright 期望的版本不一致时（如离线环境），用该变量指定可执行文件，不运行 playwright install。
+const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+
 export default defineConfig({
   testDir: './e2e',
+  // 真实控制面上的测试由 playwright.real.config.ts 运行。
+  testIgnore: ['real/**'],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -13,6 +18,7 @@ export default defineConfig({
     locale: 'zh-CN',
     timezoneId: 'Asia/Shanghai',
     trace: 'retain-on-failure',
+    ...(executablePath ? { launchOptions: { executablePath } } : {}),
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] }, grepInvert: /@mobile/ },

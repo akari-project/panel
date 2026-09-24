@@ -16,9 +16,14 @@ import {
 import { useTranslation } from 'react-i18next';
 import { isProblemError, type ClientApi } from '@panel/sdk';
 import { AppShell, ErrorState, navLinkClass, type PanelConfig } from '@panel/ui';
+import { ForgotPasswordPage } from './pages/ForgotPassword';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
 import { NotFoundPage } from './pages/NotFound';
+import { RegisterPage } from './pages/Register';
+import { ResetPasswordPage } from './pages/ResetPassword';
+import { SecurityPage } from './pages/Security';
+import { VerifyEmailPage } from './pages/VerifyEmail';
 import { meQuery } from './queries';
 
 export interface RouterContext {
@@ -47,6 +52,34 @@ export const loginRoute = createRoute({
   component: LoginPage,
 });
 
+export const registerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'register',
+  component: RegisterPage,
+});
+
+// 未登录与已登录都可以访问：已登录时只需验证码（AUTH-03）。
+export const verifyEmailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'verify-email',
+  validateSearch: (s: Record<string, unknown>): { email?: string } =>
+    typeof s.email === 'string' && s.email.length <= 254 ? { email: s.email } : {},
+  component: VerifyEmailPage,
+});
+
+export const forgotPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'forgot-password',
+  component: ForgotPasswordPage,
+});
+
+// 令牌在 URL 片段中（AUTH-04），由页面读取并清除，不作为查询参数。
+export const resetPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'reset-password',
+  component: ResetPasswordPage,
+});
+
 function AppLayout() {
   const { t } = useTranslation();
   const { api, config, queryClient } = useRouteContext({ from: appRoute.id });
@@ -63,11 +96,18 @@ function AppLayout() {
       sourceUrl={config.source_url}
       onSignOut={() => void signOut()}
       nav={
-        <li>
-          <Link to="/" className={navLinkClass} activeOptions={{ exact: true }}>
-            {t('nav.overview')}
-          </Link>
-        </li>
+        <>
+          <li>
+            <Link to="/" className={navLinkClass} activeOptions={{ exact: true }}>
+              {t('nav.overview')}
+            </Link>
+          </li>
+          <li>
+            <Link to="/security" className={navLinkClass}>
+              {t('nav.security')}
+            </Link>
+          </li>
+        </>
       }
     >
       <Outlet />
@@ -113,7 +153,20 @@ export const homeRoute = createRoute({
   component: HomePage,
 });
 
-const routeTree = rootRoute.addChildren([loginRoute, appRoute.addChildren([homeRoute])]);
+export const securityRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'security',
+  component: SecurityPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  loginRoute,
+  registerRoute,
+  verifyEmailRoute,
+  forgotPasswordRoute,
+  resetPasswordRoute,
+  appRoute.addChildren([homeRoute, securityRoute]),
+]);
 
 export function createAppRouter(context: RouterContext, history?: RouterHistory) {
   return createRouter({
@@ -123,6 +176,18 @@ export function createAppRouter(context: RouterContext, history?: RouterHistory)
     defaultPreload: 'intent',
     ...(history ? { history } : {}),
   });
+}
+
+/**
+ * 会话无法恢复（刷新令牌失效）时：当前在需要登录的页面上则跳转到登录页，登录后回到原页面，并丢弃缓存的账号信息。
+ * 公开页面（注册、找回密码等）与首次加载（由 appRoute.beforeLoad 处理）不在这里跳转。
+ */
+export function handleSessionExpired(router: ReturnType<typeof createAppRouter>, queryClient: QueryClient) {
+  const { matches, location } = router.state;
+  if (!matches.some((m) => m.routeId === appRoute.id)) return;
+  void router
+    .navigate({ to: '/login', search: { redirect: location.href }, replace: true })
+    .then(() => queryClient.removeQueries({ queryKey: ['me'] }));
 }
 
 declare module '@tanstack/react-router' {

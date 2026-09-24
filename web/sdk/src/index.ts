@@ -25,7 +25,7 @@ function options({ baseUrl, fetch }: ApiOptions) {
 
 /**
  * 客户端接口（用户中心）。请求层自动处理访问令牌过期与重新验证（见 session.ts）；
- * 应用通过返回值的 `hooks` 提供重新验证框与会话失效时的处理。
+ * 应用通过 `setSessionHooks` 提供重新验证框与会话失效时的处理，返回值用于撤销。
  */
 export function createClientApi(opts: ApiOptions) {
   const hooks: SessionHooks = {};
@@ -36,7 +36,15 @@ export function createClientApi(opts: ApiOptions) {
     ...base,
     fetch: createSessionFetch({ baseUrl: base.baseUrl, fetch: baseFetch, hooks }),
   });
-  return Object.assign(client, { hooks });
+  const setSessionHooks = (next: SessionHooks) => {
+    Object.assign(hooks, next);
+    return () => {
+      for (const k of Object.keys(next) as (keyof SessionHooks)[]) {
+        if (hooks[k] === next[k]) delete hooks[k];
+      }
+    };
+  };
+  return Object.assign(client, { setSessionHooks });
 }
 
 /** 管理接口（管理后台）。 */

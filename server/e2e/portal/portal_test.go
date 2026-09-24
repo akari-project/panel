@@ -41,8 +41,6 @@ import (
 // MailpitImage 与 compose.dev.yaml 一致。
 const MailpitImage = "axllent/mailpit"
 
-const commit = "e2e0000000000000000000000000000000000000"
-
 // syncBuffer 收集控制面日志，失败时输出。
 type syncBuffer struct {
 	mu sync.Mutex
@@ -130,6 +128,13 @@ func TestM1_01_PortalPlaywright(t *testing.T) {
 	}
 
 	// 按生产方式准备嵌入产物（DEP-01）：复制两个前端的 dist、预压缩、写入 build.json。
+	// 提交取自前端构建写入的 build.json，与 make web-build 使用的提交一致。
+	var built struct{ Commit string }
+	raw, err := os.ReadFile(filepath.Join(web, "portal", "dist", "build.json"))
+	if err != nil || json.Unmarshal(raw, &built) != nil || built.Commit == "" {
+		t.Fatalf("read portal/dist/build.json (run pnpm -r build first): %v", err)
+	}
+	commit := built.Commit
 	assets := t.TempDir()
 	prep := exec.Command("go", "run", "./tools/uiprep", "-web", web, "-out", assets, "-commit", commit)
 	prep.Dir = "../.."
