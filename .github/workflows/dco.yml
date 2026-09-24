@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# DCO 检查（spec/42 42.6）：本 PR 范围内（base..head）的每个非合并提交都必须带 Signed-off-by，
+# 历史提交不检查。提交时使用 git commit -s；补签用 git rebase --signoff <base>。
+name: dco
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: 检查 Signed-off-by
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=""
+          for c in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            git show -s --format=%B "$c" | grep -q '^Signed-off-by: ' \
+              || missing="$missing"$'\n'"$(git show -s --format='%h %s' "$c")"
+          done
+          if [ -n "$missing" ]; then
+            echo "以下提交缺少 Signed-off-by（git rebase --signoff $BASE_SHA 后强推）：$missing"
+            exit 1
+          fi
+          echo "dco: $(git rev-list --no-merges --count "$BASE_SHA..$HEAD_SHA") 个提交均已签名"
