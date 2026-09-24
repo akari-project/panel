@@ -30,6 +30,7 @@ import (
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
 	"github.com/akari-project/panel/server/internal/logging"
+	"github.com/akari-project/panel/server/internal/mfa"
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/ratelimit"
@@ -209,11 +210,17 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	}
 	limiter := ratelimit.Limiter{KV: d.KV}
 	revocations := auth.Revocations{KV: d.KV}
+	outbox := notify.Outbox{Keys: d.Keys, Clock: d.Clock}
 	sessions := &session.Service{
 		Pool: d.Pool, KV: d.KV, Clock: d.Clock, Keys: d.Keys, Tokens: d.Tokens, Revocations: revocations, Limiter: limiter,
+		Outbox: outbox,
+	}
+	sessions.MFA = &mfa.Service{
+		Pool: d.Pool, KV: d.KV, Clock: d.Clock, Keys: d.Keys, Outbox: outbox, Issuer: d.Config.Site.Name,
+		AfterRevoke: sessions.AfterRevoke,
 	}
 	accounts := &account.Service{
-		Pool: d.Pool, Clock: d.Clock, Keys: d.Keys, Outbox: notify.Outbox{Keys: d.Keys, Clock: d.Clock}, Limiter: limiter,
+		Pool: d.Pool, Clock: d.Clock, Keys: d.Keys, Outbox: outbox, Limiter: limiter,
 		Password: password.DefaultParams, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{},
 		PortalURL: portalURL, Revoke: sessions.RevokeAccount, AfterRevoke: sessions.AfterRevoke,
 	}
@@ -226,6 +233,7 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 		Limiter:        limiter,
 		Accounts:       accounts,
 		Sessions:       sessions,
+		MFA:            sessions.MFA,
 		Proxies:        proxies,
 		IdempotencyKey: d.Keys.Derive("idempotency-request-hash"),
 	})

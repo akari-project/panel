@@ -49,7 +49,7 @@ func (s *Service) RequestReset(ctx context.Context, email string, captchaToken *
 	if err := s.limit(ctx, []ratelimit.Rule{SendPerIP}, ip); err != nil {
 		return err
 	}
-	if err := s.limit(ctx, []ratelimit.Rule{SendPerEmail}, e); err != nil {
+	if err := s.limit(ctx, []ratelimit.Rule{ResetPerEmail}, e); err != nil {
 		return err
 	}
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {

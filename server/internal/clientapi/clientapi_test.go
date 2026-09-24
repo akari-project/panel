@@ -25,6 +25,7 @@ import (
 	"github.com/akari-project/panel/server/internal/clientapi/gen"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/httpx"
+	"github.com/akari-project/panel/server/internal/mfa"
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/ratelimit"
@@ -75,12 +76,17 @@ func newEnv(t *testing.T) *env {
 			e.verifyCalls.Add(1)
 			return password.Verify(pw, encoded)
 		}}
+	outbox := notify.Outbox{Keys: keys, Clock: clk}
+	e.sessions.Outbox = outbox
+	e.sessions.MFA = &mfa.Service{Pool: e.pool, KV: kvc, Clock: clk, Keys: keys, Outbox: outbox, Issuer: "Akari",
+		AfterRevoke: e.sessions.AfterRevoke}
 	e.accounts = &account.Service{Pool: e.pool, Clock: clk, Keys: keys, Outbox: notify.Outbox{Keys: keys, Clock: clk}, Limiter: limiter,
 		Password: fast, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{}, PortalURL: "https://portal.example.com/",
 		Revoke: e.sessions.RevokeAccount, AfterRevoke: e.sessions.AfterRevoke}
 	d := Deps{
 		Log: slog.New(slog.DiscardHandler), Clock: clk, Pool: e.pool, Tokens: tokens,
 		Revocations: e.rev, Limiter: limiter, IdempotencyKey: []byte("k"), Accounts: e.accounts, Sessions: e.sessions,
+		MFA: e.sessions.MFA,
 	}
 	e.h = New(d)
 	e.server = e.h.(*router).s

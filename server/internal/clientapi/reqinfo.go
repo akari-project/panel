@@ -22,7 +22,7 @@ type reqInfo struct {
 
 // rawBodyOps 是请求体为 oneOf 的操作。oapi-codegen 的 strict 模式把这类请求体解码为不带
 // UnmarshalJSON 的新类型，内容会丢失，因此由路由保存原文，处理器自行解码。
-var rawBodyOps = map[string]bool{"createSession": true}
+var rawBodyOps = map[string]bool{"createSession": true, "reauthenticate": true}
 
 type reqInfoKey struct{}
 

@@ -25,6 +25,8 @@ import (
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
+	"github.com/akari-project/panel/server/internal/mfa"
+	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/ratelimit"
 	"github.com/akari-project/panel/server/internal/secretbox"
@@ -42,14 +44,8 @@ const (
 	NonceTTL = 60 * time.Second
 )
 
-// 登录限流（AUTH-09）：同一账号 5 次失败后冷却 15 分钟；同一 IP 每分钟 20 次。
-var (
-	LoginPerIP = ratelimit.Rule{Name: "login-ip", Limit: 20, Window: time.Minute}
-	// LoginFailures 允许 4 次失败，第 5 次失败时超出上限，开始冷却。
-	LoginFailures  = ratelimit.Rule{Name: "login-fail", Limit: 4, Window: 15 * time.Minute}
-	LoginCooldown  = 15 * time.Minute
-	loginCooldownR = ratelimit.Rule{Name: "login-cool", Limit: 1, Window: LoginCooldown}
-)
+// LoginPerIP 是同一 IP 的登录尝试上限（AUTH-09）。按账号的失败冷却见 attempts.go。
+var LoginPerIP = ratelimit.Rule{Name: "login-ip", Limit: 20, Window: time.Minute}
 
 // Service 实现登录、刷新与登出。
 type Service struct {
@@ -60,6 +56,10 @@ type Service struct {
 	Tokens      *token.Keyring
 	Revocations auth.Revocations
 	Limiter     ratelimit.Limiter
+	// MFA 校验登录第二步与重新验证的 TOTP 码或恢复码（AUTH-20、AUTH-23）。
+	MFA *mfa.Service
+	// Outbox 写入安全通知（OPS-04，例如密码已修改）。
+	Outbox notify.Outbox
 	// Verify 校验密码，默认 password.Verify。测试替换它来确认两条登录路径都恰好调用一次（AUTH-09）。
 	Verify func(pw, encoded string) (bool, error)
 }
@@ -85,8 +85,10 @@ var DummyHash = func() string {
 type Tokens struct {
 	Access, Refresh string
 	AccessExpires   time.Time
-	SessionID       uuid.UUID
-	DeviceID        uuid.UUID
+	// RefreshExpires 是刷新令牌的失效时间（空闲期限，不超过会话链的绝对失效时间）。
+	RefreshExpires time.Time
+	SessionID      uuid.UUID
+	DeviceID       uuid.UUID
 }
 
 func newRefreshToken() (plain, hash string, err error) {
@@ -130,7 +132,7 @@ func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, account, devi
 	if err != nil {
 		return Tokens{}, err
 	}
-	return Tokens{Access: access, Refresh: plain, AccessExpires: claims.ExpiresAt, SessionID: id, DeviceID: device}, nil
+	return Tokens{Access: access, Refresh: plain, AccessExpires: claims.ExpiresAt, RefreshExpires: expires, SessionID: id, DeviceID: device}, nil
 }
 
 func nilIfEmpty(s string) *string {

@@ -3,6 +3,7 @@
 package clientapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,7 @@ func setTokenCookies(ctx context.Context, t session.Tokens, now time.Time) {
 	setCookie(ctx, &http.Cookie{Name: AccessCookie, Value: t.Access, Path: "/", HttpOnly: true, Secure: true,
 		SameSite: http.SameSiteStrictMode, MaxAge: int(t.AccessExpires.Sub(now).Seconds())})
 	setCookie(ctx, &http.Cookie{Name: RefreshCookie, Value: t.Refresh, Path: "/", HttpOnly: true, Secure: true,
-		SameSite: http.SameSiteStrictMode, MaxAge: int(session.ClientIdle.Seconds())})
+		SameSite: http.SameSiteStrictMode, MaxAge: int(t.RefreshExpires.Sub(now).Seconds())})
 }
 
 func clearTokenCookies(ctx context.Context) {
@@ -62,17 +63,45 @@ func (s *Server) CreateSession(ctx context.Context, req gen.CreateSessionRequest
 	if err := json.Unmarshal(raw, &probe); err != nil {
 		return nil, apierr.Invalid()
 	}
+	ri := info(ctx)
 	if probe.ChallengeID != nil {
-		// 第二步（二次验证）在 PR3 实现。
-		return nil, apierr.Invalid(apierr.Field("challenge_id", "invalid_code"))
+		return s.secondStep(ctx, raw)
 	}
 	body, err := union.AsPasswordLogin()
 	if err != nil {
 		return nil, apierr.Invalid()
 	}
-	ri := info(ctx)
 	res, err := s.d.Sessions.PasswordLogin(ctx, session.Login{
 		Email: string(body.Email), Password: body.Password, Device: deviceFromAPI(body.Device),
+		IP: ipSubject(ri.IP), IPPrefix: httpx.IPPrefix(ri.IP), UserAgent: ri.UserAgent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.sessionResponse(ctx, res), nil
+}
+
+// secondStep 是登录第二步（AUTH-20）：challenge_id、设备，以及 totp_code 或 recovery_code。
+// Passkey 在 M4 实现。
+func (s *Server) secondStep(ctx context.Context, raw []byte) (gen.CreateSessionResponseObject, error) {
+	var body struct {
+		ChallengeID       uuid.UUID       `json:"challenge_id"`
+		Device            gen.DeviceInfo  `json:"device"`
+		TotpCode          string          `json:"totp_code"`
+		RecoveryCode      string          `json:"recovery_code"`
+		WebauthnAssertion json.RawMessage `json:"webauthn_assertion"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&body); err != nil {
+		return nil, apierr.Invalid()
+	}
+	if len(body.WebauthnAssertion) > 0 {
+		return nil, apierr.Invalid(apierr.Field("webauthn_assertion", "not_allowed"))
+	}
+	ri := info(ctx)
+	res, err := s.d.Sessions.MFALogin(ctx, session.MFALogin{
+		ChallengeID: body.ChallengeID, Device: deviceFromAPI(body.Device), TOTPCode: body.TotpCode, RecoveryCode: body.RecoveryCode,
 		IP: ipSubject(ri.IP), IPPrefix: httpx.IPPrefix(ri.IP), UserAgent: ri.UserAgent,
 	})
 	if err != nil {
@@ -146,7 +175,8 @@ func (s *Server) IssueToken(ctx context.Context, req gen.IssueTokenRequestObject
 	t, err := s.d.Sessions.Refresh(ctx, refresh, httpx.IPPrefix(ri.IP), ri.UserAgent)
 	var oe *session.OAuthError
 	if errors.As(err, &oe) {
-		if web {
+		// 并发刷新未取得缓存时，Cookie 中可能已是另一请求刚写入的新令牌，不能清除。
+		if web && !oe.Retry {
 			clearTokenCookies(ctx)
 		}
 		return oauthError(oe.Code), nil

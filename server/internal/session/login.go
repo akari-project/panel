@@ -68,7 +68,7 @@ func (s *Service) PasswordLogin(ctx context.Context, in Login) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := s.checkLoginLimits(ctx, in.IP, email); err != nil {
+	if err := s.reserveAttempt(ctx, in.IP, email); err != nil {
 		return Result{}, err
 	}
 
@@ -87,63 +87,19 @@ func (s *Service) PasswordLogin(ctx context.Context, in Login) (Result, error) {
 		return Result{}, err
 	}
 	if !found || acct.PasswordHash == nil || !ok {
-		if err := s.recordFailure(ctx, email); err != nil {
-			return Result{}, err
-		}
-		return Result{}, apierr.Unauthenticated
+		return Result{}, apierr.Unauthenticated // 预占的尝试不释放，即计为一次失败
 	}
 	if acct.Status != "active" {
 		return Result{}, apierr.New(403, "account_suspended")
 	}
 	if acct.TotpEnabled {
+		// 不清除失败计数：二次验证完成后才算登录成功。
 		return Result{}, s.startMFA(ctx, acct.ID, in)
 	}
-	if err := s.Limiter.Reset(ctx, LoginFailures, email); err != nil {
-		return Result{}, apierr.Unavailable(err)
+	if err := s.clearAttempts(ctx, email); err != nil {
+		return Result{}, err
 	}
 	return s.complete(ctx, acct.ID, in, pubKey, []string{"pwd"})
-}
-
-// startMFA 在 PR3 实现：建立二次验证挑战并返回 mfa_required（AUTH-20）。
-var errMFANotReady = apierr.New(401, "mfa_required")
-
-func (s *Service) startMFA(context.Context, uuid.UUID, Login) error { return errMFANotReady }
-
-// checkLoginLimits：同一 IP 每分钟 20 次；账号处于冷却期时拒绝。冷却按邮箱计数，
-// 对不存在的邮箱同样生效，返回相同的 429（AUTH-09）。
-func (s *Service) checkLoginLimits(ctx context.Context, ip, email string) error {
-	ok, retry, err := s.Limiter.Allow(ctx, LoginPerIP, ip)
-	if err != nil {
-		return apierr.Unavailable(err)
-	}
-	if !ok {
-		return apierr.RateLimited(retry)
-	}
-	n, retry, err := s.Limiter.Count(ctx, loginCooldownR, email)
-	if err != nil {
-		return apierr.Unavailable(err)
-	}
-	if n > 0 {
-		return apierr.RateLimited(retry)
-	}
-	return nil
-}
-
-// recordFailure 记录一次失败；达到 5 次时开始 15 分钟冷却（AUTH-09）。二次验证失败同样调用本函数。
-func (s *Service) recordFailure(ctx context.Context, email string) error {
-	ok, _, err := s.Limiter.Allow(ctx, LoginFailures, email)
-	if err != nil {
-		return apierr.Unavailable(err)
-	}
-	if !ok {
-		if _, _, err := s.Limiter.Allow(ctx, loginCooldownR, email); err != nil {
-			return apierr.Unavailable(err)
-		}
-		if err := s.Limiter.Reset(ctx, LoginFailures, email); err != nil {
-			return apierr.Unavailable(err)
-		}
-	}
-	return nil
 }
 
 // validateDevice 校验设备信息，返回非 web 设备的公钥。
@@ -185,6 +141,8 @@ func parsePublicKey(b64 string) (ed25519.PublicKey, error) {
 	}
 	return pk, nil
 }
+
+func normalize(email string) (string, error) { return account.NormalizeEmail(email) }
 
 func contains(list []string, v string) bool {
 	for _, x := range list {
@@ -281,6 +239,9 @@ func verifyProof(pub []byte, p *Proof) bool {
 // 设备上限只统计未吊销的非 web 设备；免费账号的上限取设置项 free_device_limit（默认 1），
 // 但没有生效中的权益时不下发凭据（spec/30 CredentialStatus）。
 func (s *Service) issueCredential(ctx context.Context, q *sqlc.Queries, acct, device uuid.UUID) (string, error) {
+	if _, err := q.LockAccount(ctx, acct); err != nil {
+		return "", err
+	}
 	if _, err := q.DeviceCredential(ctx, &device); err == nil {
 		return "issued", nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {

@@ -52,29 +52,35 @@ func backoff(attempts int32) time.Duration {
 	return min(d, time.Hour)
 }
 
-// RunOnce 投递一批到期消息，返回已处理（成功或失败）的条数。
-// 同一批在一个事务中锁定，多个 worker 并行时互不重复（SKIP LOCKED）。
+// RunOnce 投递至多 Batch 条到期消息，返回已处理（成功或失败）的条数。
+// 每条消息在自己的事务中锁定、投递并记录结果：行锁只在投递这一条时持有，
+// 某条的数据库错误不会让已发出的其他邮件回滚后重发。多个 worker 并行时互不重复（SKIP LOCKED）。
 func (d *Deliverer) RunOnce(ctx context.Context) (int, error) {
 	batch := d.Batch
 	if batch <= 0 {
 		batch = 20
 	}
 	n := 0
-	err := pgx.BeginFunc(ctx, d.Pool, func(tx pgx.Tx) error {
-		q := sqlc.New(tx)
-		rows, err := q.ClaimDueNotifications(ctx, sqlc.ClaimDueNotificationsParams{Now: d.Clock.Now(), MaxRows: int32(batch)})
-		if err != nil {
-			return err
-		}
-		for _, row := range rows {
-			if err := d.deliver(ctx, q, row); err != nil {
+	for range batch {
+		found := false
+		err := pgx.BeginFunc(ctx, d.Pool, func(tx pgx.Tx) error {
+			q := sqlc.New(tx)
+			rows, err := q.ClaimDueNotifications(ctx, sqlc.ClaimDueNotificationsParams{Now: d.Clock.Now(), MaxRows: 1})
+			if err != nil || len(rows) == 0 {
 				return err
 			}
-			n++
+			found = true
+			return d.deliver(ctx, q, rows[0])
+		})
+		if err != nil {
+			return n, err
 		}
-		return nil
-	})
-	return n, err
+		if !found {
+			break
+		}
+		n++
+	}
+	return n, nil
 }
 
 // deliver 投递一条消息并记录结果。只有数据库错误返回 error；投递失败记录在行中。

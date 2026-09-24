@@ -463,6 +463,42 @@ type Problem struct {
 // ProblemCode 错误码，取值见 spec/02 CONV-16
 type ProblemCode string
 
+// Reauthentication defines model for Reauthentication.
+type Reauthentication struct {
+	union json.RawMessage
+}
+
+// Reauthentication0 defines model for Reauthentication.0.
+type Reauthentication0 struct {
+	ChallengeId *openapi_types.UUID `json:"challenge_id,omitempty"`
+	Password    string              `json:"password"`
+}
+
+// Reauthentication1 defines model for Reauthentication.1.
+type Reauthentication1 struct {
+	ChallengeId *openapi_types.UUID `json:"challenge_id,omitempty"`
+	TotpCode    string              `json:"totp_code"`
+}
+
+// Reauthentication2 defines model for Reauthentication.2.
+type Reauthentication2 struct {
+	ChallengeId *openapi_types.UUID `json:"challenge_id,omitempty"`
+
+	// WebauthnAssertion AuthenticationResponseJSON（WebAuthn Level 3）
+	WebauthnAssertion map[string]interface{} `json:"webauthn_assertion"`
+}
+
+// Reauthentication3 defines model for Reauthentication.3.
+type Reauthentication3 struct {
+	ChallengeId  *openapi_types.UUID `json:"challenge_id,omitempty"`
+	RecoveryCode string              `json:"recovery_code"`
+}
+
+// RecoveryCodes defines model for RecoveryCodes.
+type RecoveryCodes struct {
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
 // Session defines model for Session.
 type Session struct {
 	// AccessToken 非 web 设备返回；web 设备以 Cookie 下发
@@ -505,8 +541,14 @@ type Conflict = Problem
 // IdempotencyKeyReused RFC 9457 problem details（CONV-16）
 type IdempotencyKeyReused = Problem
 
+// InvalidState RFC 9457 problem details（CONV-16）
+type InvalidState = Problem
+
 // LoginUnauthorized RFC 9457 problem details（CONV-16）
 type LoginUnauthorized = Problem
+
+// MfaRequired RFC 9457 problem details（CONV-16）
+type MfaRequired = Problem
 
 // OAuthError defines model for OAuthError.
 type OAuthError = OAuthErrorBody
@@ -574,6 +616,16 @@ type ResendVerificationParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
+// ActivateTotpJSONBody defines parameters for ActivateTotp.
+type ActivateTotpJSONBody struct {
+	TotpCode string `json:"totp_code"`
+}
+
+// ChangePasswordJSONBody defines parameters for ChangePassword.
+type ChangePasswordJSONBody struct {
+	NewPassword string `json:"new_password"`
+}
+
 // IssueTokenFormdataBody defines parameters for IssueToken.
 type IssueTokenFormdataBody struct {
 	// ClientId 公开客户端标识，例如 `app`、`tv`
@@ -630,6 +682,15 @@ type VerifyEmailJSONRequestBody VerifyEmailJSONBody
 // ResendVerificationJSONRequestBody defines body for ResendVerification for application/json ContentType.
 type ResendVerificationJSONRequestBody ResendVerificationJSONBody
 
+// ActivateTotpJSONRequestBody defines body for ActivateTotp for application/json ContentType.
+type ActivateTotpJSONRequestBody ActivateTotpJSONBody
+
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody ChangePasswordJSONBody
+
+// ReauthenticateJSONRequestBody defines body for Reauthenticate for application/json ContentType.
+type ReauthenticateJSONRequestBody = Reauthentication
+
 // IssueTokenFormdataRequestBody defines body for IssueToken for application/x-www-form-urlencoded ContentType.
 type IssueTokenFormdataRequestBody IssueTokenFormdataBody
 
@@ -641,6 +702,120 @@ type ConfirmPasswordResetJSONRequestBody ConfirmPasswordResetJSONBody
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody CreateSessionJSONBody
+
+// AsReauthentication0 returns the union data inside the Reauthentication as a Reauthentication0
+func (t Reauthentication) AsReauthentication0() (Reauthentication0, error) {
+	var body Reauthentication0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReauthentication0 overwrites any union data inside the Reauthentication as the provided Reauthentication0
+func (t *Reauthentication) FromReauthentication0(v Reauthentication0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeReauthentication0 performs a merge with any union data inside the Reauthentication, using the provided Reauthentication0
+func (t *Reauthentication) MergeReauthentication0(v Reauthentication0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReauthentication1 returns the union data inside the Reauthentication as a Reauthentication1
+func (t Reauthentication) AsReauthentication1() (Reauthentication1, error) {
+	var body Reauthentication1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReauthentication1 overwrites any union data inside the Reauthentication as the provided Reauthentication1
+func (t *Reauthentication) FromReauthentication1(v Reauthentication1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeReauthentication1 performs a merge with any union data inside the Reauthentication, using the provided Reauthentication1
+func (t *Reauthentication) MergeReauthentication1(v Reauthentication1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReauthentication2 returns the union data inside the Reauthentication as a Reauthentication2
+func (t Reauthentication) AsReauthentication2() (Reauthentication2, error) {
+	var body Reauthentication2
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReauthentication2 overwrites any union data inside the Reauthentication as the provided Reauthentication2
+func (t *Reauthentication) FromReauthentication2(v Reauthentication2) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeReauthentication2 performs a merge with any union data inside the Reauthentication, using the provided Reauthentication2
+func (t *Reauthentication) MergeReauthentication2(v Reauthentication2) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReauthentication3 returns the union data inside the Reauthentication as a Reauthentication3
+func (t Reauthentication) AsReauthentication3() (Reauthentication3, error) {
+	var body Reauthentication3
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReauthentication3 overwrites any union data inside the Reauthentication as the provided Reauthentication3
+func (t *Reauthentication) FromReauthentication3(v Reauthentication3) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeReauthentication3 performs a merge with any union data inside the Reauthentication, using the provided Reauthentication3
+func (t *Reauthentication) MergeReauthentication3(v Reauthentication3) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t Reauthentication) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *Reauthentication) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsPasswordLogin returns the union data inside the CreateSessionJSONBody as a PasswordLogin
 func (t CreateSessionJSONBody) AsPasswordLogin() (PasswordLogin, error) {
@@ -770,6 +945,24 @@ type ServerInterface interface {
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// RegenerateRecoveryCodes 重新生成恢复码
+	// (POST /v1/me/mfa/recovery-codes)
+	RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request)
+	// DisableTotp 停用 TOTP
+	// (DELETE /v1/me/mfa/totp)
+	DisableTotp(w http.ResponseWriter, r *http.Request)
+	// StartTotpEnrollment 开始绑定 TOTP
+	// (POST /v1/me/mfa/totp)
+	StartTotpEnrollment(w http.ResponseWriter, r *http.Request)
+	// ActivateTotp 确认绑定 TOTP 并取得恢复码
+	// (POST /v1/me/mfa/totp/activation)
+	ActivateTotp(w http.ResponseWriter, r *http.Request)
+	// ChangePassword 修改密码
+	// (PUT /v1/me/password)
+	ChangePassword(w http.ResponseWriter, r *http.Request)
+	// Reauthenticate 重新验证（step-up）
+	// (POST /v1/me/reauthentications)
+	Reauthenticate(w http.ResponseWriter, r *http.Request)
 	// IssueToken 刷新令牌轮换；设备授权与扫码登录的轮询
 	// (POST /v1/oauth/token)
 	IssueToken(w http.ResponseWriter, r *http.Request)
@@ -927,6 +1120,90 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegenerateRecoveryCodes operation middleware
+func (siw *ServerInterfaceWrapper) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegenerateRecoveryCodes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisableTotp operation middleware
+func (siw *ServerInterfaceWrapper) DisableTotp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisableTotp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartTotpEnrollment operation middleware
+func (siw *ServerInterfaceWrapper) StartTotpEnrollment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartTotpEnrollment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivateTotp operation middleware
+func (siw *ServerInterfaceWrapper) ActivateTotp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivateTotp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Reauthenticate operation middleware
+func (siw *ServerInterfaceWrapper) Reauthenticate(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Reauthenticate(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1198,6 +1475,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification", wrapper.VerifyEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification/resend", wrapper.ResendVerification)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/recovery-codes", wrapper.RegenerateRecoveryCodes)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/mfa/totp", wrapper.DisableTotp)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/totp", wrapper.StartTotpEnrollment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/totp/activation", wrapper.ActivateTotp)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/reauthentications", wrapper.Reauthenticate)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/oauth/token", wrapper.IssueToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets", wrapper.RequestPasswordReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets/confirmation", wrapper.ConfirmPasswordReset)
@@ -1223,7 +1506,18 @@ type ConflictApplicationProblemPlusJSONResponse struct {
 
 type IdempotencyKeyReusedApplicationProblemPlusJSONResponse Problem
 
+type InvalidStateResponseHeaders struct {
+	RetryAfter *int
+}
+type InvalidStateApplicationProblemPlusJSONResponse struct {
+	Body Problem
+
+	Headers InvalidStateResponseHeaders
+}
+
 type LoginUnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type MfaRequiredApplicationProblemPlusJSONResponse Problem
 
 type OAuthErrorJSONResponse OAuthErrorBody
 
@@ -1627,6 +1921,494 @@ type GetMedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodesRequestObject struct {
+}
+
+type RegenerateRecoveryCodesResponseObject interface {
+	VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error
+}
+
+type RegenerateRecoveryCodes200JSONResponse RecoveryCodes
+
+func (response RegenerateRecoveryCodes200JSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateRecoveryCodes401ApplicationProblemPlusJSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodes409ApplicationProblemPlusJSONResponse struct {
+	InvalidStateApplicationProblemPlusJSONResponse
+}
+
+func (response RegenerateRecoveryCodes409ApplicationProblemPlusJSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegenerateRecoveryCodesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RegenerateRecoveryCodesdefaultApplicationProblemPlusJSONResponse) VisitRegenerateRecoveryCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTotpRequestObject struct {
+}
+
+type DisableTotpResponseObject interface {
+	VisitDisableTotpResponse(w http.ResponseWriter) error
+}
+
+type DisableTotp204Response struct {
+}
+
+func (response DisableTotp204Response) VisitDisableTotpResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DisableTotp401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DisableTotp401ApplicationProblemPlusJSONResponse) VisitDisableTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTotp409ApplicationProblemPlusJSONResponse struct {
+	InvalidStateApplicationProblemPlusJSONResponse
+}
+
+func (response DisableTotp409ApplicationProblemPlusJSONResponse) VisitDisableTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DisableTotpdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DisableTotpdefaultApplicationProblemPlusJSONResponse) VisitDisableTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTotpEnrollmentRequestObject struct {
+}
+
+type StartTotpEnrollmentResponseObject interface {
+	VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error
+}
+
+type StartTotpEnrollment201JSONResponse struct {
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// OtpauthUri `otpauth://` URI，供生成二维码
+	OtpauthUri string `json:"otpauth_uri"`
+
+	// Secret Base32 密钥
+	Secret string `json:"secret"`
+}
+
+func (response StartTotpEnrollment201JSONResponse) VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTotpEnrollment401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response StartTotpEnrollment401ApplicationProblemPlusJSONResponse) VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTotpEnrollment409ApplicationProblemPlusJSONResponse struct {
+	InvalidStateApplicationProblemPlusJSONResponse
+}
+
+func (response StartTotpEnrollment409ApplicationProblemPlusJSONResponse) VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartTotpEnrollmentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response StartTotpEnrollmentdefaultApplicationProblemPlusJSONResponse) VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateTotpRequestObject struct {
+	Body *ActivateTotpJSONRequestBody
+}
+
+type ActivateTotpResponseObject interface {
+	VisitActivateTotpResponse(w http.ResponseWriter) error
+}
+
+type ActivateTotp200JSONResponse RecoveryCodes
+
+func (response ActivateTotp200JSONResponse) VisitActivateTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateTotp400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ActivateTotp400ApplicationProblemPlusJSONResponse) VisitActivateTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateTotp401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response ActivateTotp401ApplicationProblemPlusJSONResponse) VisitActivateTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateTotp409ApplicationProblemPlusJSONResponse struct {
+	InvalidStateApplicationProblemPlusJSONResponse
+}
+
+func (response ActivateTotp409ApplicationProblemPlusJSONResponse) VisitActivateTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateTotpdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ActivateTotpdefaultApplicationProblemPlusJSONResponse) VisitActivateTotpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePasswordRequestObject struct {
+	Body *ChangePasswordJSONRequestBody
+}
+
+type ChangePasswordResponseObject interface {
+	VisitChangePasswordResponse(w http.ResponseWriter) error
+}
+
+type ChangePassword204Response struct {
+}
+
+func (response ChangePassword204Response) VisitChangePasswordResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ChangePassword400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ChangePassword400ApplicationProblemPlusJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePassword401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response ChangePassword401ApplicationProblemPlusJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePassword429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ChangePassword429ApplicationProblemPlusJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ChangePassworddefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ChangePassworddefaultApplicationProblemPlusJSONResponse) VisitChangePasswordResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReauthenticateRequestObject struct {
+	Body *ReauthenticateJSONRequestBody
+}
+
+type ReauthenticateResponseObject interface {
+	VisitReauthenticateResponse(w http.ResponseWriter) error
+}
+
+type Reauthenticate200JSONResponse struct {
+	// ExpiresAt 重新验证的有效期截止时间
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (response Reauthenticate200JSONResponse) VisitReauthenticateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Reauthenticate400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response Reauthenticate400ApplicationProblemPlusJSONResponse) VisitReauthenticateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Reauthenticate401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response Reauthenticate401ApplicationProblemPlusJSONResponse) VisitReauthenticateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Reauthenticate429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response Reauthenticate429ApplicationProblemPlusJSONResponse) VisitReauthenticateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReauthenticatedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ReauthenticatedefaultApplicationProblemPlusJSONResponse) VisitReauthenticateResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2197,6 +2979,24 @@ type StrictServerInterface interface {
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// RegenerateRecoveryCodes 重新生成恢复码
+	// (POST /v1/me/mfa/recovery-codes)
+	RegenerateRecoveryCodes(ctx context.Context, request RegenerateRecoveryCodesRequestObject) (RegenerateRecoveryCodesResponseObject, error)
+	// DisableTotp 停用 TOTP
+	// (DELETE /v1/me/mfa/totp)
+	DisableTotp(ctx context.Context, request DisableTotpRequestObject) (DisableTotpResponseObject, error)
+	// StartTotpEnrollment 开始绑定 TOTP
+	// (POST /v1/me/mfa/totp)
+	StartTotpEnrollment(ctx context.Context, request StartTotpEnrollmentRequestObject) (StartTotpEnrollmentResponseObject, error)
+	// ActivateTotp 确认绑定 TOTP 并取得恢复码
+	// (POST /v1/me/mfa/totp/activation)
+	ActivateTotp(ctx context.Context, request ActivateTotpRequestObject) (ActivateTotpResponseObject, error)
+	// ChangePassword 修改密码
+	// (PUT /v1/me/password)
+	ChangePassword(ctx context.Context, request ChangePasswordRequestObject) (ChangePasswordResponseObject, error)
+	// Reauthenticate 重新验证（step-up）
+	// (POST /v1/me/reauthentications)
+	Reauthenticate(ctx context.Context, request ReauthenticateRequestObject) (ReauthenticateResponseObject, error)
 	// IssueToken 刷新令牌轮换；设备授权与扫码登录的轮询
 	// (POST /v1/oauth/token)
 	IssueToken(ctx context.Context, request IssueTokenRequestObject) (IssueTokenResponseObject, error)
@@ -2375,6 +3175,171 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegenerateRecoveryCodes operation middleware
+func (sh *strictHandler) RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request) {
+	var request RegenerateRecoveryCodesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RegenerateRecoveryCodes(ctx, request.(RegenerateRecoveryCodesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegenerateRecoveryCodes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegenerateRecoveryCodesResponseObject); ok {
+		if err := validResponse.VisitRegenerateRecoveryCodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DisableTotp operation middleware
+func (sh *strictHandler) DisableTotp(w http.ResponseWriter, r *http.Request) {
+	var request DisableTotpRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DisableTotp(ctx, request.(DisableTotpRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DisableTotp")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DisableTotpResponseObject); ok {
+		if err := validResponse.VisitDisableTotpResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartTotpEnrollment operation middleware
+func (sh *strictHandler) StartTotpEnrollment(w http.ResponseWriter, r *http.Request) {
+	var request StartTotpEnrollmentRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartTotpEnrollment(ctx, request.(StartTotpEnrollmentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartTotpEnrollment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartTotpEnrollmentResponseObject); ok {
+		if err := validResponse.VisitStartTotpEnrollmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ActivateTotp operation middleware
+func (sh *strictHandler) ActivateTotp(w http.ResponseWriter, r *http.Request) {
+	var request ActivateTotpRequestObject
+
+	var body ActivateTotpJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ActivateTotp(ctx, request.(ActivateTotpRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ActivateTotp")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ActivateTotpResponseObject); ok {
+		if err := validResponse.VisitActivateTotpResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ChangePassword operation middleware
+func (sh *strictHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	var request ChangePasswordRequestObject
+
+	var body ChangePasswordJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ChangePassword(ctx, request.(ChangePasswordRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ChangePassword")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ChangePasswordResponseObject); ok {
+		if err := validResponse.VisitChangePasswordResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Reauthenticate operation middleware
+func (sh *strictHandler) Reauthenticate(w http.ResponseWriter, r *http.Request) {
+	var request ReauthenticateRequestObject
+
+	var body ReauthenticateJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Reauthenticate(ctx, request.(ReauthenticateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Reauthenticate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReauthenticateResponseObject); ok {
+		if err := validResponse.VisitReauthenticateResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -101,3 +101,7 @@ RETURNING id;
 
 -- name: SessionDevice :one
 SELECT device_id FROM sessions WHERE id = sqlc.arg(id) AND account_id = sqlc.arg(account_id);
+
+-- name: LockAccount :one
+-- 串行化同一账号的设备凭据下发，使设备上限的计数与插入之间不会并发超额（AUTH-14）。
+SELECT id FROM accounts WHERE id = sqlc.arg(id) FOR UPDATE;

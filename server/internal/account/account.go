@@ -34,13 +34,15 @@ import (
 )
 
 // 限流（spec/30 API-04：找回密码与验证码发送每个邮箱每小时 3 次、每个 IP 每小时 10 次；
-// spec/10 AUTH-03：重新发送每分钟 1 次、每天 10 次）。
+// spec/10 AUTH-03：重新发送每分钟 1 次、每天 10 次）。按邮箱的计数按用途分开，
+// 以免他人反复注册占满受害者找回密码的配额。
 var (
-	SendPerEmail  = ratelimit.Rule{Name: "send-email", Limit: 3, Window: time.Hour}
-	SendPerIP     = ratelimit.Rule{Name: "send-ip", Limit: 10, Window: time.Hour}
-	ResendPerMin  = ratelimit.Rule{Name: "resend-minute", Limit: 1, Window: time.Minute}
-	ResendPerDay  = ratelimit.Rule{Name: "resend-day", Limit: 10, Window: 24 * time.Hour}
-	registerRules = []ratelimit.Rule{SendPerEmail}
+	RegisterPerEmail = ratelimit.Rule{Name: "send-register", Limit: 3, Window: time.Hour}
+	ResendPerEmail   = ratelimit.Rule{Name: "send-verify", Limit: 3, Window: time.Hour}
+	ResetPerEmail    = ratelimit.Rule{Name: "send-reset", Limit: 3, Window: time.Hour}
+	SendPerIP        = ratelimit.Rule{Name: "send-ip", Limit: 10, Window: time.Hour}
+	ResendPerMin     = ratelimit.Rule{Name: "resend-minute", Limit: 1, Window: time.Minute}
+	ResendPerDay     = ratelimit.Rule{Name: "resend-day", Limit: 10, Window: 24 * time.Hour}
 )
 
 // InviteResolver 解析邀请码（AUTH-02）：账号邀请码，以及管理员生成的注册码（M1-07 接入）。
@@ -261,7 +263,7 @@ func (s *Service) Register(ctx context.Context, in Registration) error {
 	if err := s.limit(ctx, []ratelimit.Rule{SendPerIP}, in.IP); err != nil {
 		return err
 	}
-	if err := s.limit(ctx, registerRules, email); err != nil {
+	if err := s.limit(ctx, []ratelimit.Rule{RegisterPerEmail}, email); err != nil {
 		return err
 	}
 	// 先哈希再查询邮箱，已注册与未注册两条路径的耗时相同。

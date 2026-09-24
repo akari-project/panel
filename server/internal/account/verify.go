@@ -112,12 +112,17 @@ func (s *Service) VerifyEmail(ctx context.Context, account *uuid.UUID, email *st
 			return err
 		}
 		now := s.Clock.Now()
+		// 未登录时，过期与次数用完也返回 invalid_code：否则可以据此判断邮箱已注册且未验证（AUTH-01 防枚举）。
+		expired, exhausted := apierr.Invalid(apierr.Field("code", "expired")), apierr.Invalid(apierr.Field("code", "exhausted"))
+		if account == nil {
+			expired, exhausted = invalid, invalid
+		}
 		switch {
 		case !now.Before(c.ExpiresAt):
-			result = apierr.Invalid(apierr.Field("code", "expired"))
+			result = expired
 			return nil
 		case c.Attempts >= CodeMaxAttempts:
-			result = apierr.Invalid(apierr.Field("code", "exhausted"))
+			result = exhausted
 			return nil
 		}
 		if subtle.ConstantTimeCompare([]byte(c.CodeHash), []byte(codeHash(acct.ID, code))) != 1 {
@@ -126,7 +131,7 @@ func (s *Service) VerifyEmail(ctx context.Context, account *uuid.UUID, email *st
 				return err
 			}
 			if n >= CodeMaxAttempts {
-				result = apierr.Invalid(apierr.Field("code", "exhausted"))
+				result = exhausted
 			} else {
 				result = invalid
 			}
@@ -170,7 +175,7 @@ func (s *Service) ResendVerification(ctx context.Context, account *uuid.UUID, em
 		if err := s.limit(ctx, []ratelimit.Rule{SendPerIP}, ip); err != nil {
 			return err
 		}
-		if err := s.limit(ctx, []ratelimit.Rule{ResendPerMin, ResendPerDay, SendPerEmail}, subject); err != nil {
+		if err := s.limit(ctx, []ratelimit.Rule{ResendPerMin, ResendPerDay, ResendPerEmail}, subject); err != nil {
 			return err
 		}
 		if !found || acct.EmailVerifiedAt != nil {

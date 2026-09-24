@@ -215,6 +215,18 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const lockAccount = `-- name: LockAccount :one
+SELECT id FROM accounts WHERE id = $1 FOR UPDATE
+`
+
+// 串行化同一账号的设备凭据下发，使设备上限的计数与插入之间不会并发超额（AUTH-14）。
+func (q *Queries) LockAccount(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockAccount, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const loginAccount = `-- name: LoginAccount :one
 
 SELECT a.id, a.password_hash, a.status, (t.enabled_at IS NOT NULL)::bool AS totp_enabled

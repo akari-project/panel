@@ -37,6 +37,7 @@ import (
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
+	"github.com/akari-project/panel/server/internal/mfa"
 	"github.com/akari-project/panel/server/internal/ratelimit"
 	"github.com/akari-project/panel/server/internal/session"
 )
@@ -70,6 +71,7 @@ type Deps struct {
 	IdempotencyKey []byte
 	Accounts       *account.Service
 	Sessions       *session.Service
+	MFA            *mfa.Service
 }
 
 // Server 实现 gen.StrictServerInterface。

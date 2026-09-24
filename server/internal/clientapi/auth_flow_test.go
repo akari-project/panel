@@ -596,8 +596,9 @@ func TestVerificationLimits(t *testing.T) {
 	for range 4 {
 		_ = e.do(post("/v1/accounts/verification", body(wrong)))
 	}
+	// 未登录时次数用完与过期也返回 invalid_code，不透露邮箱已注册且未验证（AUTH-01 防枚举）。
 	w := e.do(post("/v1/accounts/verification", body(wrong)))
-	if _, c := fieldCode(t, w); c != "exhausted" {
+	if _, c := fieldCode(t, w); c != "invalid_code" {
 		t.Fatalf("5th wrong attempt: %s", w.Body)
 	}
 	if w := e.do(post("/v1/accounts/verification", body(code))); w.Code != 400 {
@@ -614,7 +615,7 @@ func TestVerificationLimits(t *testing.T) {
 	e.clk.Advance(account.CodeTTL)
 	if w := e.do(post("/v1/accounts/verification", body(fresh))); w.Code != 400 {
 		t.Fatal("expired code accepted")
-	} else if _, c := fieldCode(t, w); c != "expired" {
+	} else if _, c := fieldCode(t, w); c != "invalid_code" {
 		t.Fatalf("expired: %s", w.Body)
 	}
 	// 未注册的邮箱同样返回 202（AUTH-01 防枚举）。

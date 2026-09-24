@@ -19,7 +19,11 @@ import (
 )
 
 // OAuthError 是 /v1/oauth/token 的错误（RFC 6749 §5.2，CONV-16 的例外）。
-type OAuthError struct{ Code string }
+// Retry 表示重试窗口内的并发刷新未取得缓存：令牌对已由另一请求取得，浏览器不应清除 Cookie。
+type OAuthError struct {
+	Code  string
+	Retry bool
+}
 
 func (e *OAuthError) Error() string { return e.Code }
 
@@ -36,11 +40,12 @@ func RetryCacheKey(refresh string) string { return retryKey(refreshHash(refresh)
 
 // cachedPair 与 Tokens 字段相同，只多了 JSON 标签。
 type cachedPair struct {
-	Access        string    `json:"a"`
-	Refresh       string    `json:"r"`
-	AccessExpires time.Time `json:"e"`
-	SessionID     uuid.UUID `json:"s"`
-	DeviceID      uuid.UUID `json:"d"`
+	Access         string    `json:"a"`
+	Refresh        string    `json:"r"`
+	AccessExpires  time.Time `json:"e"`
+	RefreshExpires time.Time `json:"x"`
+	SessionID      uuid.UUID `json:"s"`
+	DeviceID       uuid.UUID `json:"d"`
 }
 
 // Refresh 轮换刷新令牌（AUTH-07）：
@@ -84,8 +89,11 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 				}
 			}
 			// 泄露：吊销整条链（AUTH-07）。吊销需要提交，因此不以错误结束事务。
-			revoked, err = q.RevokeSessionChain(ctx, sqlc.RevokeSessionChainParams{ID: sess.ID, Now: &now})
+			revoked, err = revokeChain(ctx, q, sess.ID, now)
 			return err
+		}
+		if sess.Audience != string(token.AudienceClient) {
+			return ErrInvalidGrant // 管理会话的刷新令牌只能在管理接口使用（AUTH-21）
 		}
 		absolute := sess.ExpiresAt
 		if sess.AbsoluteExpiresAt != nil {
@@ -101,7 +109,14 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 		idle := ClientIdle
 		out, err = s.newSession(ctx, q, sess.AccountID, *sess.DeviceID, token.Audience(sess.Audience), &sess.ID,
 			ua, ipPrefix, idle, absolute, nil)
-		return err
+		if err != nil {
+			return err
+		}
+		// 在提交之前写入重试缓存：并发的同一令牌请求在行锁释放后必定能读到（ADR 0017）。写入失败则回滚。
+		if err := s.cachePair(ctx, hash, out); err != nil {
+			return apierr.Unavailable(err)
+		}
+		return nil
 	})
 	if err != nil {
 		return Tokens{}, err
@@ -117,7 +132,6 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 	case out.Access == "":
 		return Tokens{}, ErrInvalidGrant
 	}
-	s.cachePair(ctx, hash, out)
 	return out, nil
 }
 
@@ -128,19 +142,36 @@ func deref(p *string) string {
 	return *p
 }
 
-// cachePair 把新令牌对加密后缓存 10 秒（CONV-19、CONV-20 例外，ADR 0017）。缓存失败不影响本次刷新。
-func (s *Service) cachePair(ctx context.Context, oldHash string, t Tokens) {
+// cachePair 把新令牌对加密后缓存 10 秒（CONV-19、CONV-20 例外，ADR 0017）。
+func (s *Service) cachePair(ctx context.Context, oldHash string, t Tokens) error {
 	pt, err := json.Marshal(cachedPair(t))
 	if err != nil {
-		return
+		return err
 	}
 	ct, err := s.Keys.Seal(pt, retryAD)
 	if err != nil {
-		return
+		return err
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auth.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, auth.Timeout)
 	defer cancel()
-	_ = s.KV.Do(ctx, s.KV.B().Set().Key(retryKey(oldHash)).Value(string(ct)).Px(RetryWindow).Build()).Error()
+	return s.KV.Do(ctx, s.KV.B().Set().Key(retryKey(oldHash)).Value(string(ct)).Px(RetryWindow).Build()).Error()
+}
+
+// revokeChain 吊销会话所在的整条链。与之并发的轮换可能在语句快照之后插入子会话，
+// 因此重复执行直到没有新吊销的行。
+func revokeChain(ctx context.Context, q *sqlc.Queries, id uuid.UUID, now time.Time) ([]uuid.UUID, error) {
+	var all []uuid.UUID
+	for range 10 {
+		ids, err := q.RevokeSessionChain(ctx, sqlc.RevokeSessionChainParams{ID: id, Now: &now})
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			break
+		}
+		all = append(all, ids...)
+	}
+	return all, nil
 }
 
 func (s *Service) cachedRetry(ctx context.Context, oldHash string) (Tokens, error) {
@@ -148,7 +179,7 @@ func (s *Service) cachedRetry(ctx context.Context, oldHash string) (Tokens, erro
 	defer cancel()
 	raw, err := s.KV.Do(ctx, s.KV.B().Get().Key(retryKey(oldHash)).Build()).AsBytes()
 	if err != nil {
-		return Tokens{}, ErrInvalidGrant
+		return Tokens{}, &OAuthError{Code: "invalid_grant", Retry: true}
 	}
 	pt, err := s.Keys.Open(raw, retryAD)
 	if err != nil {
@@ -174,7 +205,7 @@ func (s *Service) Logout(ctx context.Context, p auth.Principal) error {
 		if err != nil {
 			return err
 		}
-		if revoked, err = q.RevokeSessionChain(ctx, sqlc.RevokeSessionChainParams{ID: p.SessionID, Now: &now}); err != nil {
+		if revoked, err = revokeChain(ctx, q, p.SessionID, now); err != nil {
 			return err
 		}
 		if device == nil {

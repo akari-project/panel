@@ -23,4 +23,10 @@ output-options:
     - createSessionNonce
     - deleteCurrentSession
     - issueToken
+    - startTotpEnrollment
+    - activateTotp
+    - disableTotp
+    - regenerateRecoveryCodes
+    - reauthenticate
+    - changePassword
 output: internal/clientapi/gen/api.gen.go
