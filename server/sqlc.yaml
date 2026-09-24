@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# sqlc 配置（spec/41 41.1）：SQL 写在 internal/db/queries/*.sql，生成代码输出到 internal/db/sqlc/，不手改。
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: internal/db/queries
+    gen:
+      go:
+        package: sqlc
+        out: internal/db/sqlc
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true
+          - db_type: timestamptz
+            go_type: time.Time
+          - db_type: timestamptz
+            nullable: true
+            go_type:
+              import: time
+              type: Time
+              pointer: true
