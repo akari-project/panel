@@ -61,6 +61,7 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 	hash := refreshHash(refresh)
 	var (
 		out     Tokens
+		parent  uuid.UUID
 		revoked []uuid.UUID
 		reused  bool
 	)
@@ -106,6 +107,7 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 		if err := q.MarkSessionUsed(ctx, sqlc.MarkSessionUsedParams{ID: sess.ID, Now: &now}); err != nil {
 			return err
 		}
+		parent = sess.ID
 		idle := ClientIdle
 		out, err = s.newSession(ctx, q, sess.AccountID, *sess.DeviceID, token.Audience(sess.Audience), &sess.ID,
 			ua, ipPrefix, idle, absolute, nil)
@@ -132,7 +134,14 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 	case out.Access == "":
 		return Tokens{}, ErrInvalidGrant
 	}
+	s.carryReauth(ctx, parent, out.SessionID)
 	return out, nil
+}
+
+// carryReauth 把上一会话的重新验证状态连同剩余有效期复制到轮换后的会话（AUTH-23 的 5 分钟窗口按会话链计算）。
+// 复制失败时新会话需要重新验证，不影响刷新本身。
+func (s *Service) carryReauth(ctx context.Context, from, to uuid.UUID) {
+	_ = s.kv(ctx, s.KV.B().Copy().Source(reauthKey(from)).Destination(reauthKey(to)).Build())[0].Error()
 }
 
 func deref(p *string) string {

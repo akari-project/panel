@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -211,6 +212,29 @@ func TestStepUp(t *testing.T) {
 	}
 	if w := e.login(t, "stepup@example.com", "a new strong password", webDevice); w.Code != 201 {
 		t.Fatalf("login after disabling totp: %d", w.Code)
+	}
+}
+
+// 重新验证的 5 分钟窗口按会话链计算：刷新轮换出的新会话继承剩余时间，不延长（AUTH-23）。
+func TestReauthSurvivesRefresh(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "carry@example.com", "correct horse battery")
+	s := e.appLogin(t, "carry@example.com", "correct horse battery")
+	if w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: s.AccessToken, body: `{"password":"correct horse battery"}`}); w.Code != 200 {
+		t.Fatalf("reauth: %d %s", w.Code, w.Body)
+	}
+	e.clk.Advance(2 * time.Minute)
+	w, pair := e.refresh(t, s.RefreshToken, "")
+	if w.Code != 200 {
+		t.Fatalf("refresh: %d %s", w.Code, w.Body)
+	}
+	access := pair["access_token"].(string)
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: access, body: `{"new_password":"a new strong password"}`}); w.Code != 204 {
+		t.Fatalf("step-up after refresh: %d %s", w.Code, w.Body)
+	}
+	e.clk.Advance(session.ReauthTTL - 2*time.Minute)
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: access, body: `{"new_password":"another strong password"}`}); w.Code != 401 {
+		t.Fatalf("window extended by refresh: %d", w.Code)
 	}
 }
 
