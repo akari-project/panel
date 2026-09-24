@@ -89,8 +89,9 @@ func TestBinary(t *testing.T) {
 
 	// /v1/config 的签名密钥（CONV-30）：api 角色缺少时拒绝启动；与访问令牌密钥相同时拒绝启动。
 	for name, env := range map[string]string{
-		"missing":       "PANEL_CONFIG_KEY=",
-		"same as token": "PANEL_CONFIG_KEY=2:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+		"missing":                "PANEL_CONFIG_KEY=",
+		"same as token":          "PANEL_CONFIG_KEY=2:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+		"same as previous token": "PANEL_TOKEN_KEY_PREVIOUS=3:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)),
 	} {
 		cmd := command(bin, dbURL, "api")
 		cmd.Env = append(cmd.Env, env)

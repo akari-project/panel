@@ -106,6 +106,9 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	if err := setting(ctx, q, "registration_policy", &policy); err != nil {
 		return nil, err
 	}
+	if policy != "open" && policy != "invite_only" && policy != "closed" {
+		policy = "open" // 不签发契约之外的取值；服务端注册时另行校验（AUTH-02）
+	}
 	stored := map[string]bool{}
 	if err := setting(ctx, q, "features", &stored); err != nil {
 		return nil, err

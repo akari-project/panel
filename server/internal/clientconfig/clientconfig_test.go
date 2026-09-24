@@ -101,6 +101,7 @@ func TestUserAgent(t *testing.T) {
 		{"Akari/0.1.0 (Windows NT 10.0)", true, "windows", false}, // 未配置的平台不比较
 		{"Akari/0.1.0 (Haiku R1)", true, "", false},               // 无法识别的平台不比较
 		{"Akari/0.1.0", true, "", false},
+		{"Akari/1.3.0 okhttp/5.0 (Android 16) extra (iOS)", true, "android", true}, // 第一个括号
 		{"Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X)", false, "", false},
 		{"AkariX/0.1.0 (iOS 19.1)", false, "", false},
 		{"clash-verge/1.0.0 (iOS 19.1)", false, "", false},

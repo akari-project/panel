@@ -160,8 +160,10 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		if signer, err = clientconfig.ParseKey(cfg.Crypto.ConfigKey); err != nil {
 			return err
 		}
-		if bytes.Equal(signer.PublicKey(), tokens.PublicKey()) {
-			return errors.New("PANEL_CONFIG_KEY must differ from PANEL_TOKEN_KEY (CONV-30)")
+		for _, pk := range tokens.PublicKeys() {
+			if bytes.Equal(signer.PublicKey(), pk) {
+				return errors.New("PANEL_CONFIG_KEY must differ from PANEL_TOKEN_KEY and PANEL_TOKEN_KEY_PREVIOUS (CONV-30)")
+			}
 		}
 		if cfg.Crypto.PreviousTokenKey != "" {
 			// 旧密钥只在轮换后的 30 分钟内需要（AUTH-06），提醒运维按时移除。

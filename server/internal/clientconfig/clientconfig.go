@@ -234,7 +234,7 @@ type Client struct {
 }
 
 // UserAgent 按 API-03 解析 User-Agent：只有以 "<appName>/x.y.z" 开头的才是自研客户端；
-// 平台取括号内第一个词，不区分大小写，iPadOS 对应 ios。预发布与构建后缀被忽略。
+// 平台取第一个括号内的第一个词，不区分大小写，iPadOS 对应 ios。预发布与构建后缀被忽略。
 type UserAgent struct {
 	re *regexp.Regexp
 }
@@ -247,7 +247,7 @@ func NewUserAgent(appName string) (*UserAgent, error) {
 	if !tokenRE.MatchString(appName) {
 		return nil, fmt.Errorf("clientconfig: app name %q is not an RFC 9110 token", appName)
 	}
-	re := regexp.MustCompile(`^` + regexp.QuoteMeta(appName) + `/(\d+)\.(\d+)\.(\d+)\S*(?:\s+\(\s*([^;\s)]+))?`)
+	re := regexp.MustCompile(`^` + regexp.QuoteMeta(appName) + `/(\d+)\.(\d+)\.(\d+)\S*(?:[^(]*\(\s*([^;\s)]+))?`)
 	return &UserAgent{re: re}, nil
 }
 

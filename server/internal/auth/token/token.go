@@ -89,8 +89,14 @@ func parseKey(s string) (key, error) {
 	return key{id: strconv.Itoa(n), sk: sk, pk: sk.Public()}, nil
 }
 
-// PublicKey 返回当前签名密钥的公钥（用于检查与其他签名密钥用途分离，CONV-30）。
-func (k *Keyring) PublicKey() []byte { return k.current.pk.ExportBytes() }
+// PublicKeys 返回当前与旧签名密钥的公钥（用于检查与其他签名密钥用途分离，CONV-30）。
+func (k *Keyring) PublicKeys() [][]byte {
+	out := make([][]byte, 0, len(k.byID))
+	for _, key := range k.byID {
+		out = append(out, key.pk.ExportBytes())
+	}
+	return out
+}
 
 // NewKeyring 从环境变量形式的当前密钥与可选的旧密钥建立密钥环。
 func NewKeyring(clk clock.Clock, current, previous string) (*Keyring, error) {

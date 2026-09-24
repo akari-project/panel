@@ -103,6 +103,15 @@ func TestGetConfig(t *testing.T) {
 	}
 }
 
+// settings 中出现契约之外的注册策略时按 open 签发，不下发非法取值。
+func TestConfigRegistrationPolicyFallback(t *testing.T) {
+	e := newEnv(t)
+	e.setSetting(t, "registration_policy", `"members_only"`)
+	if _, _, _, p := e.getConfig(t, "", ""); p["registration_policy"] != "open" {
+		t.Fatalf("registration_policy = %v", p["registration_policy"])
+	}
+}
+
 // API-03：只有契约列出 426 的入口操作检查自研客户端最低版本；浏览器、第三方客户端与 /v1/config 不检查。
 func TestUpgradeRequired(t *testing.T) {
 	e := newEnv(t)
