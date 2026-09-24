@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.3.0'
+  version: '0.4.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -8005,6 +8005,7 @@ paths:
                   username: 'noreply@example.com'
                   has_password: true
                   from_address: 'Akari <noreply@example.com>'
+                  tls: starttls
                 updated_at: '2026-09-01T10:00:00+08:00'
           headers:
             ETag:
@@ -8071,6 +8072,7 @@ paths:
                   username: 'noreply@example.com'
                   has_password: true
                   from_address: 'Akari <noreply@example.com>'
+                  tls: starttls
                 updated_at: '2026-09-01T10:00:00+08:00'
           headers:
             ETag:
@@ -13173,6 +13175,7 @@ components:
           - port
           - has_password
           - from_address
+          - tls
           properties:
             host:
               type: string
@@ -13185,6 +13188,13 @@ components:
               type: boolean
             from_address:
               type: string
+            tls:
+              type: string
+              enum: [starttls, implicit, none]
+              default: starttls
+              description: |
+                连接加密（spec/03 3.6）：`starttls` 要求 STARTTLS，服务器不支持即投递失败；`implicit` 为隐式 TLS（常用端口 465）；
+                `none` 为明文，只用于本机或可信内网中继（例如开发环境的 Mailpit）。不提供跳过证书校验的选项。
         updated_at:
           type: string
           format: date-time
@@ -13284,6 +13294,12 @@ components:
               writeOnly: true
             from_address:
               type: string
+            tls:
+              type: string
+              enum: [starttls, implicit, none]
+              description: |
+                连接加密（spec/03 3.6）：`starttls` 要求 STARTTLS，服务器不支持即投递失败；`implicit` 为隐式 TLS（常用端口 465）；
+                `none` 为明文，只用于本机或可信内网中继（例如开发环境的 Mailpit）。不提供跳过证书校验的选项。省略时保持原值，从未设置过视为 `starttls`。组合校验按合并后的结果进行：端口 465 与 `starttls`、`none` 与 `username` 同时成立时返回 400 invalid_request（not_allowed）。
       minProperties: 1
     Staff:
       type: object

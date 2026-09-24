@@ -5,12 +5,16 @@ package notify
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"io"
 	"mime"
 	"mime/quotedprintable"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/mail"
 	"strconv"
 	"strings"
@@ -21,12 +25,15 @@ import (
 )
 
 // fakeSMTP 是最小的 SMTP 服务器：不支持 STARTTLS 与 AUTH，收到的邮件写入 got。
-// rcptCode 非 0 时对 RCPT 返回该回复码。
-func fakeSMTP(t *testing.T, rcptCode int) (addr string, got chan string) {
+// rcptCode 非 0 时对 RCPT 返回该回复码；implicit 非 nil 时在该 TLS 配置下监听（隐式 TLS）。
+func fakeSMTP(t *testing.T, rcptCode int, implicit *tls.Config) (addr string, got chan string) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if implicit != nil {
+		ln = tls.NewListener(ln, implicit)
 	}
 	t.Cleanup(func() { ln.Close() })
 	got = make(chan string, 1)
@@ -79,11 +86,16 @@ func fakeSMTP(t *testing.T, rcptCode int) (addr string, got chan string) {
 	return ln.Addr().String(), got
 }
 
-func sender(t *testing.T, addr, username string) SMTPSender {
+// sender 写入 smtp 设置；mode 为空时不写 tls 键（取缺省 starttls）。
+func sender(t *testing.T, addr, username, mode string) SMTPSender {
 	t.Helper()
 	pool := testdb.New(t)
 	host, port, _ := net.SplitHostPort(addr)
-	cfg := `{"host":"` + host + `","port":` + port + `,"username":"` + username + `","from_address":"Akari <noreply@example.com>"}`
+	cfg := `{"host":"` + host + `","port":` + port + `,"username":"` + username + `","from_address":"Akari <noreply@example.com>"`
+	if mode != "" {
+		cfg += `,"tls":"` + mode + `"`
+	}
+	cfg += `}`
 	if _, err := pool.Exec(context.Background(), `INSERT INTO settings (key, value) VALUES ('smtp', $1)`, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +103,8 @@ func sender(t *testing.T, addr, username string) SMTPSender {
 }
 
 func TestSMTPSend(t *testing.T) {
-	addr, got := fakeSMTP(t, 0)
-	s := sender(t, addr, "")
+	addr, got := fakeSMTP(t, 0, nil)
+	s := sender(t, addr, "", TLSNone)
 	err := s.Send(context.Background(), Email{To: "u@example.com", Subject: "Akari 邮箱验证码", Body: "验证码：123456\n第二行\n"})
 	if err != nil {
 		t.Fatal(err)
@@ -115,20 +127,77 @@ func TestSMTPSend(t *testing.T) {
 
 // 回复码归类；错误文本不含服务器返回的内容（其中可能有收件地址，CONV-24）。
 func TestSMTPErrors(t *testing.T) {
-	addr, _ := fakeSMTP(t, 550)
-	s := sender(t, addr, "")
+	addr, _ := fakeSMTP(t, 550, nil)
+	s := sender(t, addr, "", TLSNone)
 	err := s.Send(context.Background(), Email{To: "nobody@example.com", Subject: "s", Body: "b"})
 	var se *SMTPError
 	if !errors.As(err, &se) || se.Class() != "smtp_rcpt_5xx" || strings.Contains(err.Error(), "@") {
 		t.Fatalf("err = %v", err)
 	}
 
-	// 配置了用户名而服务器不支持 STARTTLS：拒绝在明文连接上发送密码。
-	addr2, _ := fakeSMTP(t, 0)
-	s2 := sender(t, addr2, "user")
-	if err := s2.Send(context.Background(), Email{To: "u@example.com", Subject: "s", Body: "b"}); !errors.As(err, &se) || se.Class() != "smtp_tls" {
-		t.Fatalf("auth without TLS: %v", err)
+}
+
+// 加密方式（spec/03 3.6）：缺省要求 STARTTLS，不降级；none 不允许认证；implicit 校验服务器证书。
+func TestSMTPTLSModes(t *testing.T) {
+	m := Email{To: "u@example.com", Subject: "s", Body: "b"}
+	var se *SMTPError
+	for _, tc := range []struct{ name, username, mode string }{
+		{"starttls default, server lacks STARTTLS", "", ""},
+		{"explicit starttls, server lacks STARTTLS", "user", TLSStartTLS},
+		{"none with username", "user", TLSNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr, got := fakeSMTP(t, 0, nil)
+			if err := sender(t, addr, tc.username, tc.mode).Send(context.Background(), m); !errors.As(err, &se) || se.Class() != "smtp_tls" {
+				t.Fatalf("err = %v", err)
+			}
+			select {
+			case <-got:
+				t.Fatal("message delivered")
+			default:
+			}
+		})
 	}
+
+	t.Run("unknown mode", func(t *testing.T) {
+		addr, _ := fakeSMTP(t, 0, nil)
+		if err := sender(t, addr, "", "ssl").Send(context.Background(), m); !errors.Is(err, ErrNotConfigured) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	// httptest 的测试证书包含 127.0.0.1，用作隐式 TLS 服务器的证书。
+	ts := httptest.NewUnstartedServer(nil)
+	ts.StartTLS()
+	t.Cleanup(ts.Close)
+	roots := ts.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	serverTLS := &tls.Config{Certificates: ts.TLS.Certificates}
+
+	t.Run("implicit", func(t *testing.T) {
+		addr, got := fakeSMTP(t, 0, serverTLS)
+		s := sender(t, addr, "", TLSImplicit)
+		s.RootCAs = roots
+		if err := s.Send(context.Background(), m); err != nil {
+			t.Fatal(err)
+		}
+		if raw := <-got; !strings.Contains(raw, "Subject: s") {
+			t.Fatalf("message = %q", raw)
+		}
+	})
+
+	t.Run("implicit untrusted certificate", func(t *testing.T) {
+		addr, got := fakeSMTP(t, 0, serverTLS)
+		s := sender(t, addr, "", TLSImplicit)
+		s.RootCAs = x509.NewCertPool()
+		if err := s.Send(context.Background(), m); !errors.As(err, &se) || se.Class() != "smtp_tls" {
+			t.Fatalf("err = %v", err)
+		}
+		select {
+		case <-got:
+			t.Fatal("message delivered")
+		default:
+		}
+	})
 }
 
 func TestSMTPNotConfigured(t *testing.T) {
@@ -139,7 +208,7 @@ func TestSMTPNotConfigured(t *testing.T) {
 }
 
 func TestSMTPPasswordDecrypted(t *testing.T) {
-	s := sender(t, "127.0.0.1:1", "user")
+	s := sender(t, "127.0.0.1:1", "user", "")
 	ct, _ := s.Keys.Seal([]byte("s3cret"), passwordAD)
 	v := `"` + base64.StdEncoding.EncodeToString(ct) + `"`
 	if _, err := s.Pool.Exec(context.Background(), `INSERT INTO settings (key, value) VALUES ('smtp_password_enc', $1)`, v); err != nil {

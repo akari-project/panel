@@ -184,12 +184,18 @@ func (s *Server) IssueToken(ctx context.Context, req gen.IssueTokenRequestObject
 	if err != nil {
 		return nil, err
 	}
-	pair := gen.TokenPair{TokenType: "Bearer", ExpiresIn: int(token.TTL.Seconds()), DeviceId: &t.DeviceID}
+	var body gen.IssueToken200JSONResponseBody
 	if web {
-		// 浏览器的令牌只在 Cookie 中（AUTH-08）；契约中这两个字段为必填，以空串占位。
+		// 浏览器的令牌只在 Cookie 中，响应体不含令牌（AUTH-08，契约 CookieTokenRefresh）。
 		setTokenCookies(ctx, t, s.d.Clock.Now())
+		err = body.FromCookieTokenRefresh(gen.CookieTokenRefresh{TokenType: "Bearer", ExpiresIn: int(token.TTL.Seconds()), DeviceId: &t.DeviceID})
 	} else {
-		pair.AccessToken, pair.RefreshToken = t.Access, t.Refresh
+		err = body.FromTokenPair(gen.TokenPair{
+			AccessToken: t.Access, RefreshToken: t.Refresh, TokenType: "Bearer", ExpiresIn: int(token.TTL.Seconds()), DeviceId: &t.DeviceID,
+		})
 	}
-	return gen.IssueToken200JSONResponse{Body: pair, Headers: gen.IssueToken200ResponseHeaders{CacheControl: &noStore}}, nil
+	if err != nil {
+		return nil, err
+	}
+	return gen.IssueToken200JSONResponse{Body: body, Headers: gen.IssueToken200ResponseHeaders{CacheControl: &noStore}}, nil
 }

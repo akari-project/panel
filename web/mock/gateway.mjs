@@ -82,7 +82,7 @@ export function createGateway({ api, upstream, authCookie, app }) {
   function refreshToken(cookies, res) {
     if (cookies[sessionCookie]) {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'set-cookie': [setFlag(accessCookie, true)] });
-      res.end(JSON.stringify({ access_token: '', refresh_token: '', token_type: 'Bearer', expires_in: 900 }));
+      res.end(JSON.stringify({ token_type: 'Bearer', expires_in: 900 }));
     } else {
       res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ error: 'invalid_grant', error_description: 'mock: no session' }));

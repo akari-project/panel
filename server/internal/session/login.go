@@ -214,25 +214,39 @@ func (s *Service) registerDevice(ctx context.Context, q *sqlc.Queries, acct uuid
 		case errors.Is(err, pgx.ErrNoRows):
 		case err != nil:
 			return uuid.Nil, err
-		case d.Platform != "web" && len(d.PublicKey) == ed25519.PublicKeySize && verifyProof(d.PublicKey, in.Device.Proof):
+		case d.Platform != "web" && len(d.PublicKey) == ed25519.PublicKeySize && verifyProof(d.PublicKey, d.ID, in.Device.Proof):
 			return d.ID, q.TouchDevice(ctx, sqlc.TouchDeviceParams{ID: d.ID, Model: in.Device.Model, AppVersion: in.Device.AppVersion, Now: &now})
 		}
 	}
 	var pk []byte
 	if pubKey != nil {
 		pk = []byte(pubKey)
+		// 同一账号未吊销的设备公钥不得重复（AUTH-10）：已有设备应通过设备证明复用。
+		taken, err := q.ActiveDeviceKeyExists(ctx, sqlc.ActiveDeviceKeyExistsParams{AccountID: acct, PublicKey: pk})
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if taken {
+			return uuid.Nil, apierr.Invalid(apierr.Field("device.public_key", "not_allowed"))
+		}
 	}
 	return q.InsertDevice(ctx, sqlc.InsertDeviceParams{
 		AccountID: acct, Platform: in.Device.Platform, Model: in.Device.Model, AppVersion: in.Device.AppVersion, PublicKey: pk, Now: &now,
 	})
 }
 
-func verifyProof(pub []byte, p *Proof) bool {
+// ProofMessage 是设备证明的签名对象（AUTH-10）：前缀与扫码批准的签名对象不同（域分隔），
+// device_id 为小写、带连字符的 UUID，nonce 按接口返回值原样拼入。
+func ProofMessage(device uuid.UUID, nonce string) []byte {
+	return []byte("akari-device-proof-v1|" + device.String() + "|" + nonce)
+}
+
+func verifyProof(pub []byte, device uuid.UUID, p *Proof) bool {
 	sig, err := base64.StdEncoding.DecodeString(p.Signature)
-	if err != nil {
+	if err != nil || len(sig) != ed25519.SignatureSize {
 		return false
 	}
-	return ed25519.Verify(ed25519.PublicKey(pub), []byte(p.Nonce), sig)
+	return ed25519.Verify(ed25519.PublicKey(pub), ProofMessage(device, p.Nonce), sig)
 }
 
 // issueCredential 决定非 web 设备的凭据状态，必要时生成凭据（AUTH-13、AUTH-14）。

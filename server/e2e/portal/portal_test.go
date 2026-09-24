@@ -122,7 +122,7 @@ func TestM1_01_PortalPlaywright(t *testing.T) {
 	pool, dbURL := testdb.NewWithURL(t)
 	kvc, _ := testkv.NewWithURL(t)
 	smtpHost, smtpPort, mailpit := startMailpit(t)
-	smtp, _ := json.Marshal(map[string]any{"host": smtpHost, "port": smtpPort, "from_address": "Akari <noreply@example.com>"})
+	smtp, _ := json.Marshal(map[string]any{"host": smtpHost, "port": smtpPort, "from_address": "Akari <noreply@example.com>", "tls": "none"})
 	if _, err := pool.Exec(ctx, `INSERT INTO settings (key, value) VALUES ('smtp', $1)`, smtp); err != nil {
 		t.Fatal(err)
 	}
