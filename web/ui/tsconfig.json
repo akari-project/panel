@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "@testing-library/jest-dom/vitest"]
+  },
+  "include": ["src", "vitest.config.ts", "vitest.setup.ts"]
+}

@@ -1,0 +1,87 @@
+{
+  "loading": "加载中…",
+  "empty": "暂无内容",
+  "retry": "重试",
+  "request_id": "请求编号：{{id}}",
+  "skip_to_content": "跳到主要内容",
+  "open_menu": "打开菜单",
+  "close_menu": "关闭菜单",
+  "main_navigation": "主导航",
+  "source_code": "源代码",
+  "sign_out": "退出登录",
+  "theme": {
+    "label": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统"
+  },
+  "language": {
+    "label": "语言",
+    "zh-CN": "简体中文",
+    "en": "English"
+  },
+  "not_found": {
+    "title": "页面不存在",
+    "back_home": "返回首页"
+  },
+  "errors": {
+    "invalid_request": "请求参数有误，请检查后重试。",
+    "unauthenticated": "登录已失效，请重新登录。",
+    "mfa_required": "需要二次验证。",
+    "forbidden": "没有权限执行此操作。",
+    "email_unverified": "邮箱尚未验证。",
+    "registration_closed": "注册已关闭。",
+    "account_suspended": "账号已暂停或正在注销。",
+    "not_found": "内容不存在。",
+    "conflict": "数据已被修改，请刷新后重试。",
+    "invalid_state": "当前状态不允许此操作。",
+    "quote_expired": "报价已过期，请重新获取。",
+    "entitlement_required": "需要生效中的套餐。",
+    "device_limit_reached": "设备数已达上限。",
+    "payment_unavailable": "支付暂不可用。",
+    "kernel_protocol_unsupported": "内核不支持该协议或传输。",
+    "payload_too_large": "内容超过大小上限。",
+    "idempotency_key_reused": "重复提交的请求内容不一致。",
+    "upgrade_required": "客户端版本过低，请升级。",
+    "precondition_required": "缺少版本信息，请刷新后重试。",
+    "rate_limited": "操作过于频繁，请稍后再试。",
+    "internal": "服务出错了，请稍后再试。",
+    "service_unavailable": "服务暂时不可用，请稍后再试。",
+    "network": "网络连接失败，请检查网络后重试。",
+    "unknown": "发生未知错误。"
+  },
+  "field_errors": {
+    "required": "必填",
+    "invalid_format": "格式不正确",
+    "too_short": "太短",
+    "too_long": "太长",
+    "out_of_range": "超出范围",
+    "not_allowed": "不被允许",
+    "invalid_code": "无效",
+    "incorrect": "不正确",
+    "expired": "已过期",
+    "exhausted": "次数已用完",
+    "taken": "已被占用"
+  },
+  "sign_in": {
+    "email": "邮箱",
+    "password": "密码",
+    "submit": "登录",
+    "mfa_title": "二次验证",
+    "mfa_hint": "请输入身份验证器中的 6 位验证码。",
+    "totp_code": "验证码",
+    "recovery_code": "恢复码",
+    "use_recovery": "改用恢复码",
+    "use_totp": "改用验证码",
+    "verify": "验证",
+    "back": "返回",
+    "enroll_hint": "首次登录需要绑定身份验证器。请在身份验证器中添加以下密钥，然后输入生成的验证码。",
+    "enroll_secret": "密钥",
+    "failed": "邮箱、密码或验证码不正确。"
+  },
+  "validation": {
+    "required": "必填",
+    "email": "请输入有效的邮箱地址",
+    "totp": "请输入 6 位数字"
+  }
+}
