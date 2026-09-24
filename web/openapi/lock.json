@@ -1,11 +1,11 @@
 {
   "repository": "akari-project/panel-spec",
-  "ref": "73c520c",
+  "ref": "v0.4.0",
   "sources": {
     "client.v1.yaml": "openapi/client/v1.yaml",
     "console.v1.yaml": "openapi/console/v1.yaml"
   },
-  "commit": "73c520c9a3d153ccdea70886c6f87a949c04a899",
+  "commit": "861af1ccded5347eded64f77e67ecf8ae576c5e2",
   "files": {
     "client.v1.yaml": "ff8714e14a1a9e77b311682a5e71d9ccf3862d6b09e15d084265ce859d8ac098",
     "console.v1.yaml": "50e3ff794950ab718b50fcf31071cf4eef2a3b068728336a193a8c93c5aa9a8e"
