@@ -5,5 +5,5 @@ import { defineConfig } from 'vite';
 import { panel } from '../tooling/vite-panel.ts';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), panel({ mockTarget: 'http://127.0.0.1:4001', devPort: 5174, siteName: 'Akari admin (dev)' })],
+  plugins: [react(), tailwindcss(), panel({ app: 'admin', mockTarget: 'http://127.0.0.1:4001', devPort: 5174, siteName: 'Akari admin (dev)' })],
 });

@@ -8,7 +8,7 @@ test('未登录跳转到登录页，登录后进入首页', async ({ page }) => 
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible();
   // 站点名称与源代码链接来自注入的 window.__PANEL_CONFIG__（UI-06、UI-07）。
   await expect(page).toHaveTitle('Akari');
-  await expect(page.getByRole('link', { name: '源代码' })).toHaveAttribute('href', 'https://github.com/akari-project/panel');
+  await expect(page.getByRole('link', { name: '源代码' })).toHaveAttribute('href', 'https://github.com/akari-project/panel/tree/mock-revision');
 
   await page.getByLabel('邮箱').fill('alice@example.com');
   await page.getByLabel('密码').fill('correct-horse-battery');

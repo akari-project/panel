@@ -50,3 +50,9 @@ test('路径前缀下的深层路径', async ({ page }) => {
   await page.getByRole('link', { name: '返回首页' }).click();
   await expect(page).toHaveURL(/\/admin\/login\?redirect=%2F$/);
 });
+
+test('服务端不改写相对路径时，挂载路径由入口脚本地址推出', async ({ page }) => {
+  await page.goto('http://127.0.0.1:4102/admin/');
+  await expect(page).toHaveURL('http://127.0.0.1:4102/admin/login?redirect=%2F');
+  await expect(page.getByRole('heading', { name: '管理后台登录' })).toBeVisible();
+});

@@ -43,7 +43,7 @@ describe('admin', () => {
     render(
       <App
         api={createConsoleApi({ baseUrl: 'https://console.example.invalid', fetch: server.fetch })}
-        config={readPanelConfig({ site_name: 'Akari Console', base_path: '/admin/' })}
+        config={readPanelConfig({ site_name: 'Akari Console' }, '/admin/')}
         i18n={createAdminI18n('zh-CN')}
         history={createMemoryHistory({ initialEntries: ['/admin/'] })}
       />,

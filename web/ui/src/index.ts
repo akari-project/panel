@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 export { cn } from './cn';
-export { readPanelConfig, type PanelConfig } from './runtime-config';
+export { readPanelConfig, basePathFromModule, type PanelConfig } from './runtime-config';
 export { applyCspNonce } from './csp';
 export { installChunkReload } from './chunk-reload';
 export { formatMoney, formatBytes, formatDateTime } from './format';

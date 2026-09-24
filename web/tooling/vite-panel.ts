@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // portal 与 admin 共用的 Vite 插件，负责与控制面嵌入相关的构建约定（spec/40 DEP-01–06、spec/32 UI-06）：
 // - 产物只使用相对路径（base './'）；
-// - index.html 保留占位注释 <!--panel-config-->，由控制面替换为带 nonce 的 window.__PANEL_CONFIG__ 脚本；
-//   开发服务器在本地替换为开发配置；
+// - 控制面返回 index.html 时在 </head> 前插入带 nonce 的 window.__PANEL_CONFIG__ 脚本，并为已有的
+//   <script>/<style> 补 nonce；开发服务器以同样的方式插入开发配置；
 // - 主题初始化脚本以外部文件加载（CSP 不允许内联脚本）；
 // - 构建后写 dist/build.json（git 提交），并为资源预压缩 br 与 gzip。
 import { execFileSync } from 'node:child_process';
@@ -12,9 +12,9 @@ import { join, relative, resolve } from 'node:path';
 import { brotliCompressSync, constants as zc, gzipSync } from 'node:zlib';
 import type { Plugin, UserConfig } from 'vite';
 
-export const CONFIG_PLACEHOLDER = '<!--panel-config-->';
-
 export interface PanelPluginOptions {
+  /** 应用名，开发时写入运行时配置的 app */
+  app: 'portal' | 'admin';
   /** 开发时本地 Mock 网关的地址，/v1 请求代理到这里（pnpm mock） */
   mockTarget: string;
   /** 开发服务器端口 */
@@ -87,19 +87,16 @@ export function panel(opts: PanelPluginOptions): Plugin {
       isBuild = cfg.command === 'build';
     },
     transformIndexHtml(html) {
-      if (!html.includes(CONFIG_PLACEHOLDER)) {
-        throw new Error(`index.html 缺少占位注释 ${CONFIG_PLACEHOLDER}`);
-      }
       if (isBuild) {
         return {
           html,
           tags: [{ tag: 'script', attrs: { src: `./${themeInitName}` }, injectTo: 'head' }],
         };
       }
-      const devConfig = { site_name: opts.siteName, api_base_url: '', source_url: '', base_path: '/', csp_nonce: '' };
+      const devConfig = { app: opts.app, site_name: opts.siteName, api_base_url: '', source_url: '', source_revision: '', csp_nonce: '' };
       return html.replace(
-        CONFIG_PLACEHOLDER,
-        `<script>window.__PANEL_CONFIG__=${JSON.stringify(devConfig)}</script><script>${themeInit}</script>`,
+        '</head>',
+        `<script>${themeInit}</script><script>window.__PANEL_CONFIG__=${JSON.stringify(devConfig)}</script></head>`,
       );
     },
     generateBundle() {

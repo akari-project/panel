@@ -2,12 +2,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createClientApi } from '@panel/sdk';
-import { applyCspNonce, installChunkReload, readPanelConfig } from '@panel/ui';
+import { applyCspNonce, basePathFromModule, installChunkReload, readPanelConfig } from '@panel/ui';
 import { App } from './app';
 import { createPortalI18n } from './i18n';
 import './styles.css';
 
-const config = readPanelConfig();
+const config = readPanelConfig(window.__PANEL_CONFIG__, basePathFromModule(import.meta.url));
 applyCspNonce(config.csp_nonce);
 installChunkReload();
 document.title = config.site_name;

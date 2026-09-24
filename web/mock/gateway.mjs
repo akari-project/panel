@@ -7,13 +7,11 @@
 //    登出（DELETE /v1/sessions/current 返回 204）时清除该 Cookie。
 // 2. 两步登录：提交密码时，管理接口一律返回 401 mfa_required（AUTH-21）；客户端接口在邮箱以 mfa 开头时返回。
 // 3. 可选地托管构建产物，并按 spec/40 DEP-02–05 模拟控制面：SPA 回退、注入 window.__PANEL_CONFIG__、
-//    重写 index.html 中的相对路径、安全头与 CSP nonce。用于在嵌入前验证产物（M0-06 验收 4）。
+//    为已有脚本补 nonce、重写 index.html 中的相对路径、安全头与 CSP nonce。用于在嵌入前验证产物（M0-06 验收 4）。
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
-
-const CONFIG_PLACEHOLDER = '<!--panel-config-->';
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -56,7 +54,7 @@ function parseJson(buf) {
  * @param {'client'|'console'} o.api
  * @param {string} o.upstream           Prism 地址，例如 http://127.0.0.1:4010
  * @param {string} o.authCookie         OpenAPI 声明的认证 Cookie 名
- * @param {{dir: string, basePath: string, config: object}} [o.app] 托管的构建产物
+ * @param {{name: string, dir: string, basePath: string, config: object, rewriteRelative?: boolean}} [o.app] 托管的构建产物
  */
 export function createGateway({ api, upstream, authCookie, app }) {
   const sessionCookie = `panel_mock_${api}`;
@@ -108,11 +106,15 @@ export function createGateway({ api, upstream, authCookie, app }) {
       return;
     }
     const nonce = randomBytes(16).toString('base64');
-    const config = { ...app.config, base_path: app.basePath, csp_nonce: nonce };
+    const config = { app: app.name, ...app.config, csp_nonce: nonce };
     const json = JSON.stringify(config).replace(/</g, '\\u003c');
-    const html = readFileSync(indexPath, 'utf8')
-      .replace(CONFIG_PLACEHOLDER, `<script nonce="${nonce}">window.__PANEL_CONFIG__=${json}</script>`)
-      .replace(/(src|href)="\.\//g, `$1="${app.basePath}`);
+    let html = readFileSync(indexPath, 'utf8')
+      // 与 M0-05 约定：为已有的 <script>/<style> 补 nonce，并在 </head> 前插入配置脚本。
+      .replace(/<(script|style)(?=[\s>])/g, `<$1 nonce="${nonce}"`)
+      .replace('</head>', `<script nonce="${nonce}">window.__PANEL_CONFIG__=${json}</script></head>`);
+    // 待定（见 README）：深层路径的 SPA 回退页面中，相对路径会相对当前路径解析。
+    // 这里按提议把 src="./、href="./ 改为挂载路径；rewriteRelative 为 false 时模拟不改写的服务端。
+    if (app.rewriteRelative !== false) html = html.replace(/(src|href)="\.\//g, `$1="${app.basePath}`);
     res.writeHead(200, {
       'content-type': mimeTypes['.html'],
       'cache-control': 'no-cache',

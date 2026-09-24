@@ -42,17 +42,18 @@ pnpm gen                         # 重新生成 sdk/src/*.gen.ts
 
 - 产物位于 `portal/dist`、`admin/dist`，资源全部为相对路径（`./assets/...`），带哈希的文件在 `assets/` 下，并有预压缩的 `.br` 与 `.gz`（`index.html` 除外）。
 - `dist/build.json` 为 `{"commit": "<git 提交>"}`；提交取自环境变量 `PANEL_BUILD_COMMIT`，否则取 `git rev-parse HEAD`。
-- `index.html` 的 `<head>` 中有占位注释 `<!--panel-config-->`。控制面返回 `index.html` 时：
-  1. 把占位注释替换为 `<script nonce="{n}">window.__PANEL_CONFIG__={JSON}</script>`，JSON 中的 `<` 转义为 `<`；
-  2. 把属性中以 `src="./`、`href="./` 开头的相对路径改为以 `base_path` 开头，使深层路径下的 SPA 回退页面也能加载资源（CSP 为 `base-uri 'none'`，不能使用 `<base>`）。
-- `window.__PANEL_CONFIG__` 的字段：
+- 控制面返回 `index.html` 时，为已有的 `<script>`、`<style>` 补 `nonce` 属性，并在 `</head>` 前插入带 nonce 的 `<script>window.__PANEL_CONFIG__={JSON}</script>`（JSON 中的 `<` 转义为 `\u003c`）。字段：
 
 | 字段 | 说明 |
 |---|---|
+| `app` | `portal` 或 `admin` |
 | `site_name` | 站点名称 |
 | `api_base_url` | 接口根地址，不含 `/v1`；空串表示与页面同源 |
 | `source_url` | 页脚“源代码”链接（ARC-04） |
-| `base_path` | 应用挂载路径，以 `/` 开头和结尾，例如 `/`、`/admin/` |
+| `source_revision` | 当前运行版本的提交 |
 | `csp_nonce` | 与 CSP 头中相同的 nonce，供组件库动态插入的 `<style>` 使用 |
 
-`mock/gateway.mjs` 的 `--serve-dist` 模式按以上约定模拟控制面（含 DEP-05 的安全头），端到端测试在此模式下运行。
+- 挂载路径（`/` 或 `/admin/` 等）不在配置中，由入口脚本的地址推出（`basePathFromModule`）。
+- **待定**：在深层路径（如 `/admin/users/123`）上回退到 `index.html` 时，`./assets/...` 会相对当前路径解析而无法加载；CSP 为 `base-uri 'none'`，不能用 `<base>`。提议控制面同时把属性中以 `src="./`、`href="./` 开头的路径改为挂载路径。
+
+`mock/gateway.mjs` 的 `--serve-dist` 模式按以上约定模拟控制面（含 DEP-05 的安全头与上述提议的路径改写；:4102 不改写），端到端测试在此模式下运行。开发服务器以同样方式插入开发配置。

@@ -46,8 +46,6 @@ jobs:
       - name: 产物只使用相对路径
         run: |
           ! grep -nE '(src|href)="/[^/]' portal/dist/index.html admin/dist/index.html
-          grep -q '<!--panel-config-->' portal/dist/index.html
-          grep -q '<!--panel-config-->' admin/dist/index.html
           test "$(jq -r .commit portal/dist/build.json)" = "$PANEL_BUILD_COMMIT"
           test "$(jq -r .commit admin/dist/build.json)" = "$PANEL_BUILD_COMMIT"
       - run: pnpm exec playwright install --with-deps chromium

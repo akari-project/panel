@@ -5,7 +5,7 @@
 //   客户端接口  Prism :4010  ← 网关 :4000  ← 用户中心开发服务器 :5173（/v1 代理）
 //   管理接口    Prism :4011  ← 网关 :4001  ← 管理后台开发服务器 :5174（/v1 代理）
 //
-// 加 --serve-dist 时，另外启动 :4100（用户中心，挂载在 /）与 :4101（管理后台，挂载在 /admin/），
+// 加 --serve-dist 时，另外启动 :4100（用户中心，挂载在 /）与 :4101、:4102（管理后台，挂载在 /admin/），
 // 托管 portal/dist 与 admin/dist 并模拟控制面的注入，用于端到端测试。
 import { spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -23,8 +23,11 @@ const apis = [
 const apps = [
   { name: 'portal', api: 'client', port: 4100, basePath: '/', siteName: 'Akari' },
   { name: 'admin', api: 'console', port: 4101, basePath: '/admin/', siteName: 'Akari Console' },
+  // 不改写相对路径的服务端（只在挂载路径与其下一级路径上可用），用于验证挂载路径由入口脚本地址推出。
+  { name: 'admin', api: 'console', port: 4102, basePath: '/admin/', siteName: 'Akari Console', rewriteRelative: false },
 ];
 const sourceUrl = 'https://github.com/akari-project/panel';
+const revision = 'mock-revision';
 
 const children = [];
 function shutdown(code = 0) {
@@ -74,9 +77,11 @@ for (const a of apis) {
       upstream,
       authCookie: a.authCookie,
       app: {
+        name: app.name,
+        rewriteRelative: app.rewriteRelative,
         dir: join(webDir, app.name, 'dist'),
         basePath: app.basePath,
-        config: { site_name: app.siteName, api_base_url: '', source_url: sourceUrl },
+        config: { site_name: app.siteName, api_base_url: '', source_url: `${sourceUrl}/tree/${revision}`, source_revision: revision },
       },
     });
     await listen(server, app.port);
