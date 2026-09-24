@@ -1,0 +1,13 @@
+{
+  "nav": {
+    "overview": "概览"
+  },
+  "login": {
+    "title": "登录"
+  },
+  "home": {
+    "title": "概览",
+    "welcome": "欢迎，{{email}}",
+    "empty": "套餐、到期时间与剩余流量将显示在这里。"
+  }
+}

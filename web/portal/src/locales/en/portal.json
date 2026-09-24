@@ -1,0 +1,13 @@
+{
+  "nav": {
+    "overview": "Overview"
+  },
+  "login": {
+    "title": "Sign in"
+  },
+  "home": {
+    "title": "Overview",
+    "welcome": "Welcome, {{email}}",
+    "empty": "Your plan, expiry date and remaining data will appear here."
+  }
+}
