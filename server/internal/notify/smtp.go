@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -37,7 +38,17 @@ type SMTPConfig struct {
 	Port        int    `json:"port"`
 	Username    string `json:"username"`
 	FromAddress string `json:"from_address"`
+	// TLS 是连接加密方式（spec/03 3.6）：starttls（缺省，要求 STARTTLS）、implicit（隐式 TLS，常用端口 465）、
+	// none（明文，只用于本机或可信内网中继）。不提供跳过证书校验的选项。
+	TLS string `json:"tls"`
 }
+
+// 加密方式。
+const (
+	TLSStartTLS = "starttls"
+	TLSImplicit = "implicit"
+	TLSNone     = "none"
+)
 
 // SMTPError 是 SMTP 投递错误。Error 不含服务器返回的文本（可能含收件地址，CONV-24）。
 type SMTPError struct {
@@ -62,6 +73,8 @@ type SMTPSender struct {
 	Clock clock.Clock
 	// Timeout 是单封邮件的时限，默认 30 秒。
 	Timeout time.Duration
+	// RootCAs 为校验服务器证书的根证书，nil 时使用系统根证书（测试中替换）。
+	RootCAs *x509.CertPool
 }
 
 var passwordAD = []byte("settings.smtp_password_enc")
@@ -106,7 +119,8 @@ func (s SMTPSender) config(ctx context.Context) (SMTPConfig, string, error) {
 	return c, password, nil
 }
 
-// Send 投递一封纯文本邮件：服务器支持时使用 STARTTLS；配置了用户名时进行认证，此时必须已加密。
+// Send 投递一封纯文本邮件。加密方式按配置的 tls 取值（缺省 starttls，服务器不支持时失败，不降级）；
+// 配置了用户名时进行认证，tls 为 none 时拒绝发送，不在明文连接上传输密码。
 func (s SMTPSender) Send(ctx context.Context, m Email) error {
 	c, password, err := s.config(ctx)
 	if err != nil {
@@ -123,10 +137,30 @@ func (s SMTPSender) Send(ctx context.Context, m Email) error {
 	if err != nil {
 		return ErrNotConfigured
 	}
+	mode := c.TLS
+	if mode == "" {
+		mode = TLSStartTLS
+	}
+	if mode != TLSStartTLS && mode != TLSImplicit && mode != TLSNone {
+		return ErrNotConfigured
+	}
+	if mode == TLSNone && c.Username != "" {
+		// 不在明文连接上发送密码（CONV-19），保存设置时同样拒绝该组合。
+		return &SMTPError{Stage: "tls"}
+	}
+	tlsConf := &tls.Config{ServerName: c.Host, MinVersion: tls.VersionTLS12, RootCAs: s.RootCAs}
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
-	var dialer net.Dialer
-	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	var conn net.Conn
+	if mode == TLSImplicit {
+		conn, err = (&tls.Dialer{Config: tlsConf}).DialContext(ctx, "tcp", addr)
+	} else {
+		conn, err = (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	}
 	if err != nil {
+		var cv *tls.CertificateVerificationError
+		if errors.As(err, &cv) {
+			return &SMTPError{Stage: "tls"}
+		}
 		return &SMTPError{Stage: "connect"}
 	}
 	if dl, ok := ctx.Deadline(); ok {
@@ -138,18 +172,16 @@ func (s SMTPSender) Send(ctx context.Context, m Email) error {
 		return smtpErr("connect", err)
 	}
 	defer cl.Close()
-	tlsOn := false
-	if ok, _ := cl.Extension("STARTTLS"); ok {
-		if err := cl.StartTLS(&tls.Config{ServerName: c.Host, MinVersion: tls.VersionTLS12}); err != nil {
-			return smtpErr("tls", err)
-		}
-		tlsOn = true
-	}
-	if c.Username != "" {
-		if !tlsOn {
-			// 不在明文连接上发送密码。
+	if mode == TLSStartTLS {
+		// 要求加密：服务器不提供 STARTTLS（或被中间人剥离）时失败，不降级为明文（spec/03 3.6）。
+		if ok, _ := cl.Extension("STARTTLS"); !ok {
 			return &SMTPError{Stage: "tls"}
 		}
+		if err := cl.StartTLS(tlsConf); err != nil {
+			return smtpErr("tls", err)
+		}
+	}
+	if c.Username != "" {
 		if err := cl.Auth(smtp.PlainAuth("", c.Username, password, c.Host)); err != nil {
 			return smtpErr("auth", err)
 		}

@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: Client API
-  version: 0.3.0
+  version: 0.4.0
   summary: 用户中心与自研客户端共用的接口
   description: |
     面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
@@ -742,7 +742,7 @@ paths:
               client_id: tv
       responses:
         '200':
-          description: 新令牌对
+          description: 自研客户端得到新令牌对；浏览器得到不含令牌的响应，新令牌只以 Cookie 下发（AUTH-08）
           headers:
             Cache-Control:
               description: '`no-store`（RFC 6749 §5.1）'
@@ -752,13 +752,27 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenPair'
-              example:
-                access_token: v4.public.eyJzdWIiOiIwMTkyZjBjNCIsInNpZCI6IjAxOTJmMGM1In0.c2lnbmF0dXJl
-                refresh_token: rt_Bx7Jc2Kq9m3Lr5Ns8Pt1Qv4Rw6Sx0Ty2Uz5Va8Wb3Xc
-                token_type: Bearer
-                expires_in: 900
-                device_id: 0192f0c4-4a00-7000-8000-00000000f003
+                description: |
+                  自研客户端（请求体带 `refresh_token` 或 `device_code`）得到 `TokenPair`；浏览器（刷新令牌由 Cookie 携带）
+                  得到 `CookieTokenRefresh`，新令牌只以 Set-Cookie 下发，响应体不含令牌（AUTH-08）。
+                oneOf:
+                - $ref: '#/components/schemas/TokenPair'
+                - $ref: '#/components/schemas/CookieTokenRefresh'
+              examples:
+                app:
+                  summary: 自研客户端
+                  value:
+                    access_token: v4.public.eyJzdWIiOiIwMTkyZjBjNCIsInNpZCI6IjAxOTJmMGM1In0.c2lnbmF0dXJl
+                    refresh_token: rt_Bx7Jc2Kq9m3Lr5Ns8Pt1Qv4Rw6Sx0Ty2Uz5Va8Wb3Xc
+                    token_type: Bearer
+                    expires_in: 900
+                    device_id: 0192f0c4-4a00-7000-8000-00000000f003
+                browser:
+                  summary: 浏览器（令牌在 Cookie 中）
+                  value:
+                    token_type: Bearer
+                    expires_in: 900
+                    device_id: 0192f0c4-4a00-7000-8000-00000000f003
         '400':
           $ref: '#/components/responses/OAuthError'
         default:
@@ -971,7 +985,7 @@ paths:
       summary: 带校验数字批准扫码登录
       description: |
         `check_digits` 与新设备不一致时返回 400（`errors[].code` 为 `invalid_code`），多次失败后请求作废
-        （`exhausted`）。非 web 批准方用本设备私钥对 `id` 与 `check_digits` 签名（AUTH-10）。
+        （`exhausted`）。非 web 批准方用本设备私钥签名，签名对象见 `device_signature`（AUTH-24）。
         请求已批准、已过期时返回 409 `invalid_state`。
       parameters:
       - $ref: '#/components/parameters/Id'
@@ -989,10 +1003,10 @@ paths:
                   pattern: ^[0-9]{2}$
                 device_signature:
                   type: string
-                  description: 非 web 批准方必填：Ed25519 对 `{id}.{check_digits}` 的签名（base64）
+                  description: 非 web 批准方必填：Ed25519 对 UTF-8 字符串 `akari-device-link-approval-v1|<id>|<check_digits>` 的 64 字节签名，以标准 base64（带填充）编码；`id` 为小写、带连字符的 UUID（AUTH-24）
             example:
               check_digits: '47'
-              device_signature: 4n5pZ0l3q2Vx8Kj7Rb1Tc6Ud9We2Yf5Ag8Bh1Ci4Dj7Ek0Fl3Gm6Hn9Io2Jp5Kq8Lr1Ms4Nt7Ou0Pv3Qw6Rx9Sy2Tz5A==
+              device_signature: 1gaLbGdZZWfYLOMWbsB7VKZRg/XPQcJaugvlbb+opyC1piVdtrnUraXa2rN5h0UKn1g3oJ6SrJZZI5SsCo4JIg==
       responses:
         '204':
           description: 已批准
@@ -3500,10 +3514,12 @@ components:
         challenge_id:
           type: string
           format: uuid
-          description: 仅 `mfa_required`：二次验证挑战 ID，5 分钟有效（AUTH-20）
+          description: |
+            仅 `mfa_required`：二次验证挑战 ID，5 分钟有效（AUTH-20）。登录第二步必附；重新验证场景（AUTH-23）不附，
+            Passkey 实现后需要 WebAuthn challenge 时才附带。
         methods:
           type: array
-          description: 仅 `mfa_required`：可用的二次验证方式
+          description: 仅 `mfa_required`：可用的二次验证方式。重新验证场景（AUTH-23）不列出密码（总是可用），账号未启用二次验证时为空数组
           items:
             $ref: '#/components/schemas/MfaMethod'
     ProblemCode:
@@ -3603,14 +3619,19 @@ components:
           maxLength: 32
         public_key:
           type: string
-          description: Ed25519 公钥（SPKI DER 的 base64）；非 web 设备必填（AUTH-10）
+          description: |
+            Ed25519 公钥（SPKI DER 的标准 base64）；非 web 设备必填（AUTH-10）。同一账号未吊销的设备公钥不得重复：
+            未通过设备证明而公钥与已有设备相同时，返回 400 invalid_request（`device.public_key`，`not_allowed`）。
         device_id:
           type: string
           format: uuid
           description: 已有设备的 ID；与 `device_proof` 一起提交以复用原设备记录与名额
         device_proof:
           type: object
-          description: 设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`，`signature` 为该设备 Ed25519 私钥对该 nonce 字符串 UTF-8 字节的签名（base64）
+          description: |
+            设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`；`signature` 为该设备 Ed25519 私钥对 UTF-8 字符串
+            `akari-device-proof-v1|<device_id>|<nonce>` 的 64 字节签名，以标准 base64（带填充）编码。`device_id` 为小写、
+            带连字符的 UUID，`nonce` 按接口返回值原样拼入。前缀使设备证明与扫码批准的签名互不通用（域分隔）。
           required: [nonce, signature]
           properties:
             nonce:
@@ -3751,6 +3772,21 @@ components:
           description: 访问令牌有效秒数
         credential_status:
           $ref: '#/components/schemas/CredentialStatus'
+    CookieTokenRefresh:
+      type: object
+      description: 浏览器刷新令牌的响应：新令牌只以 HttpOnly Cookie 下发，响应体不含令牌（AUTH-08）
+      additionalProperties: false
+      required: [token_type, expires_in]
+      properties:
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: 访问令牌有效秒数
+        device_id:
+          type: string
+          format: uuid
     TokenPair:
       type: object
       required: [access_token, refresh_token, token_type, expires_in]

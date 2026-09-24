@@ -329,6 +329,15 @@ type Accepted struct {
 	Status string `json:"status"`
 }
 
+// CookieTokenRefresh 浏览器刷新令牌的响应：新令牌只以 HttpOnly Cookie 下发，响应体不含令牌（AUTH-08）
+type CookieTokenRefresh struct {
+	DeviceId *openapi_types.UUID `json:"device_id,omitempty"`
+
+	// ExpiresIn 访问令牌有效秒数
+	ExpiresIn int    `json:"expires_in"`
+	TokenType string `json:"token_type"`
+}
+
 // CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
 // `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
 type CredentialStatus string
@@ -340,7 +349,9 @@ type DeviceInfo struct {
 	// DeviceId 已有设备的 ID；与 `device_proof` 一起提交以复用原设备记录与名额
 	DeviceId *openapi_types.UUID `json:"device_id,omitempty"`
 
-	// DeviceProof 设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`，`signature` 为该设备 Ed25519 私钥对该 nonce 字符串 UTF-8 字节的签名（base64）
+	// DeviceProof 设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`；`signature` 为该设备 Ed25519 私钥对 UTF-8 字符串
+	// `akari-device-proof-v1|<device_id>|<nonce>` 的 64 字节签名，以标准 base64（带填充）编码。`device_id` 为小写、
+	// 带连字符的 UUID，`nonce` 按接口返回值原样拼入。前缀使设备证明与扫码批准的签名互不通用（域分隔）。
 	DeviceProof *struct {
 		Nonce     string `json:"nonce"`
 		Signature string `json:"signature"`
@@ -350,7 +361,8 @@ type DeviceInfo struct {
 	// Platform 设备平台；`web` 为浏览器中的用户中心
 	Platform Platform `json:"platform"`
 
-	// PublicKey Ed25519 公钥（SPKI DER 的 base64）；非 web 设备必填（AUTH-10）
+	// PublicKey Ed25519 公钥（SPKI DER 的标准 base64）；非 web 设备必填（AUTH-10）。同一账号未吊销的设备公钥不得重复：
+	// 未通过设备证明而公钥与已有设备相同时，返回 400 invalid_request（`device.public_key`，`not_allowed`）。
 	PublicKey *string `json:"public_key,omitempty"`
 }
 
@@ -435,7 +447,8 @@ type Platform string
 
 // Problem RFC 9457 problem details（CONV-16）
 type Problem struct {
-	// ChallengeId 仅 `mfa_required`：二次验证挑战 ID，5 分钟有效（AUTH-20）
+	// ChallengeId 仅 `mfa_required`：二次验证挑战 ID，5 分钟有效（AUTH-20）。登录第二步必附；重新验证场景（AUTH-23）不附，
+	// Passkey 实现后需要 WebAuthn challenge 时才附带。
 	ChallengeId *openapi_types.UUID `json:"challenge_id,omitempty"`
 
 	// Code 错误码，取值见 spec/02 CONV-16
@@ -452,7 +465,7 @@ type Problem struct {
 	} `json:"errors,omitempty"`
 	Instance *string `json:"instance,omitempty"`
 
-	// Methods 仅 `mfa_required`：可用的二次验证方式
+	// Methods 仅 `mfa_required`：可用的二次验证方式。重新验证场景（AUTH-23）不列出密码（总是可用），账号未启用二次验证时为空数组
 	Methods   *[]MfaMethod `json:"methods,omitempty"`
 	RequestId string       `json:"request_id"`
 	Status    int          `json:"status"`
@@ -642,6 +655,11 @@ type IssueTokenFormdataBody struct {
 // IssueTokenFormdataBodyGrantType defines parameters for IssueToken.
 type IssueTokenFormdataBodyGrantType string
 
+// IssueToken200JSONResponseBody defines parameters for IssueToken.
+type IssueToken200JSONResponseBody struct {
+	union json.RawMessage
+}
+
 // RequestPasswordResetJSONBody defines parameters for RequestPasswordReset.
 type RequestPasswordResetJSONBody struct {
 	CaptchaToken *string             `json:"captcha_token,omitempty"`
@@ -813,6 +831,68 @@ func (t Reauthentication) MarshalJSON() ([]byte, error) {
 }
 
 func (t *Reauthentication) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsTokenPair returns the union data inside the IssueToken200JSONResponseBody as a TokenPair
+func (t IssueToken200JSONResponseBody) AsTokenPair() (TokenPair, error) {
+	var body TokenPair
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTokenPair overwrites any union data inside the IssueToken200JSONResponseBody as the provided TokenPair
+func (t *IssueToken200JSONResponseBody) FromTokenPair(v TokenPair) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTokenPair performs a merge with any union data inside the IssueToken200JSONResponseBody, using the provided TokenPair
+func (t *IssueToken200JSONResponseBody) MergeTokenPair(v TokenPair) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCookieTokenRefresh returns the union data inside the IssueToken200JSONResponseBody as a CookieTokenRefresh
+func (t IssueToken200JSONResponseBody) AsCookieTokenRefresh() (CookieTokenRefresh, error) {
+	var body CookieTokenRefresh
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCookieTokenRefresh overwrites any union data inside the IssueToken200JSONResponseBody as the provided CookieTokenRefresh
+func (t *IssueToken200JSONResponseBody) FromCookieTokenRefresh(v CookieTokenRefresh) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCookieTokenRefresh performs a merge with any union data inside the IssueToken200JSONResponseBody, using the provided CookieTokenRefresh
+func (t *IssueToken200JSONResponseBody) MergeCookieTokenRefresh(v CookieTokenRefresh) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t IssueToken200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *IssueToken200JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -2433,14 +2513,14 @@ type IssueToken200ResponseHeaders struct {
 }
 
 type IssueToken200JSONResponse struct {
-	Body    TokenPair
+	Body    IssueToken200JSONResponseBody
 	Headers IssueToken200ResponseHeaders
 }
 
 func (response IssueToken200JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response.Body.union); err != nil {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")

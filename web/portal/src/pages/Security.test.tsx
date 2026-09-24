@@ -148,7 +148,7 @@ describe('会话', () => {
       'POST /v1/oauth/token': () => {
         if (!refreshOk) return json(400, { error: 'invalid_grant' });
         access = true;
-        return json(200, { token_type: 'Bearer', expires_in: 900, access_token: '', refresh_token: '' });
+        return json(200, { token_type: 'Bearer', expires_in: 900 });
       },
       'PUT /v1/me/password': () => (access ? noContent() : problem(401, 'unauthenticated')),
     });

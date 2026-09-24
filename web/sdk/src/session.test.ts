@@ -26,7 +26,7 @@ function fakeServer({ refreshOk = true, reauthRequired = false } = {}) {
       await new Promise((r) => setTimeout(r, 10));
       if (!refreshOk) return json(400, { error: 'invalid_grant' });
       accessValid = true;
-      return json(200, { token_type: 'Bearer', expires_in: 900, access_token: '', refresh_token: '' });
+      return json(200, { token_type: 'Bearer', expires_in: 900 });
     }
     if (path === '/v1/sessions') return json(401, { code: 'unauthenticated' });
     if (!accessValid) return unauthenticated();

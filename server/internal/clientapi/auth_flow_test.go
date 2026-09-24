@@ -370,7 +370,9 @@ func TestWebLoginCookies(t *testing.T) {
 		body: "grant_type=refresh_token", cookies: []*http.Cookie{refresh}})
 	var pair map[string]any
 	_ = json.Unmarshal(r.Body.Bytes(), &pair)
-	if r.Code != 200 || pair["access_token"] != "" || len(r.Result().Cookies()) != 2 || r.Header().Get("Cache-Control") != "no-store" {
+	_, hasAccess := pair["access_token"]
+	_, hasRefresh := pair["refresh_token"]
+	if r.Code != 200 || hasAccess || hasRefresh || pair["token_type"] != "Bearer" || len(r.Result().Cookies()) != 2 || r.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("web refresh: %d %s %v", r.Code, r.Body, r.Header())
 	}
 }
@@ -391,24 +393,45 @@ func TestAppLoginDevice(t *testing.T) {
 	first := e.login(t, "app@example.com", "correct horse battery", d)
 	var one sessionBody
 	_ = json.Unmarshal(first.Body.Bytes(), &one)
-	nw := e.do(post("/v1/sessions/nonces", ""))
-	var nonce struct{ Nonce string }
-	_ = json.Unmarshal(nw.Body.Bytes(), &nonce)
-	if nw.Code != 201 || len(nonce.Nonce) != 43 || nw.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("nonce: %d %s", nw.Code, nw.Body)
+	newNonce := func() string {
+		nw := e.do(post("/v1/sessions/nonces", ""))
+		var n struct{ Nonce string }
+		_ = json.Unmarshal(nw.Body.Bytes(), &n)
+		if nw.Code != 201 || len(n.Nonce) != 43 || nw.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("nonce: %d %s", nw.Code, nw.Body)
+		}
+		return n.Nonce
 	}
-	proof := map[string]string{"nonce": nonce.Nonce, "signature": base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(nonce.Nonce)))}
-	d["device_id"], d["device_proof"] = one.DeviceID, proof
+	sign := func(msg []byte) string { return base64.StdEncoding.EncodeToString(ed25519.Sign(priv, msg)) }
+	loginWith := func(proof map[string]string) *httptest.ResponseRecorder {
+		d["device_id"], d["device_proof"] = one.DeviceID, proof
+		return e.login(t, "app@example.com", "correct horse battery", d)
+	}
+	keyTaken := func(w *httptest.ResponseRecorder) bool {
+		f, c := fieldCode(t, w)
+		return w.Code == 400 && f == "device.public_key" && c == "not_allowed"
+	}
+
+	// 签名对象为 akari-device-proof-v1|<device_id>|<nonce>（AUTH-10）。
+	n := newNonce()
 	var two sessionBody
-	_ = json.Unmarshal(e.login(t, "app@example.com", "correct horse battery", d).Body.Bytes(), &two)
-	if two.DeviceID != one.DeviceID {
-		t.Fatalf("device not reused: %s vs %s", two.DeviceID, one.DeviceID)
+	reuse := loginWith(map[string]string{"nonce": n, "signature": sign(session.ProofMessage(one.DeviceID, n))})
+	_ = json.Unmarshal(reuse.Body.Bytes(), &two)
+	if reuse.Code != 201 || two.DeviceID != one.DeviceID {
+		t.Fatalf("device not reused: %d %s", reuse.Code, reuse.Body)
 	}
-	// nonce 只能使用一次：重放时注册新设备。
-	var three sessionBody
-	_ = json.Unmarshal(e.login(t, "app@example.com", "correct horse battery", d).Body.Bytes(), &three)
-	if three.DeviceID == one.DeviceID {
-		t.Fatal("nonce accepted twice")
+	// nonce 只能使用一次；未通过证明时不能以同一公钥注册新设备（同一账号的设备公钥不得重复）。
+	if w := loginWith(map[string]string{"nonce": n, "signature": sign(session.ProofMessage(one.DeviceID, n))}); !keyTaken(w) {
+		t.Fatalf("replayed nonce: %d %s", w.Code, w.Body)
+	}
+	// 旧格式（只签 nonce）与扫码批准的签名对象都不被接受（域分隔）。
+	n = newNonce()
+	if w := loginWith(map[string]string{"nonce": n, "signature": sign([]byte(n))}); !keyTaken(w) {
+		t.Fatalf("nonce-only signature: %d %s", w.Code, w.Body)
+	}
+	n = newNonce()
+	if w := loginWith(map[string]string{"nonce": n, "signature": sign([]byte("akari-device-link-approval-v1|" + one.DeviceID.String() + "|" + n))}); !keyTaken(w) {
+		t.Fatalf("approval signature accepted as device proof: %d %s", w.Code, w.Body)
 	}
 }
 

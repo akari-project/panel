@@ -12,6 +12,26 @@ import (
 	"github.com/google/uuid"
 )
 
+const activeDeviceKeyExists = `-- name: ActiveDeviceKeyExists :one
+SELECT EXISTS (
+  SELECT 1 FROM devices
+  WHERE account_id = $1 AND public_key = $2 AND revoked_at IS NULL
+)
+`
+
+type ActiveDeviceKeyExistsParams struct {
+	AccountID uuid.UUID
+	PublicKey []byte
+}
+
+// 同一账号未吊销的设备公钥不得重复（AUTH-10）。
+func (q *Queries) ActiveDeviceKeyExists(ctx context.Context, arg ActiveDeviceKeyExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, activeDeviceKeyExists, arg.AccountID, arg.PublicKey)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const activeWebDevicesOverLimit = `-- name: ActiveWebDevicesOverLimit :many
 SELECT id FROM devices
 WHERE account_id = $1 AND platform = 'web' AND revoked_at IS NULL

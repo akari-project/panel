@@ -105,3 +105,10 @@ SELECT device_id FROM sessions WHERE id = sqlc.arg(id) AND account_id = sqlc.arg
 -- name: LockAccount :one
 -- 串行化同一账号的设备凭据下发，使设备上限的计数与插入之间不会并发超额（AUTH-14）。
 SELECT id FROM accounts WHERE id = sqlc.arg(id) FOR UPDATE;
+
+-- name: ActiveDeviceKeyExists :one
+-- 同一账号未吊销的设备公钥不得重复（AUTH-10）。
+SELECT EXISTS (
+  SELECT 1 FROM devices
+  WHERE account_id = sqlc.arg(account_id) AND public_key = sqlc.arg(public_key) AND revoked_at IS NULL
+);
