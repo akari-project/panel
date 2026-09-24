@@ -215,6 +215,23 @@ func TestStepUp(t *testing.T) {
 	}
 }
 
+// 没有密码的账号（如管理员邀请、Passkey 账号）不能用任意密码完成重新验证（AUTH-23）。
+func TestReauthWithoutPassword(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "nopw@example.com", "correct horse battery")
+	s := e.appLogin(t, "nopw@example.com", "correct horse battery")
+	if _, err := e.pool.Exec(context.Background(), `UPDATE accounts SET password_hash = NULL WHERE email = 'nopw@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: s.AccessToken, body: `{"password":"anything at all"}`})
+	if f, c := fieldCode(t, w); w.Code != 400 || f != "password" || c != "incorrect" {
+		t.Fatalf("reauth without password hash: %d %s", w.Code, w.Body)
+	}
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: s.AccessToken, body: `{"new_password":"a new strong password"}`}); w.Code != 401 {
+		t.Fatalf("step-up granted: %d", w.Code)
+	}
+}
+
 // 重新验证的 5 分钟窗口按会话链计算：刷新轮换出的新会话继承剩余时间，不延长（AUTH-23）。
 func TestReauthSurvivesRefresh(t *testing.T) {
 	e := newEnv(t)

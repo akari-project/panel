@@ -207,11 +207,15 @@ func (s *Service) Reauthenticate(ctx context.Context, p auth.Principal, in Reaut
 	field := "password"
 	switch {
 	case in.Password != "":
+		// 没有密码的账号用固定哈希校验一次（耗时一致），结果一律视为不正确。
+		hash := DummyHash
 		if a.PasswordHash != nil {
-			if ok, err = s.verify(in.Password, *a.PasswordHash); err != nil {
-				return time.Time{}, err
-			}
+			hash = *a.PasswordHash
 		}
+		if ok, err = s.verify(in.Password, hash); err != nil {
+			return time.Time{}, err
+		}
+		ok = ok && a.PasswordHash != nil
 	default:
 		field = "totp_code"
 		if in.RecoveryCode != "" {
