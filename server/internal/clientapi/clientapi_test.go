@@ -12,18 +12,24 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/akari-project/panel/server/internal/account"
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clientapi/gen"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/httpx"
+	"github.com/akari-project/panel/server/internal/notify"
+	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/ratelimit"
+	"github.com/akari-project/panel/server/internal/secretbox"
+	"github.com/akari-project/panel/server/internal/session"
 	"github.com/akari-project/panel/server/internal/testdb"
 	"github.com/akari-project/panel/server/internal/testkv"
 )
@@ -31,12 +37,19 @@ import (
 var t0 = time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
 
 type env struct {
-	h      http.Handler
-	pool   *pgxpool.Pool
-	clk    *clock.Fake
-	tokens *token.Keyring
-	rev    auth.Revocations
-	server *Server
+	h        http.Handler
+	pool     *pgxpool.Pool
+	clk      *clock.Fake
+	tokens   *token.Keyring
+	keys     *secretbox.Keyring
+	rev      auth.Revocations
+	server   *Server
+	sessions *session.Service
+	accounts *account.Service
+	// verifyCalls 统计密码校验（argon2id）的调用次数（AUTH-09 验收）。
+	verifyCalls atomic.Int32
+	// ip 是本测试的客户端地址。各测试进程共享同一个 Valkey，按 IP 的限流计数互不干扰。
+	ip string
 }
 
 func newEnv(t *testing.T) *env {
@@ -47,10 +60,27 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	kvc := testkv.New(t)
-	e := &env{pool: testdb.New(t), clk: clk, tokens: tokens, rev: auth.Revocations{KV: kvc}}
+	keys, err := secretbox.ParseKeyring("1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{2}, 32)), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &env{pool: testdb.New(t), clk: clk, tokens: tokens, keys: keys, rev: auth.Revocations{KV: kvc}}
+	u := uuid.New()
+	e.ip = netip.AddrFrom4([4]byte{10, u[0], u[1], u[2]}).String()
+	limiter := ratelimit.Limiter{KV: kvc}
+	// 测试用较小的 argon2id 参数；生产参数见 password.DefaultParams。
+	fast := password.Params{MemoryKiB: 1024, Iterations: 1, Parallelism: 1}
+	e.sessions = &session.Service{Pool: e.pool, KV: kvc, Clock: clk, Keys: keys, Tokens: tokens, Revocations: e.rev, Limiter: limiter,
+		Verify: func(pw, encoded string) (bool, error) {
+			e.verifyCalls.Add(1)
+			return password.Verify(pw, encoded)
+		}}
+	e.accounts = &account.Service{Pool: e.pool, Clock: clk, Keys: keys, Outbox: notify.Outbox{Keys: keys, Clock: clk}, Limiter: limiter,
+		Password: fast, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{}, PortalURL: "https://portal.example.com/",
+		Revoke: e.sessions.RevokeAccount, AfterRevoke: e.sessions.AfterRevoke}
 	d := Deps{
 		Log: slog.New(slog.DiscardHandler), Clock: clk, Pool: e.pool, Tokens: tokens,
-		Revocations: e.rev, Limiter: ratelimit.Limiter{KV: kvc},
+		Revocations: e.rev, Limiter: limiter, IdempotencyKey: []byte("k"), Accounts: e.accounts, Sessions: e.sessions,
 	}
 	e.h = New(d)
 	e.server = e.h.(*router).s
@@ -191,11 +221,11 @@ func TestStaleTokenOnPublicAndOptional(t *testing.T) {
 	if err := e.rev.Revoke(context.Background(), sid); err != nil {
 		t.Fatal(err)
 	}
-	login := e.stub("POST /v1/sessions")
+	login := e.stub("POST /v1/oauth/device_authorization")
 	plans := e.stub("GET /v1/plans")
 	cookie := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: AccessCookie, Value: tok}) }
 
-	r := httptest.NewRequest("POST", "/v1/sessions", strings.NewReader(`{}`))
+	r := httptest.NewRequest("POST", "/v1/oauth/device_authorization", strings.NewReader(`{}`))
 	cookie(r)
 	w := httptest.NewRecorder()
 	e.h.ServeHTTP(w, r)

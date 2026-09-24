@@ -28,6 +28,7 @@ ui:
   portal:
     hosts: [example.com]       # 留空匹配任意 Host
     path_prefix: /
+    # public_url: https://example.com/   # 邮件链接（找回密码）使用的地址；留空时取唯一的 hosts 与 path_prefix
   admin:
     hosts: [console.example.com]
     path_prefix: /

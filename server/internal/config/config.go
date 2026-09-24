@@ -114,6 +114,20 @@ type App struct {
 	PathPrefix string `yaml:"path_prefix"`
 	// APIBaseURL 注入前端的接口地址；为空时取请求的来源加路径前缀。
 	APIBaseURL string `yaml:"api_base_url"`
+	// PublicURL 是应用的绝对地址（以 / 结尾），用于邮件中的链接（例如找回密码，spec/10 AUTH-04）。
+	// 为空时取 https:// 加唯一的 hosts 与 path_prefix。链接不取自请求的 Host，以免被伪造的 Host 指向他处。
+	PublicURL string `yaml:"public_url"`
+}
+
+// URL 返回应用的绝对地址（以 / 结尾）；无法确定时返回空串。
+func (a App) URL() string {
+	if a.PublicURL != "" {
+		return strings.TrimSuffix(a.PublicURL, "/") + "/"
+	}
+	if len(a.Hosts) == 1 {
+		return "https://" + a.Hosts[0] + a.PathPrefix
+	}
+	return ""
 }
 
 // Crypto 是加密主密钥（CONV-19、CONV-30），只从环境变量读取。
@@ -350,6 +364,11 @@ func (c *Config) validateApp(field string, a *App, errs *[]error) {
 			*errs = append(*errs, fmt.Errorf("%s.hosts[%d]: invalid host %q", field, i, h))
 		}
 		a.Hosts[i] = strings.ToLower(h)
+	}
+	if a.PublicURL != "" {
+		if u, err := url.Parse(a.PublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			*errs = append(*errs, fmt.Errorf("%s.public_url: must be an absolute http(s) URL", field))
+		}
 	}
 	if a.APIBaseURL != "" {
 		if u, err := url.Parse(a.APIBaseURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {

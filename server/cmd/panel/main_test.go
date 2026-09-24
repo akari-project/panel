@@ -35,13 +35,13 @@ func buildBinary(t *testing.T) string {
 	return bin
 }
 
-// valkeyURL 由 TestBinary 设置：api 角色需要 Valkey（spec/10 AUTH-06）。
-var valkeyURL string
+// valkeyURL 与 configPath 由 TestBinary 设置：api 角色需要 Valkey（spec/10 AUTH-06）与用户中心地址（AUTH-04）。
+var valkeyURL, configPath string
 
 func command(bin, dbURL string, args ...string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(),
-		"PANEL_CONFIG=",
+		"PANEL_CONFIG="+configPath,
 		"PANEL_DATABASE_URL="+dbURL,
 		"PANEL_HTTP_LISTEN=127.0.0.1:0",
 		"PANEL_GATEWAY_LISTEN=127.0.0.1:0",
@@ -61,6 +61,10 @@ func TestBinary(t *testing.T) {
 	}
 	pool, dbURL := testdb.NewWithURL(t)
 	_, valkeyURL = testkv.NewWithURL(t)
+	configPath = filepath.Join(t.TempDir(), "panel.yaml")
+	if err := os.WriteFile(configPath, []byte("ui:\n  portal:\n    public_url: https://portal.example.com/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		t.Fatal(err)

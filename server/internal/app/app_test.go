@@ -40,6 +40,7 @@ func testConfig(t *testing.T) config.Config {
 	cfg.Worker.Listen = "127.0.0.1:0"
 	cfg.HTTP.ShutdownTimeout = 5 * time.Second
 	cfg.Gateway.Hosts = []string{"gateway.example.com"}
+	cfg.UI.Portal.PublicURL = "https://portal.example.com/"
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}

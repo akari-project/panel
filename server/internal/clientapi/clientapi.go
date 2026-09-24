@@ -16,8 +16,10 @@
 package clientapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -25,7 +27,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
+	"github.com/akari-project/panel/server/internal/account"
 	"github.com/akari-project/panel/server/internal/apierr"
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
@@ -34,6 +38,7 @@ import (
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
 	"github.com/akari-project/panel/server/internal/ratelimit"
+	"github.com/akari-project/panel/server/internal/session"
 )
 
 // MaxBody 是请求体上限。附件等更大的上传另行规定（CONV-33）。
@@ -63,6 +68,8 @@ type Deps struct {
 	Proxies     httpx.Proxies
 	// IdempotencyKey 是幂等记录中请求体摘要的 HMAC 密钥（由主密钥派生）。
 	IdempotencyKey []byte
+	Accounts       *account.Service
+	Sessions       *session.Service
 }
 
 // Server 实现 gen.StrictServerInterface。
@@ -80,11 +87,15 @@ func New(d Deps) http.Handler {
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			var tooLarge *http.MaxBytesError
-			if errors.As(err, &tooLarge) {
+			switch {
+			case errors.As(err, &tooLarge):
 				fail(w, r, apierr.PayloadTooLarge)
-				return
+			case errors.Is(err, openapi_types.ErrValidationEmail):
+				// 契约中 format: email 的字段都名为 email。
+				fail(w, r, apierr.Invalid(apierr.Field("email", "invalid_format")))
+			default:
+				fail(w, r, apierr.Invalid())
 			}
-			fail(w, r, apierr.Invalid())
 		},
 		ResponseErrorHandlerFunc: fail,
 	})
@@ -128,6 +139,22 @@ func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p      auth.Principal
 		authed bool
 	)
+	ctx = withReqInfo(ctx, w, r, rt.s.d.Proxies.ClientIP(r))
+	r = r.WithContext(ctx)
+	if rawBodyOps[op.ID] {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				rt.s.fail(w, r, apierr.PayloadTooLarge)
+			} else {
+				rt.s.fail(w, r, apierr.Invalid())
+			}
+			return
+		}
+		info(ctx).Body = b
+		r.Body = io.NopCloser(bytes.NewReader(b))
+	}
 	if op.Auth != gen.AuthPublic {
 		var err error
 		p, authed, err = rt.s.authenticate(r)

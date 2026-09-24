@@ -14,4 +14,13 @@ output-options:
     path: internal/clientapi/overlay.yaml
   include-operation-ids:
     - getMe
+    - createAccount
+    - verifyEmail
+    - resendVerification
+    - requestPasswordReset
+    - confirmPasswordReset
+    - createSession
+    - createSessionNonce
+    - deleteCurrentSession
+    - issueToken
 output: internal/clientapi/gen/api.gen.go

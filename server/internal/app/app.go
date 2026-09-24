@@ -20,6 +20,7 @@ import (
 	"github.com/valkey-io/valkey-go"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/akari-project/panel/server/internal/account"
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clientapi"
@@ -30,8 +31,10 @@ import (
 	"github.com/akari-project/panel/server/internal/idempotency"
 	"github.com/akari-project/panel/server/internal/logging"
 	"github.com/akari-project/panel/server/internal/notify"
+	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/ratelimit"
 	"github.com/akari-project/panel/server/internal/secretbox"
+	"github.com/akari-project/panel/server/internal/session"
 	"github.com/akari-project/panel/server/internal/webui"
 )
 
@@ -200,13 +203,29 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	if d.KV == nil || d.Tokens == nil || d.Keys == nil {
 		return nil, errors.New("api: valkey.url, PANEL_TOKEN_KEY and PANEL_MASTER_KEY are required")
 	}
+	portalURL := d.Config.UI.Portal.URL()
+	if portalURL == "" {
+		return nil, errors.New("api: ui.portal.public_url is required when ui.portal.hosts is not a single host (links in emails, spec/10 AUTH-04)")
+	}
+	limiter := ratelimit.Limiter{KV: d.KV}
+	revocations := auth.Revocations{KV: d.KV}
+	sessions := &session.Service{
+		Pool: d.Pool, KV: d.KV, Clock: d.Clock, Keys: d.Keys, Tokens: d.Tokens, Revocations: revocations, Limiter: limiter,
+	}
+	accounts := &account.Service{
+		Pool: d.Pool, Clock: d.Clock, Keys: d.Keys, Outbox: notify.Outbox{Keys: d.Keys, Clock: d.Clock}, Limiter: limiter,
+		Password: password.DefaultParams, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{},
+		PortalURL: portalURL, Revoke: sessions.RevokeAccount, AfterRevoke: sessions.AfterRevoke,
+	}
 	client := clientapi.New(clientapi.Deps{
 		Log:            d.Log,
 		Clock:          d.Clock,
 		Pool:           d.Pool,
 		Tokens:         d.Tokens,
-		Revocations:    auth.Revocations{KV: d.KV},
-		Limiter:        ratelimit.Limiter{KV: d.KV},
+		Revocations:    revocations,
+		Limiter:        limiter,
+		Accounts:       accounts,
+		Sessions:       sessions,
 		Proxies:        proxies,
 		IdempotencyKey: d.Keys.Derive("idempotency-request-hash"),
 	})

@@ -10,13 +10,40 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/oapi-codegen/nullable"
+	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for CredentialStatus.
+const (
+	CredentialStatusDeviceLimitReached  CredentialStatus = "device_limit_reached"
+	CredentialStatusEntitlementInactive CredentialStatus = "entitlement_inactive"
+	CredentialStatusIssued              CredentialStatus = "issued"
+	CredentialStatusWebDevice           CredentialStatus = "web_device"
+)
+
+// Valid indicates whether the value is a known member of the CredentialStatus enum.
+func (e CredentialStatus) Valid() bool {
+	switch e {
+	case CredentialStatusDeviceLimitReached:
+		return true
+	case CredentialStatusEntitlementInactive:
+		return true
+	case CredentialStatusIssued:
+		return true
+	case CredentialStatusWebDevice:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for EntitlementStatus.
 const (
@@ -132,6 +159,75 @@ func (e MfaMethod) Valid() bool {
 	}
 }
 
+// Defines values for OAuthErrorBodyError.
+const (
+	OAuthErrorBodyErrorAccessDenied         OAuthErrorBodyError = "access_denied"
+	OAuthErrorBodyErrorAuthorizationPending OAuthErrorBodyError = "authorization_pending"
+	OAuthErrorBodyErrorExpiredToken         OAuthErrorBodyError = "expired_token"
+	OAuthErrorBodyErrorInvalidClient        OAuthErrorBodyError = "invalid_client"
+	OAuthErrorBodyErrorInvalidGrant         OAuthErrorBodyError = "invalid_grant"
+	OAuthErrorBodyErrorInvalidRequest       OAuthErrorBodyError = "invalid_request"
+	OAuthErrorBodyErrorSlowDown             OAuthErrorBodyError = "slow_down"
+	OAuthErrorBodyErrorUnsupportedGrantType OAuthErrorBodyError = "unsupported_grant_type"
+)
+
+// Valid indicates whether the value is a known member of the OAuthErrorBodyError enum.
+func (e OAuthErrorBodyError) Valid() bool {
+	switch e {
+	case OAuthErrorBodyErrorAccessDenied:
+		return true
+	case OAuthErrorBodyErrorAuthorizationPending:
+		return true
+	case OAuthErrorBodyErrorExpiredToken:
+		return true
+	case OAuthErrorBodyErrorInvalidClient:
+		return true
+	case OAuthErrorBodyErrorInvalidGrant:
+		return true
+	case OAuthErrorBodyErrorInvalidRequest:
+		return true
+	case OAuthErrorBodyErrorSlowDown:
+		return true
+	case OAuthErrorBodyErrorUnsupportedGrantType:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for Platform.
+const (
+	PlatformAndroid Platform = "android"
+	PlatformIos     Platform = "ios"
+	PlatformLinux   Platform = "linux"
+	PlatformMacos   Platform = "macos"
+	PlatformOther   Platform = "other"
+	PlatformWeb     Platform = "web"
+	PlatformWindows Platform = "windows"
+)
+
+// Valid indicates whether the value is a known member of the Platform enum.
+func (e Platform) Valid() bool {
+	switch e {
+	case PlatformAndroid:
+		return true
+	case PlatformIos:
+		return true
+	case PlatformLinux:
+		return true
+	case PlatformMacos:
+		return true
+	case PlatformOther:
+		return true
+	case PlatformWeb:
+		return true
+	case PlatformWindows:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
 	ProblemCodeAccountSuspended          ProblemCode = "account_suspended"
@@ -210,6 +306,54 @@ func (e ProblemCode) Valid() bool {
 	}
 }
 
+// Defines values for IssueTokenFormdataBodyGrantType.
+const (
+	IssueTokenFormdataBodyGrantTypeRefreshToken                          IssueTokenFormdataBodyGrantType = "refresh_token"
+	IssueTokenFormdataBodyGrantTypeUrnIetfParamsOauthGrantTypeDeviceCode IssueTokenFormdataBodyGrantType = "urn:ietf:params:oauth:grant-type:device_code"
+)
+
+// Valid indicates whether the value is a known member of the IssueTokenFormdataBodyGrantType enum.
+func (e IssueTokenFormdataBodyGrantType) Valid() bool {
+	switch e {
+	case IssueTokenFormdataBodyGrantTypeRefreshToken:
+		return true
+	case IssueTokenFormdataBodyGrantTypeUrnIetfParamsOauthGrantTypeDeviceCode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Accepted defines model for Accepted.
+type Accepted struct {
+	Status string `json:"status"`
+}
+
+// CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
+// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+type CredentialStatus string
+
+// DeviceInfo defines model for DeviceInfo.
+type DeviceInfo struct {
+	AppVersion *string `json:"app_version,omitempty"`
+
+	// DeviceId 已有设备的 ID；与 `device_proof` 一起提交以复用原设备记录与名额
+	DeviceId *openapi_types.UUID `json:"device_id,omitempty"`
+
+	// DeviceProof 设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`，`signature` 为该设备 Ed25519 私钥对该 nonce 字符串 UTF-8 字节的签名（base64）
+	DeviceProof *struct {
+		Nonce     string `json:"nonce"`
+		Signature string `json:"signature"`
+	} `json:"device_proof,omitempty"`
+	Model *string `json:"model,omitempty"`
+
+	// Platform 设备平台；`web` 为浏览器中的用户中心
+	Platform Platform `json:"platform"`
+
+	// PublicKey Ed25519 公钥（SPKI DER 的 base64）；非 web 设备必填（AUTH-10）
+	PublicKey *string `json:"public_key,omitempty"`
+}
+
 // EntitlementStatus `none` 无权益；`free` 持有免费套餐权益；其余为付费权益的状态（spec/11 11.1）
 type EntitlementStatus string
 
@@ -243,8 +387,51 @@ type Me struct {
 // MeStatus defines model for Me.Status.
 type MeStatus string
 
+// MfaLoginPasskey defines model for MfaLoginPasskey.
+type MfaLoginPasskey struct {
+	ChallengeId openapi_types.UUID `json:"challenge_id"`
+	Device      DeviceInfo         `json:"device"`
+
+	// WebauthnAssertion AuthenticationResponseJSON（WebAuthn Level 3）
+	WebauthnAssertion map[string]interface{} `json:"webauthn_assertion"`
+}
+
+// MfaLoginRecoveryCode defines model for MfaLoginRecoveryCode.
+type MfaLoginRecoveryCode struct {
+	ChallengeId  openapi_types.UUID `json:"challenge_id"`
+	Device       DeviceInfo         `json:"device"`
+	RecoveryCode string             `json:"recovery_code"`
+}
+
+// MfaLoginTotp defines model for MfaLoginTotp.
+type MfaLoginTotp struct {
+	ChallengeId openapi_types.UUID `json:"challenge_id"`
+	Device      DeviceInfo         `json:"device"`
+	TotpCode    string             `json:"totp_code"`
+}
+
 // MfaMethod defines model for MfaMethod.
 type MfaMethod string
+
+// OAuthErrorBody defines model for OAuthErrorBody.
+type OAuthErrorBody struct {
+	Error            OAuthErrorBodyError `json:"error"`
+	ErrorDescription *string             `json:"error_description,omitempty"`
+}
+
+// OAuthErrorBodyError defines model for OAuthErrorBody.Error.
+type OAuthErrorBodyError string
+
+// PasswordLogin defines model for PasswordLogin.
+type PasswordLogin struct {
+	CaptchaToken *string             `json:"captcha_token,omitempty"`
+	Device       DeviceInfo          `json:"device"`
+	Email        openapi_types.Email `json:"email"`
+	Password     string              `json:"password"`
+}
+
+// Platform 设备平台；`web` 为浏览器中的用户中心
+type Platform string
 
 // Problem RFC 9457 problem details（CONV-16）
 type Problem struct {
@@ -276,14 +463,331 @@ type Problem struct {
 // ProblemCode 错误码，取值见 spec/02 CONV-16
 type ProblemCode string
 
+// Session defines model for Session.
+type Session struct {
+	// AccessToken 非 web 设备返回；web 设备以 Cookie 下发
+	AccessToken *string `json:"access_token,omitempty"`
+
+	// CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
+	// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+	CredentialStatus CredentialStatus   `json:"credential_status"`
+	DeviceId         openapi_types.UUID `json:"device_id"`
+
+	// ExpiresIn 访问令牌有效秒数
+	ExpiresIn int `json:"expires_in"`
+
+	// RefreshToken 非 web 设备返回；web 设备以 Cookie 下发
+	RefreshToken *string `json:"refresh_token,omitempty"`
+	TokenType    string  `json:"token_type"`
+}
+
+// TokenPair defines model for TokenPair.
+type TokenPair struct {
+	AccessToken  string              `json:"access_token"`
+	DeviceId     *openapi_types.UUID `json:"device_id,omitempty"`
+	ExpiresIn    int                 `json:"expires_in"`
+	RefreshToken string              `json:"refresh_token"`
+	TokenType    string              `json:"token_type"`
+}
+
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = openapi_types.UUID
+
+// AccountSuspended RFC 9457 problem details（CONV-16）
+type AccountSuspended = Problem
+
+// BadRequest RFC 9457 problem details（CONV-16）
+type BadRequest = Problem
+
+// Conflict RFC 9457 problem details（CONV-16）
+type Conflict = Problem
+
+// IdempotencyKeyReused RFC 9457 problem details（CONV-16）
+type IdempotencyKeyReused = Problem
+
+// LoginUnauthorized RFC 9457 problem details（CONV-16）
+type LoginUnauthorized = Problem
+
+// OAuthError defines model for OAuthError.
+type OAuthError = OAuthErrorBody
+
+// RegistrationClosed RFC 9457 problem details（CONV-16）
+type RegistrationClosed = Problem
+
+// TooManyRequests RFC 9457 problem details（CONV-16）
+type TooManyRequests = Problem
+
 // Unauthenticated RFC 9457 problem details（CONV-16）
 type Unauthenticated = Problem
 
+// UpgradeRequired RFC 9457 problem details（CONV-16）
+type UpgradeRequired = Problem
+
+// CreateAccountJSONBody defines parameters for CreateAccount.
+type CreateAccountJSONBody struct {
+	// CaptchaToken 人机验证令牌（预留，AUTH-02）
+	CaptchaToken *string             `json:"captcha_token,omitempty"`
+	Email        openapi_types.Email `json:"email"`
+
+	// InviteCode 账号邀请码或管理员生成的注册码；注册策略为“仅邀请码”时必填
+	InviteCode *string `json:"invite_code,omitempty"`
+
+	// Locale BCP 47 语言标签
+	Locale   *string `json:"locale,omitempty"`
+	Password string  `json:"password"`
+
+	// Timezone IANA 时区名
+	Timezone *string `json:"timezone,omitempty"`
+}
+
+// CreateAccountParams defines parameters for CreateAccount.
+type CreateAccountParams struct {
+	// IdempotencyKey 幂等键（CONV-12），UUID
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// VerifyEmailJSONBody defines parameters for VerifyEmail.
+type VerifyEmailJSONBody struct {
+	Code string `json:"code"`
+
+	// Email 未登录时必填
+	Email *openapi_types.Email `json:"email,omitempty"`
+}
+
+// VerifyEmailParams defines parameters for VerifyEmail.
+type VerifyEmailParams struct {
+	// IdempotencyKey 幂等键（CONV-12），UUID
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ResendVerificationJSONBody defines parameters for ResendVerification.
+type ResendVerificationJSONBody struct {
+	CaptchaToken *string `json:"captcha_token,omitempty"`
+
+	// Email 未登录时必填
+	Email *openapi_types.Email `json:"email,omitempty"`
+}
+
+// ResendVerificationParams defines parameters for ResendVerification.
+type ResendVerificationParams struct {
+	// IdempotencyKey 幂等键（CONV-12），UUID
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// IssueTokenFormdataBody defines parameters for IssueToken.
+type IssueTokenFormdataBody struct {
+	// ClientId 公开客户端标识，例如 `app`、`tv`
+	ClientId *string `form:"client_id,omitempty" json:"client_id,omitempty"`
+
+	// DeviceCode 设备授权的 `device_code`，或扫码登录的 `poll_token`
+	DeviceCode *string                         `form:"device_code,omitempty" json:"device_code,omitempty"`
+	GrantType  IssueTokenFormdataBodyGrantType `form:"grant_type" json:"grant_type"`
+
+	// RefreshToken `grant_type=refresh_token` 时必填（浏览器由 Cookie 携带）
+	RefreshToken *string `form:"refresh_token,omitempty" json:"refresh_token,omitempty"`
+}
+
+// IssueTokenFormdataBodyGrantType defines parameters for IssueToken.
+type IssueTokenFormdataBodyGrantType string
+
+// RequestPasswordResetJSONBody defines parameters for RequestPasswordReset.
+type RequestPasswordResetJSONBody struct {
+	CaptchaToken *string             `json:"captcha_token,omitempty"`
+	Email        openapi_types.Email `json:"email"`
+}
+
+// RequestPasswordResetParams defines parameters for RequestPasswordReset.
+type RequestPasswordResetParams struct {
+	// IdempotencyKey 幂等键（CONV-12），UUID
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// ConfirmPasswordResetJSONBody defines parameters for ConfirmPasswordReset.
+type ConfirmPasswordResetJSONBody struct {
+	NewPassword string `json:"new_password"`
+
+	// Token 32 字节随机值的 base64url
+	Token string `json:"token"`
+}
+
+// ConfirmPasswordResetParams defines parameters for ConfirmPasswordReset.
+type ConfirmPasswordResetParams struct {
+	// IdempotencyKey 幂等键（CONV-12），UUID
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// CreateSessionJSONBody defines parameters for CreateSession.
+type CreateSessionJSONBody struct {
+	union json.RawMessage
+}
+
+// CreateAccountJSONRequestBody defines body for CreateAccount for application/json ContentType.
+type CreateAccountJSONRequestBody CreateAccountJSONBody
+
+// VerifyEmailJSONRequestBody defines body for VerifyEmail for application/json ContentType.
+type VerifyEmailJSONRequestBody VerifyEmailJSONBody
+
+// ResendVerificationJSONRequestBody defines body for ResendVerification for application/json ContentType.
+type ResendVerificationJSONRequestBody ResendVerificationJSONBody
+
+// IssueTokenFormdataRequestBody defines body for IssueToken for application/x-www-form-urlencoded ContentType.
+type IssueTokenFormdataRequestBody IssueTokenFormdataBody
+
+// RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
+type RequestPasswordResetJSONRequestBody RequestPasswordResetJSONBody
+
+// ConfirmPasswordResetJSONRequestBody defines body for ConfirmPasswordReset for application/json ContentType.
+type ConfirmPasswordResetJSONRequestBody ConfirmPasswordResetJSONBody
+
+// CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
+type CreateSessionJSONRequestBody CreateSessionJSONBody
+
+// AsPasswordLogin returns the union data inside the CreateSessionJSONBody as a PasswordLogin
+func (t CreateSessionJSONBody) AsPasswordLogin() (PasswordLogin, error) {
+	var body PasswordLogin
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPasswordLogin overwrites any union data inside the CreateSessionJSONBody as the provided PasswordLogin
+func (t *CreateSessionJSONBody) FromPasswordLogin(v PasswordLogin) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePasswordLogin performs a merge with any union data inside the CreateSessionJSONBody, using the provided PasswordLogin
+func (t *CreateSessionJSONBody) MergePasswordLogin(v PasswordLogin) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsMfaLoginTotp returns the union data inside the CreateSessionJSONBody as a MfaLoginTotp
+func (t CreateSessionJSONBody) AsMfaLoginTotp() (MfaLoginTotp, error) {
+	var body MfaLoginTotp
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromMfaLoginTotp overwrites any union data inside the CreateSessionJSONBody as the provided MfaLoginTotp
+func (t *CreateSessionJSONBody) FromMfaLoginTotp(v MfaLoginTotp) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeMfaLoginTotp performs a merge with any union data inside the CreateSessionJSONBody, using the provided MfaLoginTotp
+func (t *CreateSessionJSONBody) MergeMfaLoginTotp(v MfaLoginTotp) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsMfaLoginPasskey returns the union data inside the CreateSessionJSONBody as a MfaLoginPasskey
+func (t CreateSessionJSONBody) AsMfaLoginPasskey() (MfaLoginPasskey, error) {
+	var body MfaLoginPasskey
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromMfaLoginPasskey overwrites any union data inside the CreateSessionJSONBody as the provided MfaLoginPasskey
+func (t *CreateSessionJSONBody) FromMfaLoginPasskey(v MfaLoginPasskey) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeMfaLoginPasskey performs a merge with any union data inside the CreateSessionJSONBody, using the provided MfaLoginPasskey
+func (t *CreateSessionJSONBody) MergeMfaLoginPasskey(v MfaLoginPasskey) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsMfaLoginRecoveryCode returns the union data inside the CreateSessionJSONBody as a MfaLoginRecoveryCode
+func (t CreateSessionJSONBody) AsMfaLoginRecoveryCode() (MfaLoginRecoveryCode, error) {
+	var body MfaLoginRecoveryCode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromMfaLoginRecoveryCode overwrites any union data inside the CreateSessionJSONBody as the provided MfaLoginRecoveryCode
+func (t *CreateSessionJSONBody) FromMfaLoginRecoveryCode(v MfaLoginRecoveryCode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeMfaLoginRecoveryCode performs a merge with any union data inside the CreateSessionJSONBody, using the provided MfaLoginRecoveryCode
+func (t *CreateSessionJSONBody) MergeMfaLoginRecoveryCode(v MfaLoginRecoveryCode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreateSessionJSONBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreateSessionJSONBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// CreateAccount 注册
+	// (POST /v1/accounts)
+	CreateAccount(w http.ResponseWriter, r *http.Request, params CreateAccountParams)
+	// VerifyEmail 提交邮箱验证码
+	// (POST /v1/accounts/verification)
+	VerifyEmail(w http.ResponseWriter, r *http.Request, params VerifyEmailParams)
+	// ResendVerification 重新发送邮箱验证码
+	// (POST /v1/accounts/verification/resend)
+	ResendVerification(w http.ResponseWriter, r *http.Request, params ResendVerificationParams)
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// IssueToken 刷新令牌轮换；设备授权与扫码登录的轮询
+	// (POST /v1/oauth/token)
+	IssueToken(w http.ResponseWriter, r *http.Request)
+	// RequestPasswordReset 发起找回密码
+	// (POST /v1/password-resets)
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request, params RequestPasswordResetParams)
+	// ConfirmPasswordReset 确认找回密码并设置新密码
+	// (POST /v1/password-resets/confirmation)
+	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request, params ConfirmPasswordResetParams)
+	// CreateSession 登录并注册设备
+	// (POST /v1/sessions)
+	CreateSession(w http.ResponseWriter, r *http.Request)
+	// DeleteCurrentSession 登出，并吊销本设备及其代理凭据
+	// (DELETE /v1/sessions/current)
+	DeleteCurrentSession(w http.ResponseWriter, r *http.Request)
+	// CreateSessionNonce 取得设备证明用的 nonce
+	// (POST /v1/sessions/nonces)
+	CreateSessionNonce(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -295,11 +799,272 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// CreateAccount operation middleware
+func (siw *ServerInterfaceWrapper) CreateAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateAccountParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAccount(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyEmail operation middleware
+func (siw *ServerInterfaceWrapper) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params VerifyEmailParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyEmail(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendVerification operation middleware
+func (siw *ServerInterfaceWrapper) ResendVerification(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ResendVerificationParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendVerification(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// IssueToken operation middleware
+func (siw *ServerInterfaceWrapper) IssueToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.IssueToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RequestPasswordResetParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestPasswordReset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ConfirmPasswordResetParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmPasswordReset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCurrentSession operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCurrentSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSessionNonce operation middleware
+func (siw *ServerInterfaceWrapper) CreateSessionNonce(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSessionNonce(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -429,14 +1194,395 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts", wrapper.CreateAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification", wrapper.VerifyEmail)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification/resend", wrapper.ResendVerification)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/oauth/token", wrapper.IssueToken)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets", wrapper.RequestPasswordReset)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets/confirmation", wrapper.ConfirmPasswordReset)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/nonces", wrapper.CreateSessionNonce)
 
 	return m
 }
 
+type AccountSuspendedApplicationProblemPlusJSONResponse Problem
+
+type BadRequestApplicationProblemPlusJSONResponse Problem
+
+type ConflictResponseHeaders struct {
+	RetryAfter *int
+}
+type ConflictApplicationProblemPlusJSONResponse struct {
+	Body Problem
+
+	Headers ConflictResponseHeaders
+}
+
+type IdempotencyKeyReusedApplicationProblemPlusJSONResponse Problem
+
+type LoginUnauthorizedApplicationProblemPlusJSONResponse Problem
+
+type OAuthErrorJSONResponse OAuthErrorBody
+
 type ProblemApplicationProblemPlusJSONResponse Problem
 
+type RegistrationClosedApplicationProblemPlusJSONResponse Problem
+
+type TooManyRequestsResponseHeaders struct {
+	RetryAfter *int
+}
+type TooManyRequestsApplicationProblemPlusJSONResponse struct {
+	Body Problem
+
+	Headers TooManyRequestsResponseHeaders
+}
+
 type UnauthenticatedApplicationProblemPlusJSONResponse Problem
+
+type UpgradeRequiredApplicationProblemPlusJSONResponse Problem
+
+type CreateAccountRequestObject struct {
+	Params CreateAccountParams
+	Body   *CreateAccountJSONRequestBody
+}
+
+type CreateAccountResponseObject interface {
+	VisitCreateAccountResponse(w http.ResponseWriter) error
+}
+
+type CreateAccount202JSONResponse Accepted
+
+func (response CreateAccount202JSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccount400ApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount403ApplicationProblemPlusJSONResponse struct {
+	RegistrationClosedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccount403ApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccount409ApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount422ApplicationProblemPlusJSONResponse struct {
+	IdempotencyKeyReusedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccount422ApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccount429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response CreateAccount429ApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAccountdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateAccountdefaultApplicationProblemPlusJSONResponse) VisitCreateAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmailRequestObject struct {
+	Params VerifyEmailParams
+	Body   *VerifyEmailJSONRequestBody
+}
+
+type VerifyEmailResponseObject interface {
+	VisitVerifyEmailResponse(w http.ResponseWriter) error
+}
+
+type VerifyEmail204Response struct {
+}
+
+func (response VerifyEmail204Response) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type VerifyEmail400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyEmail400ApplicationProblemPlusJSONResponse) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmail409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyEmail409ApplicationProblemPlusJSONResponse) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmail422ApplicationProblemPlusJSONResponse struct {
+	IdempotencyKeyReusedApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyEmail422ApplicationProblemPlusJSONResponse) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmail429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response VerifyEmail429ApplicationProblemPlusJSONResponse) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyEmaildefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response VerifyEmaildefaultApplicationProblemPlusJSONResponse) VisitVerifyEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerificationRequestObject struct {
+	Params ResendVerificationParams
+	Body   *ResendVerificationJSONRequestBody
+}
+
+type ResendVerificationResponseObject interface {
+	VisitResendVerificationResponse(w http.ResponseWriter) error
+}
+
+type ResendVerification202JSONResponse Accepted
+
+func (response ResendVerification202JSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerification400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ResendVerification400ApplicationProblemPlusJSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerification409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response ResendVerification409ApplicationProblemPlusJSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerification422ApplicationProblemPlusJSONResponse struct {
+	IdempotencyKeyReusedApplicationProblemPlusJSONResponse
+}
+
+func (response ResendVerification422ApplicationProblemPlusJSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerification429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ResendVerification429ApplicationProblemPlusJSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResendVerificationdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ResendVerificationdefaultApplicationProblemPlusJSONResponse) VisitResendVerificationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type GetMeRequestObject struct {
 }
@@ -492,11 +1638,583 @@ func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeRespons
 	return err
 }
 
+type IssueTokenRequestObject struct {
+	Body *IssueTokenFormdataRequestBody
+}
+
+type IssueTokenResponseObject interface {
+	VisitIssueTokenResponse(w http.ResponseWriter) error
+}
+
+type IssueToken200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type IssueToken200JSONResponse struct {
+	Body    TokenPair
+	Headers IssueToken200ResponseHeaders
+}
+
+func (response IssueToken200JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueToken400JSONResponse struct{ OAuthErrorJSONResponse }
+
+func (response IssueToken400JSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type IssueTokendefaultJSONResponse struct {
+	Body       OAuthErrorBody
+	StatusCode int
+}
+
+func (response IssueTokendefaultJSONResponse) VisitIssueTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordResetRequestObject struct {
+	Params RequestPasswordResetParams
+	Body   *RequestPasswordResetJSONRequestBody
+}
+
+type RequestPasswordResetResponseObject interface {
+	VisitRequestPasswordResetResponse(w http.ResponseWriter) error
+}
+
+type RequestPasswordReset202JSONResponse Accepted
+
+func (response RequestPasswordReset202JSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordReset400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset400ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordReset409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset409ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordReset422ApplicationProblemPlusJSONResponse struct {
+	IdempotencyKeyReusedApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset422ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordReset429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response RequestPasswordReset429ApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RequestPasswordResetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RequestPasswordResetdefaultApplicationProblemPlusJSONResponse) VisitRequestPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordResetRequestObject struct {
+	Params ConfirmPasswordResetParams
+	Body   *ConfirmPasswordResetJSONRequestBody
+}
+
+type ConfirmPasswordResetResponseObject interface {
+	VisitConfirmPasswordResetResponse(w http.ResponseWriter) error
+}
+
+type ConfirmPasswordReset204Response struct {
+}
+
+func (response ConfirmPasswordReset204Response) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ConfirmPasswordReset400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmPasswordReset400ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordReset409ApplicationProblemPlusJSONResponse struct {
+	ConflictApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmPasswordReset409ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordReset422ApplicationProblemPlusJSONResponse struct {
+	IdempotencyKeyReusedApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmPasswordReset422ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordReset429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ConfirmPasswordReset429ApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ConfirmPasswordResetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ConfirmPasswordResetdefaultApplicationProblemPlusJSONResponse) VisitConfirmPasswordResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessionRequestObject struct {
+	Body *CreateSessionJSONRequestBody
+}
+
+type CreateSessionResponseObject interface {
+	VisitCreateSessionResponse(w http.ResponseWriter) error
+}
+
+type CreateSession201ResponseHeaders struct {
+	SetCookie *string
+}
+
+type CreateSession201JSONResponse struct {
+	Body    Session
+	Headers CreateSession201ResponseHeaders
+}
+
+func (response CreateSession201JSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSession400ApplicationProblemPlusJSONResponse struct {
+	BadRequestApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSession400ApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSession401ApplicationProblemPlusJSONResponse struct {
+	LoginUnauthorizedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSession401ApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSession403ApplicationProblemPlusJSONResponse struct {
+	AccountSuspendedApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSession403ApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSession426ApplicationProblemPlusJSONResponse struct {
+	UpgradeRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSession426ApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSession429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSession429ApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateSessiondefaultApplicationProblemPlusJSONResponse) VisitCreateSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCurrentSessionRequestObject struct {
+}
+
+type DeleteCurrentSessionResponseObject interface {
+	VisitDeleteCurrentSessionResponse(w http.ResponseWriter) error
+}
+
+type DeleteCurrentSession204Response struct {
+}
+
+func (response DeleteCurrentSession204Response) VisitDeleteCurrentSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteCurrentSession401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteCurrentSession401ApplicationProblemPlusJSONResponse) VisitDeleteCurrentSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteCurrentSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteCurrentSessiondefaultApplicationProblemPlusJSONResponse) VisitDeleteCurrentSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessionNonceRequestObject struct {
+}
+
+type CreateSessionNonceResponseObject interface {
+	VisitCreateSessionNonceResponse(w http.ResponseWriter) error
+}
+
+type CreateSessionNonce201ResponseHeaders struct {
+	CacheControl *string
+}
+
+type CreateSessionNonce201JSONResponse struct {
+	Body struct {
+		ExpiresAt time.Time `json:"expires_at"`
+
+		// Nonce 32 字节随机值的 base64url
+		Nonce string `json:"nonce"`
+	}
+	Headers CreateSessionNonce201ResponseHeaders
+}
+
+func (response CreateSessionNonce201JSONResponse) VisitCreateSessionNonceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessionNonce426ApplicationProblemPlusJSONResponse struct {
+	UpgradeRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSessionNonce426ApplicationProblemPlusJSONResponse) VisitCreateSessionNonceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(426)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessionNonce429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response CreateSessionNonce429ApplicationProblemPlusJSONResponse) VisitCreateSessionNonceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSessionNoncedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateSessionNoncedefaultApplicationProblemPlusJSONResponse) VisitCreateSessionNonceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// CreateAccount 注册
+	// (POST /v1/accounts)
+	CreateAccount(ctx context.Context, request CreateAccountRequestObject) (CreateAccountResponseObject, error)
+	// VerifyEmail 提交邮箱验证码
+	// (POST /v1/accounts/verification)
+	VerifyEmail(ctx context.Context, request VerifyEmailRequestObject) (VerifyEmailResponseObject, error)
+	// ResendVerification 重新发送邮箱验证码
+	// (POST /v1/accounts/verification/resend)
+	ResendVerification(ctx context.Context, request ResendVerificationRequestObject) (ResendVerificationResponseObject, error)
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// IssueToken 刷新令牌轮换；设备授权与扫码登录的轮询
+	// (POST /v1/oauth/token)
+	IssueToken(ctx context.Context, request IssueTokenRequestObject) (IssueTokenResponseObject, error)
+	// RequestPasswordReset 发起找回密码
+	// (POST /v1/password-resets)
+	RequestPasswordReset(ctx context.Context, request RequestPasswordResetRequestObject) (RequestPasswordResetResponseObject, error)
+	// ConfirmPasswordReset 确认找回密码并设置新密码
+	// (POST /v1/password-resets/confirmation)
+	ConfirmPasswordReset(ctx context.Context, request ConfirmPasswordResetRequestObject) (ConfirmPasswordResetResponseObject, error)
+	// CreateSession 登录并注册设备
+	// (POST /v1/sessions)
+	CreateSession(ctx context.Context, request CreateSessionRequestObject) (CreateSessionResponseObject, error)
+	// DeleteCurrentSession 登出，并吊销本设备及其代理凭据
+	// (DELETE /v1/sessions/current)
+	DeleteCurrentSession(ctx context.Context, request DeleteCurrentSessionRequestObject) (DeleteCurrentSessionResponseObject, error)
+	// CreateSessionNonce 取得设备证明用的 nonce
+	// (POST /v1/sessions/nonces)
+	CreateSessionNonce(ctx context.Context, request CreateSessionNonceRequestObject) (CreateSessionNonceResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -538,6 +2256,108 @@ type strictHandler struct {
 	options     StrictHTTPServerOptions
 }
 
+// CreateAccount operation middleware
+func (sh *strictHandler) CreateAccount(w http.ResponseWriter, r *http.Request, params CreateAccountParams) {
+	var request CreateAccountRequestObject
+
+	request.Params = params
+
+	var body CreateAccountJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAccount(ctx, request.(CreateAccountRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAccount")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAccountResponseObject); ok {
+		if err := validResponse.VisitCreateAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyEmail operation middleware
+func (sh *strictHandler) VerifyEmail(w http.ResponseWriter, r *http.Request, params VerifyEmailParams) {
+	var request VerifyEmailRequestObject
+
+	request.Params = params
+
+	var body VerifyEmailJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyEmail(ctx, request.(VerifyEmailRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyEmail")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyEmailResponseObject); ok {
+		if err := validResponse.VisitVerifyEmailResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResendVerification operation middleware
+func (sh *strictHandler) ResendVerification(w http.ResponseWriter, r *http.Request, params ResendVerificationParams) {
+	var request ResendVerificationRequestObject
+
+	request.Params = params
+
+	var body ResendVerificationJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResendVerification(ctx, request.(ResendVerificationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResendVerification")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResendVerificationResponseObject); ok {
+		if err := validResponse.VisitResendVerificationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -555,6 +2375,186 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// IssueToken operation middleware
+func (sh *strictHandler) IssueToken(w http.ResponseWriter, r *http.Request) {
+	var request IssueTokenRequestObject
+
+	if err := r.ParseForm(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode formdata: %w", err))
+		return
+	}
+	var body IssueTokenFormdataRequestBody
+	if err := runtime.BindForm(&body, r.Form, nil, nil); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't bind formdata: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.IssueToken(ctx, request.(IssueTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "IssueToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(IssueTokenResponseObject); ok {
+		if err := validResponse.VisitIssueTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RequestPasswordReset operation middleware
+func (sh *strictHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request, params RequestPasswordResetParams) {
+	var request RequestPasswordResetRequestObject
+
+	request.Params = params
+
+	var body RequestPasswordResetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestPasswordReset(ctx, request.(RequestPasswordResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestPasswordReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RequestPasswordResetResponseObject); ok {
+		if err := validResponse.VisitRequestPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ConfirmPasswordReset operation middleware
+func (sh *strictHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request, params ConfirmPasswordResetParams) {
+	var request ConfirmPasswordResetRequestObject
+
+	request.Params = params
+
+	var body ConfirmPasswordResetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfirmPasswordReset(ctx, request.(ConfirmPasswordResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfirmPasswordReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfirmPasswordResetResponseObject); ok {
+		if err := validResponse.VisitConfirmPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSession operation middleware
+func (sh *strictHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
+	var request CreateSessionRequestObject
+
+	var body CreateSessionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSession(ctx, request.(CreateSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSessionResponseObject); ok {
+		if err := validResponse.VisitCreateSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteCurrentSession operation middleware
+func (sh *strictHandler) DeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
+	var request DeleteCurrentSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteCurrentSession(ctx, request.(DeleteCurrentSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteCurrentSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteCurrentSessionResponseObject); ok {
+		if err := validResponse.VisitDeleteCurrentSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSessionNonce operation middleware
+func (sh *strictHandler) CreateSessionNonce(w http.ResponseWriter, r *http.Request) {
+	var request CreateSessionNonceRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateSessionNonce(ctx, request.(CreateSessionNonceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSessionNonce")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSessionNonceResponseObject); ok {
+		if err := validResponse.VisitCreateSessionNonceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
