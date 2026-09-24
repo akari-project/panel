@@ -24,4 +24,5 @@
 ## 测试
 
 - `make test`：`go test -race`。集成测试用 testcontainers 启动 PostgreSQL 18（需要 Docker）；`PANEL_TEST_DATABASE_URL` 可改用已有的 PostgreSQL 18；没有数据库时集成测试跳过，`PANEL_REQUIRE_DB=1` 时改为失败（CI）。
+- `make e2e`：`e2e/` 下的端到端测试（`-race`）：模拟 Agent（`e2e/fakeagent`）、测试用控制面端（`e2e/testgateway`）与节点协议一致性套件（`e2e/conformance`，含 1,000 节点规模测试）。对真实 Agent 运行一致性套件见 `e2e/conformance/README.md`。`make test` 不含 `e2e/`。
 - 时间一律经 `internal/clock` 注入（CONV-04），`make lint` 中的 `check-clock` 检查。

@@ -29,7 +29,7 @@ LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Comm
 
 GENERATED := $(SERVER)/internal/db/sqlc
 
-.PHONY: ci build build-noui web-build embed gen check-generated test test-property e2e lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen check-generated test test-property e2e conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -70,17 +70,23 @@ check-generated: gen
 
 # 单元测试与需要容器的集成测试（-race）。集成测试用 testcontainers 启动 PostgreSQL 18；
 # 设置 PANEL_TEST_DATABASE_URL 可改用已有数据库，PANEL_REQUIRE_DB=1 时数据库不可用即失败（CI）。
+# 端到端测试（server/e2e）只由 make e2e 运行。
 test:
-	cd $(SERVER) && go test -race ./...
+	cd $(SERVER) && go test -race $$(go list ./... | grep -v '/e2e/')
 	cd $(SERVER) && go test -race -tags noui ./internal/webui/... ./internal/app/... ./cmd/...
 
 # 性质测试（rapid），放在 property 构建标签下，不进入 make test（spec/42 42.3）。
 test-property:
 	cd $(SERVER) && go test -race -tags property -run '^TestProperty' ./...
 
-# 端到端测试（spec/42 42.3）。
+# 端到端测试（spec/42 42.3）：模拟 Agent、测试用控制面端、协议一致性套件（含 1,000 节点规模测试）。
 e2e:
-	@if [ -d $(SERVER)/e2e ]; then cd $(SERVER) && go test -race ./e2e/...; else echo "e2e: $(SERVER)/e2e 尚不存在，跳过"; fi
+	cd $(SERVER) && go test -race -count=1 -timeout 15m ./e2e/...
+
+# 协议一致性套件（spec/20 20.6）。对真实 Agent 运行：
+#   make conformance CONFORMANCE_AGENT=exec CONFORMANCE_AGENT_CMD='...'（见 server/e2e/conformance/README.md）
+conformance:
+	cd $(SERVER) && go test -race -count=1 -timeout 30m -v ./e2e/conformance/...
 
 ## 检查 ---------------------------------------------------------------
 
@@ -111,10 +117,12 @@ check-spdx:
 	echo "check-spdx: 通过"
 
 # 依赖许可证扫描（spec/42 42.2，AGPL-3.0 仓库的允许清单）。本模块自身不参与判定。
+# panel-spec（Apache-2.0）按 REUSE 布局只有 LICENSES/ 目录、没有根目录 LICENSE 文件，go-licenses 无法识别，
+# 因此忽略；其许可证由 panel-spec 自身的 REUSE lint 保证。
 ALLOWED_LICENSES := MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,MPL-2.0,LGPL-2.1,LGPL-3.0,GPL-3.0,AGPL-3.0
 licenses:
 	cd $(SERVER) && go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION) check ./... \
-	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server
+	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server --ignore github.com/akari-project/panel-spec
 
 vulncheck:
 	cd $(SERVER) && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
