@@ -37,7 +37,8 @@ func TestMigrationFiles(t *testing.T) {
 			t.Errorf("%s: contains a -- +goose Down section (CONV-21)", n)
 		}
 		head := strings.SplitN(src, "\n", 3)
-		if len(head) < 2 || !strings.Contains(head[0]+head[1], "SPDX-License-Identifier: AGPL-3.0-or-later") {
+		// 拆开字面量，避免 REUSE 把这一行当作本文件的 SPDX 标识解析。
+		if len(head) < 2 || !strings.Contains(head[0]+head[1], "SPDX-License-"+"Identifier: AGPL-3.0-or-later") {
 			t.Errorf("%s: missing SPDX header in the first two lines (CONV-25)", n)
 		}
 		if !strings.Contains(src, "-- +goose Up") {
