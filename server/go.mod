@@ -6,7 +6,7 @@ toolchain go1.27.1
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
-	github.com/akari-project/panel-spec v0.4.0
+	github.com/akari-project/panel-spec v0.5.0
 	github.com/andybalholm/brotli v1.2.3
 	github.com/coder/websocket v1.8.15
 	github.com/google/uuid v1.6.0
@@ -82,5 +82,3 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
-
-replace github.com/akari-project/panel-spec => ../../panel-spec
