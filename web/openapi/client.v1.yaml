@@ -234,7 +234,7 @@ paths:
                 items:
                 - id: 0192f0c4-1a00-7000-8000-00000000a001
                   name: 标准版
-                  description: 适合日常使用，每月 200 GB。
+                  description: 适合日常使用，每月 200 GiB。
                   kind: recurring
                   tier: 1
                   bytes_per_cycle: 214748364800
@@ -256,7 +256,7 @@ paths:
                 addon_prices:
                 - id: 0192f0c4-1c00-7000-8000-00000000c001
                   kind: data
-                  name: 50 GB 流量包
+                  name: 50 GiB 流量包
                   bytes_total: 53687091200
                   extra_devices: null
                   amount_minor: 1000
@@ -2272,7 +2272,7 @@ paths:
                   addons:
                   - id: 0192f0c4-ab00-7000-8000-000000080001
                     kind: data
-                    name: 50 GB 流量包
+                    name: 50 GiB 流量包
                     bytes_total: 53687091200
                     bytes_used: 0
                     extra_devices: null
@@ -2815,7 +2815,7 @@ paths:
       operationId: uploadAttachment
       summary: 上传工单附件
       description: |
-        OPS-10：只允许 PNG、JPEG、WebP，按文件内容识别类型；单个不超过 5 MB，超限返回 413 `payload_too_large`；
+        OPS-10：只允许 PNG、JPEG、WebP，按文件内容识别类型；单个不超过 5 MiB，超限返回 413 `payload_too_large`；
         类型不符返回 400，`errors[].code` 为 `invalid_format`。
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2948,7 +2948,7 @@ paths:
       summary: 提交诊断日志
       description: |
         用户主动提交；模块默认关闭，关闭时返回 404（OPS-08）。客户端在上传前去除令牌、凭据、完整 IP 与访问目标
-        （CONV-24）。日志文件不超过 5 MB，超限返回 413。
+        （CONV-24）。日志文件不超过 5 MiB，超限返回 413。
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
