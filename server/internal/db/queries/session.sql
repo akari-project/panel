@@ -112,3 +112,13 @@ SELECT EXISTS (
   SELECT 1 FROM devices
   WHERE account_id = sqlc.arg(account_id) AND public_key = sqlc.arg(public_key) AND revoked_at IS NULL
 );
+
+-- name: SessionDescendsFrom :one
+-- current 是否为 ancestor 本身，或由它经刷新轮换产生（AUTH-11：待确认的 TOTP 密钥绑定会话链）。
+-- 只向上查 32 代：待确认密钥 10 分钟内有效，期间的轮换远少于此。
+WITH RECURSIVE chain AS (
+  SELECT id, parent_id, 0 AS depth FROM sessions WHERE sessions.id = sqlc.arg(current)
+  UNION ALL
+  SELECT s.id, s.parent_id, chain.depth + 1 FROM sessions s JOIN chain ON s.id = chain.parent_id WHERE chain.depth < 32
+)
+SELECT (count(*) > 0)::bool AS descends FROM chain WHERE chain.id = sqlc.arg(ancestor)::uuid;

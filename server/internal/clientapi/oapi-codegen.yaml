@@ -13,6 +13,7 @@ output-options:
   overlay:
     path: internal/clientapi/overlay.yaml
   include-operation-ids:
+    - getConfig
     - getMe
     - createAccount
     - verifyEmail

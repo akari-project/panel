@@ -11,7 +11,8 @@
 //      POST /v1/oauth/token 在仍有会话时重新下发，否则返回 400 invalid_grant（AUTH-07）。
 //    - 二次验证是否启用、邮箱是否已验证：登录邮箱以 mfa 开头时已启用，以 unverified 开头时未验证；
 //      启用、停用 TOTP 与验证邮箱会更新状态，并改写 GET /v1/me 的对应字段。
-//    - 重新验证（AUTH-23）：修改密码、停用 TOTP、重新生成恢复码等在 5 分钟内未重新验证时返回 401 mfa_required；
+//    - 重新验证（AUTH-23）：修改密码、开始绑定与停用 TOTP、重新生成恢复码等在 5 分钟内未重新验证时返回 401 mfa_required；
+//      登录成功视为一次重新验证（删除 panel_mock_client_reauth 即模拟窗口过期）；
 //      POST /v1/me/reauthentications 的密码为 wrong-password 时返回 400 incorrect。
 //    - 特定输入返回错误示例：注册邮箱以 closed 开头 → 403 registration_closed；验证码 000000 → 400 invalid_code；
 //      重新发送的邮箱以 limited 开头 → 429（Retry-After）。
@@ -77,7 +78,7 @@ export function createGateway({ api, upstream, authCookie, app }) {
     on ? `${name}=1; ${cookieAttrs}${maxAge ? `; Max-Age=${maxAge}` : ''}` : `${name}=; ${cookieAttrs}; Max-Age=0`;
 
   // 需要重新验证的操作（spec/10 AUTH-23）。
-  const stepUp = new Set(['PUT /v1/me/password', 'DELETE /v1/me/mfa/totp', 'POST /v1/me/mfa/recovery-codes', 'DELETE /v1/me', 'POST /v1/me/export-link/rotation']);
+  const stepUp = new Set(['PUT /v1/me/password', 'POST /v1/me/mfa/totp', 'DELETE /v1/me/mfa/totp', 'POST /v1/me/mfa/recovery-codes', 'DELETE /v1/me', 'POST /v1/me/export-link/rotation']);
 
   function refreshToken(cookies, res) {
     if (cookies[sessionCookie]) {
@@ -144,6 +145,8 @@ export function createGateway({ api, upstream, authCookie, app }) {
       if (isLogin && status === 201) {
         setCookies.push(`${sessionCookie}=1; ${cookieAttrs}`, setFlag(accessCookie, true));
         if (client) {
+          // 以密码完成的登录视为一次重新验证，5 分钟内有效（AUTH-23）。
+          setCookies.push(setFlag(reauthCookie, true, 300));
           setCookies.push(setFlag(mfaCookie, mfaAccount));
           setCookies.push(setFlag(unverifiedCookie, loginEmail?.startsWith('unverified') ?? false));
         }

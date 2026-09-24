@@ -24,6 +24,7 @@ import (
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clientapi"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
@@ -78,6 +79,8 @@ type Deps struct {
 	KV     valkey.Client
 	Tokens *token.Keyring
 	Keys   *secretbox.Keyring
+	// ConfigSigner 是 /v1/config 的签名密钥（CONV-30 PANEL_CONFIG_KEY），api 角色需要。
+	ConfigSigner *clientconfig.Signer
 	// Assets 为嵌入的前端产物；nil 表示 noui 构建（spec/40 DEP-06）。
 	Assets  fs.FS
 	Version string
@@ -236,6 +239,11 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 		MFA:            sessions.MFA,
 		Proxies:        proxies,
 		IdempotencyKey: d.Keys.Derive("idempotency-request-hash"),
+		Config: clientapi.ConfigDeps{
+			Signer:       d.ConfigSigner,
+			AppName:      d.Config.Client.AppName,
+			APIEndpoints: apiEndpoints(d.Config),
+		},
 	})
 	ui, err := webui.New(webui.Options{
 		Assets:    d.Assets,
@@ -323,4 +331,21 @@ type job struct {
 	name  string
 	every time.Duration
 	run   func(context.Context) error
+}
+
+// apiEndpoints 是 /v1/config 的 api_endpoints（spec/30 API-11）：主地址取 ui.portal.api_base_url，
+// 未配置时取用户中心的公开地址；其后为 client.api_endpoints 中的备用地址，去重并保持顺序。
+func apiEndpoints(c config.Config) []string {
+	primary := c.UI.Portal.APIBaseURL
+	if primary == "" {
+		primary = c.UI.Portal.URL()
+	}
+	out := []string{}
+	for _, e := range append([]string{primary}, c.Client.APIEndpoints...) {
+		e = strings.TrimSuffix(e, "/")
+		if e != "" && !slices.Contains(out, e) {
+			out = append(out, e)
+		}
+	}
+	return out
 }

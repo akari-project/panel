@@ -151,6 +151,7 @@ func TestStepUp(t *testing.T) {
 	s := e.appLogin(t, "stepup@example.com", "correct horse battery")
 	other := e.appLogin(t, "stepup@example.com", "correct horse battery")
 	secret, _ := e.enableTOTP(t, s.AccessToken)
+	e.clk.Advance(session.ReauthTTL) // 登录时的重新验证窗口过期（AUTH-23）
 
 	w := e.do(req{method: "DELETE", path: "/v1/me/mfa/totp", bearer: s.AccessToken})
 	if p := decodeMFA(w); w.Code != 401 || p.Code != "mfa_required" || strings.Join(p.Methods, ",") != "totp,recovery_code" {
@@ -215,11 +216,73 @@ func TestStepUp(t *testing.T) {
 	}
 }
 
+// 以密码完成的登录视为一次重新验证，5 分钟内有效；刷新不延长（AUTH-23）。
+func TestLoginCountsAsReauth(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "fresh@example.com", "correct horse battery")
+	s := e.appLogin(t, "fresh@example.com", "correct horse battery")
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: s.AccessToken, body: `{"new_password":"a new strong password"}`}); w.Code != 204 {
+		t.Fatalf("right after login: %d %s", w.Code, w.Body)
+	}
+	e.clk.Advance(session.ReauthTTL - time.Minute)
+	_, pair := e.refresh(t, s.RefreshToken, "")
+	access := pair["access_token"].(string)
+	e.clk.Advance(time.Minute)
+	if w := e.do(req{method: "PUT", path: "/v1/me/password", bearer: access, body: `{"new_password":"another strong password"}`}); w.Code != 401 {
+		t.Fatalf("window extended: %d", w.Code)
+	}
+}
+
+// 开始绑定 TOTP 需要重新验证（AUTH-23）；待确认密钥绑定会话链，其他会话不能确认，
+// 刷新轮换后的会话可以确认（AUTH-11）。
+func TestTOTPEnrollmentBinding(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "bind@example.com", "correct horse battery")
+	s := e.appLogin(t, "bind@example.com", "correct horse battery")
+	other := e.appLogin(t, "bind@example.com", "correct horse battery")
+	e.clk.Advance(session.ReauthTTL)
+
+	w := e.do(req{method: "POST", path: "/v1/me/mfa/totp", bearer: s.AccessToken})
+	if p := decodeMFA(w); w.Code != 401 || p.Code != "mfa_required" || p.ChallengeID != "" {
+		t.Fatalf("start without step-up: %d %s", w.Code, w.Body)
+	}
+	if w := e.do(req{method: "POST", path: "/v1/me/reauthentications", bearer: s.AccessToken, body: `{"password":"correct horse battery"}`}); w.Code != 200 {
+		t.Fatalf("reauth: %d %s", w.Code, w.Body)
+	}
+	w = e.do(req{method: "POST", path: "/v1/me/mfa/totp", bearer: s.AccessToken})
+	var en struct {
+		Secret string `json:"secret"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &en)
+	if w.Code != 201 {
+		t.Fatalf("start: %d %s", w.Code, w.Body)
+	}
+	secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(en.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := func() string {
+		return jsonBody(map[string]string{"totp_code": mfa.Code(secret, mfa.Step(e.clk.Now()))})
+	}
+
+	// 另一个会话（同一账号）不能确认。
+	if w := e.do(req{method: "POST", path: "/v1/me/mfa/totp/activation", bearer: other.AccessToken, body: code()}); w.Code != 409 || problemCode(t, w) != "invalid_state" {
+		t.Fatalf("other session activation: %d %s", w.Code, w.Body)
+	}
+	// 刷新轮换两次后，同一会话链中的会话可以确认。
+	_, pair := e.refresh(t, s.RefreshToken, "")
+	_, pair = e.refresh(t, pair["refresh_token"].(string), "")
+	if w := e.do(req{method: "POST", path: "/v1/me/mfa/totp/activation", bearer: pair["access_token"].(string), body: code()}); w.Code != 200 {
+		t.Fatalf("activation after refresh: %d %s", w.Code, w.Body)
+	}
+}
+
 // 没有密码的账号（如管理员邀请、Passkey 账号）不能用任意密码完成重新验证（AUTH-23）。
 func TestReauthWithoutPassword(t *testing.T) {
 	e := newEnv(t)
 	e.register(t, "nopw@example.com", "correct horse battery")
 	s := e.appLogin(t, "nopw@example.com", "correct horse battery")
+	e.clk.Advance(session.ReauthTTL) // 登录时的重新验证窗口过期
 	if _, err := e.pool.Exec(context.Background(), `UPDATE accounts SET password_hash = NULL WHERE email = 'nopw@example.com'`); err != nil {
 		t.Fatal(err)
 	}

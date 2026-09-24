@@ -34,6 +34,7 @@ import (
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clientapi/gen"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
@@ -72,11 +73,14 @@ type Deps struct {
 	Accounts       *account.Service
 	Sessions       *session.Service
 	MFA            *mfa.Service
+	Config         ConfigDeps
 }
 
 // Server 实现 gen.StrictServerInterface。
 type Server struct {
-	d Deps
+	d      Deps
+	ua     *clientconfig.UserAgent
+	config configCache
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
@@ -84,6 +88,13 @@ var _ gen.StrictServerInterface = (*Server)(nil)
 // New 返回 /v1 客户端接口的处理器。收到的路径以 /v1/ 开头（webui 已去掉应用前缀）。
 func New(d Deps) http.Handler {
 	s := &Server{d: d}
+	if d.Config.AppName != "" {
+		ua, err := clientconfig.NewUserAgent(d.Config.AppName)
+		if err != nil {
+			panic(err) // 配置加载时已校验（config.Validate）
+		}
+		s.ua = ua
+	}
 	mux := http.NewServeMux()
 	fail := s.fail
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{
@@ -179,6 +190,12 @@ func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := rt.s.limit(ctx, r, op, authed, p); err != nil {
 		rt.s.fail(w, r, err)
 		return
+	}
+	if op.VersionChecked {
+		if err := rt.s.checkVersion(ctx, r); err != nil {
+			rt.s.fail(w, r, err)
+			return
+		}
 	}
 
 	if op.Idempotent {

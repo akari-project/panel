@@ -39,7 +39,7 @@ paths:
     post:
       operationId: createSession
       security: []
-      responses: {'201': {description: OK}}
+      responses: {'201': {description: OK}, '426': {description: Upgrade}}
 components:
   schemas:
     Me:
@@ -76,10 +76,10 @@ func TestRun(t *testing.T) {
 	raw, _ := os.ReadFile(meta)
 	m := strings.Join(strings.Fields(string(raw)), " ") // gofmt 会对齐 map 字面量
 	for _, want := range []string{
-		`"GET /v1/me": {ID: "getMe", Method: "GET", Pattern: "GET /v1/me", Auth: AuthRequired, Idempotent: false}`,
-		`"POST /v1/accounts": {ID: "createAccount", Method: "POST", Pattern: "POST /v1/accounts", Auth: AuthPublic, Idempotent: true}`,
-		`"GET /v1/plans": {ID: "listPlans", Method: "GET", Pattern: "GET /v1/plans", Auth: AuthOptional, Idempotent: false}`,
-		`"POST /v1/sessions": {ID: "createSession", Method: "POST", Pattern: "POST /v1/sessions", Auth: AuthPublic, Idempotent: false}`,
+		`"GET /v1/me": {ID: "getMe", Method: "GET", Pattern: "GET /v1/me", Auth: AuthRequired, Idempotent: false, VersionChecked: false}`,
+		`"POST /v1/accounts": {ID: "createAccount", Method: "POST", Pattern: "POST /v1/accounts", Auth: AuthPublic, Idempotent: true, VersionChecked: false}`,
+		`"GET /v1/plans": {ID: "listPlans", Method: "GET", Pattern: "GET /v1/plans", Auth: AuthOptional, Idempotent: false, VersionChecked: false}`,
+		`"POST /v1/sessions": {ID: "createSession", Method: "POST", Pattern: "POST /v1/sessions", Auth: AuthPublic, Idempotent: false, VersionChecked: true}`,
 		"// SPDX-License-Identifier: AGPL-3.0-or-later",
 	} {
 		if !strings.Contains(m, want) {

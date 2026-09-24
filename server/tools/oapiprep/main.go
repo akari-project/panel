@@ -141,6 +141,8 @@ const (
 type op struct {
 	ID, Method, Path, Auth string
 	Idempotent             bool
+	// VersionChecked：响应中列出 426，即检查客户端最低版本的入口操作（spec/30 API-03）。
+	VersionChecked bool
 }
 
 var methods = []string{"get", "put", "post", "patch", "delete"}
@@ -168,11 +170,12 @@ func operations(root *yaml.Node) ([]op, error) {
 				return nil, fmt.Errorf("%s %s: missing operationId", m, path)
 			}
 			ops = append(ops, op{
-				ID:         id.Value,
-				Method:     strings.ToUpper(m),
-				Path:       path,
-				Auth:       authMode(get(o, "security"), global),
-				Idempotent: hasIdempotencyKey(get(o, "parameters")) || hasIdempotencyKey(shared),
+				ID:             id.Value,
+				Method:         strings.ToUpper(m),
+				Path:           path,
+				Auth:           authMode(get(o, "security"), global),
+				Idempotent:     hasIdempotencyKey(get(o, "parameters")) || hasIdempotencyKey(shared),
+				VersionChecked: get(get(o, "responses"), "426") != nil,
 			})
 		}
 	}
@@ -238,6 +241,8 @@ type Operation struct {
 	Auth    Auth
 	// Idempotent 表示接受 Idempotency-Key（CONV-12）。
 	Idempotent bool
+	// VersionChecked 表示契约为该操作列出 426：自研客户端版本低于最低版本时拒绝（spec/30 API-03）。
+	VersionChecked bool
 }
 
 // Operations 按 ServeMux 模式索引全部操作（包括尚未实现的）。
@@ -245,8 +250,8 @@ var Operations = map[string]Operation{
 `)
 	for _, o := range ops {
 		pattern := o.Method + " " + o.Path
-		fmt.Fprintf(&b, "\t%q: {ID: %q, Method: %q, Pattern: %q, Auth: %s, Idempotent: %t},\n",
-			pattern, o.ID, o.Method, pattern, o.Auth, o.Idempotent)
+		fmt.Fprintf(&b, "\t%q: {ID: %q, Method: %q, Pattern: %q, Auth: %s, Idempotent: %t, VersionChecked: %t},\n",
+			pattern, o.ID, o.Method, pattern, o.Auth, o.Idempotent, o.VersionChecked)
 	}
 	b.WriteString("}\n")
 	return format.Source(b.Bytes())

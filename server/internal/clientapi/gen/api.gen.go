@@ -306,6 +306,27 @@ func (e ProblemCode) Valid() bool {
 	}
 }
 
+// Defines values for SignedConfigPayloadRegistrationPolicy.
+const (
+	SignedConfigPayloadRegistrationPolicyClosed     SignedConfigPayloadRegistrationPolicy = "closed"
+	SignedConfigPayloadRegistrationPolicyInviteOnly SignedConfigPayloadRegistrationPolicy = "invite_only"
+	SignedConfigPayloadRegistrationPolicyOpen       SignedConfigPayloadRegistrationPolicy = "open"
+)
+
+// Valid indicates whether the value is a known member of the SignedConfigPayloadRegistrationPolicy enum.
+func (e SignedConfigPayloadRegistrationPolicy) Valid() bool {
+	switch e {
+	case SignedConfigPayloadRegistrationPolicyClosed:
+		return true
+	case SignedConfigPayloadRegistrationPolicyInviteOnly:
+		return true
+	case SignedConfigPayloadRegistrationPolicyOpen:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IssueTokenFormdataBodyGrantType.
 const (
 	IssueTokenFormdataBodyGrantTypeRefreshToken                          IssueTokenFormdataBodyGrantType = "refresh_token"
@@ -530,6 +551,48 @@ type Session struct {
 	TokenType    string  `json:"token_type"`
 }
 
+// SignedConfig defines model for SignedConfig.
+type SignedConfig struct {
+	// KeyId 签名密钥的 key id，1–255 的十进制字符串（CONV-30 `PANEL_CONFIG_KEY`）
+	KeyId   string `json:"key_id"`
+	Payload struct {
+		// AnnouncementVersion 公告版本，单调不减；生效中的公告集合可能变化时增大，客户端据此重新拉取公告（spec/13）。公告模块实现前为 0
+		AnnouncementVersion int64 `json:"announcement_version"`
+
+		// ApiEndpoints 接口根地址（不含 `/v1` 与末尾的 `/`，可以带路径前缀，与 DEP-04 的 `api_base_url` 相同）。
+		// 第一项为主地址，其后为部署者配置的备用地址（API-11）。
+		ApiEndpoints []string `json:"api_endpoints"`
+
+		// Features 运营模块开关（OPS-08）。键名由 spec/13 OPS-08 规定，是 CONV-10 布尔字段须以 `is_`/`has_` 开头的例外。
+		Features struct {
+			Announcements bool `json:"announcements"`
+			Articles      bool `json:"articles"`
+			Diagnostics   bool `json:"diagnostics"`
+			Referrals     bool `json:"referrals"`
+			Support       bool `json:"support"`
+		} `json:"features"`
+
+		// IssuedAt 签发时刻：取 `features`、`registration_policy`、`min_version` 最后一次修改的时刻（站点初始化时写入），公告模块实现后
+		// 取它与公告版本对应时刻中的较大值。客户端只接受不早于上次已接受值的文档（防回滚，API-11）。
+		IssuedAt time.Time `json:"issued_at"`
+
+		// MinVersion 按平台的最低版本（API-03），值为 `x.y.z`；没有列出的平台不限制
+		MinVersion map[string]string `json:"min_version"`
+
+		// RegistrationPolicy 注册策略（spec/10 AUTH-02）。用户中心据此隐藏注册入口或显示邀请码输入框；缺省时按 `open` 处理，
+		// 以服务端校验为准。不下发邮箱域名名单。修改后重新生成签名与 ETag（spec/30）。
+		RegistrationPolicy *SignedConfigPayloadRegistrationPolicy `json:"registration_policy,omitempty"`
+	} `json:"payload"`
+
+	// Signature Ed25519 签名，对象为 `payload` 的 RFC 8785 规范化字节。客户端按收到的原始 `payload`（含未知字段）规范化后验签，
+	// 不得先丢弃未知字段，否则新增可选字段（CONV-14）会使旧客户端验签失败。
+	Signature string `json:"signature"`
+}
+
+// SignedConfigPayloadRegistrationPolicy 注册策略（spec/10 AUTH-02）。用户中心据此隐藏注册入口或显示邀请码输入框；缺省时按 `open` 处理，
+// 以服务端校验为准。不下发邮箱域名名单。修改后重新生成签名与 ETag（spec/30）。
+type SignedConfigPayloadRegistrationPolicy string
+
 // TokenPair defines model for TokenPair.
 type TokenPair struct {
 	AccessToken  string              `json:"access_token"`
@@ -541,6 +604,9 @@ type TokenPair struct {
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = openapi_types.UUID
+
+// IfNoneMatch defines model for IfNoneMatch.
+type IfNoneMatch = string
 
 // AccountSuspended RFC 9457 problem details（CONV-16）
 type AccountSuspended = Problem
@@ -627,6 +693,12 @@ type ResendVerificationJSONBody struct {
 type ResendVerificationParams struct {
 	// IdempotencyKey 幂等键（CONV-12），UUID
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetConfigParams defines parameters for GetConfig.
+type GetConfigParams struct {
+	// IfNoneMatch 上次响应的 `ETag`；未变化时返回 304（CONV-13）
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
 }
 
 // ActivateTotpJSONBody defines parameters for ActivateTotp.
@@ -1022,6 +1094,9 @@ type ServerInterface interface {
 	// ResendVerification 重新发送邮箱验证码
 	// (POST /v1/accounts/verification/resend)
 	ResendVerification(w http.ResponseWriter, r *http.Request, params ResendVerificationParams)
+	// GetConfig 客户端启动配置（已签名）
+	// (GET /v1/config)
+	GetConfig(w http.ResponseWriter, r *http.Request, params GetConfigParams)
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -1186,6 +1261,47 @@ func (siw *ServerInterfaceWrapper) ResendVerification(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ResendVerification(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetConfig(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetConfigParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetConfig(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1554,6 +1670,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts", wrapper.CreateAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification", wrapper.VerifyEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification/resend", wrapper.ResendVerification)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/config", wrapper.GetConfig)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/recovery-codes", wrapper.RegenerateRecoveryCodes)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/mfa/totp", wrapper.DisableTotp)
@@ -1598,6 +1715,13 @@ type InvalidStateApplicationProblemPlusJSONResponse struct {
 type LoginUnauthorizedApplicationProblemPlusJSONResponse Problem
 
 type MfaRequiredApplicationProblemPlusJSONResponse Problem
+
+type NotModifiedResponseHeaders struct {
+	ETag *string
+}
+type NotModifiedResponse struct {
+	Headers NotModifiedResponseHeaders
+}
 
 type OAuthErrorJSONResponse OAuthErrorBody
 
@@ -1958,6 +2082,88 @@ func (response ResendVerificationdefaultApplicationProblemPlusJSONResponse) Visi
 	return err
 }
 
+type GetConfigRequestObject struct {
+	Params GetConfigParams
+}
+
+type GetConfigResponseObject interface {
+	VisitGetConfigResponse(w http.ResponseWriter) error
+}
+
+type GetConfig200ResponseHeaders struct {
+	CacheControl *string
+	ETag         *string
+}
+
+type GetConfig200JSONResponse struct {
+	Body    SignedConfig
+	Headers GetConfig200ResponseHeaders
+}
+
+func (response GetConfig200JSONResponse) VisitGetConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConfig304Response = NotModifiedResponse
+
+func (response GetConfig304Response) VisitGetConfigResponse(w http.ResponseWriter) error {
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetConfig429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response GetConfig429ApplicationProblemPlusJSONResponse) VisitGetConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetConfigdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetConfigdefaultApplicationProblemPlusJSONResponse) VisitGetConfigResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -2182,7 +2388,7 @@ func (response StartTotpEnrollment201JSONResponse) VisitStartTotpEnrollmentRespo
 }
 
 type StartTotpEnrollment401ApplicationProblemPlusJSONResponse struct {
-	UnauthenticatedApplicationProblemPlusJSONResponse
+	MfaRequiredApplicationProblemPlusJSONResponse
 }
 
 func (response StartTotpEnrollment401ApplicationProblemPlusJSONResponse) VisitStartTotpEnrollmentResponse(w http.ResponseWriter) error {
@@ -3056,6 +3262,9 @@ type StrictServerInterface interface {
 	// ResendVerification 重新发送邮箱验证码
 	// (POST /v1/accounts/verification/resend)
 	ResendVerification(ctx context.Context, request ResendVerificationRequestObject) (ResendVerificationResponseObject, error)
+	// GetConfig 客户端启动配置（已签名）
+	// (GET /v1/config)
+	GetConfig(ctx context.Context, request GetConfigRequestObject) (GetConfigResponseObject, error)
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -3231,6 +3440,32 @@ func (sh *strictHandler) ResendVerification(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ResendVerificationResponseObject); ok {
 		if err := validResponse.VisitResendVerificationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetConfig operation middleware
+func (sh *strictHandler) GetConfig(w http.ResponseWriter, r *http.Request, params GetConfigParams) {
+	var request GetConfigRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetConfig(ctx, request.(GetConfigRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetConfig")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetConfigResponseObject); ok {
+		if err := validResponse.VisitGetConfigResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

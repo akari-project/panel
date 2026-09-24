@@ -99,6 +99,8 @@ func TestValidationErrors(t *testing.T) {
 		"not postgres url":   {"database: {url: mysql://x}", nil, "postgres://"},
 		"bad source url":     {"site: {source_url: ftp://x}\ndatabase: {url: postgres://x}", nil, "source_url"},
 		"bad env int":        {"database: {url: postgres://x}", map[string]string{"PANEL_DATABASE_MAX_CONNS": "many"}, "PANEL_DATABASE_MAX_CONNS"},
+		"bad app name":       {"client: {app_name: 'Akari App'}\ndatabase: {url: postgres://x}", nil, "client.app_name"},
+		"bad api endpoint":   {"client: {api_endpoints: ['ftp://x']}\ndatabase: {url: postgres://x}", nil, "client.api_endpoints[0]"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Load(writeFile(t, tc.yaml), env(tc.env))
@@ -106,6 +108,14 @@ func TestValidationErrors(t *testing.T) {
 				t.Fatalf("err = %v, want mention of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// 备用接口地址去掉末尾的 /（spec/30 API-11：与 api_base_url 同义）。
+func TestClientEndpointsNormalized(t *testing.T) {
+	cfg, err := Load(writeFile(t, "database: {url: postgres://x}\nclient: {api_endpoints: ['https://b.example/panel/']}"), env(nil))
+	if err != nil || cfg.Client.AppName != "Akari" || cfg.Client.APIEndpoints[0] != "https://b.example/panel" {
+		t.Fatalf("cfg = %+v, %v", cfg.Client, err)
 	}
 }
 

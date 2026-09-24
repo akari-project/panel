@@ -23,6 +23,7 @@ import (
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clientapi/gen"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/mfa"
@@ -41,6 +42,7 @@ type env struct {
 	h        http.Handler
 	pool     *pgxpool.Pool
 	clk      *clock.Fake
+	signer   *clientconfig.Signer
 	tokens   *token.Keyring
 	keys     *secretbox.Keyring
 	rev      auth.Revocations
@@ -65,7 +67,11 @@ func newEnv(t *testing.T) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{pool: testdb.New(t), clk: clk, tokens: tokens, keys: keys, rev: auth.Revocations{KV: kvc}}
+	signer, err := clientconfig.ParseKey("5:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &env{pool: testdb.New(t), clk: clk, tokens: tokens, keys: keys, rev: auth.Revocations{KV: kvc}, signer: signer}
 	u := uuid.New()
 	e.ip = netip.AddrFrom4([4]byte{10, u[0], u[1], u[2]}).String()
 	limiter := ratelimit.Limiter{KV: kvc}
@@ -86,7 +92,8 @@ func newEnv(t *testing.T) *env {
 	d := Deps{
 		Log: slog.New(slog.DiscardHandler), Clock: clk, Pool: e.pool, Tokens: tokens,
 		Revocations: e.rev, Limiter: limiter, IdempotencyKey: []byte("k"), Accounts: e.accounts, Sessions: e.sessions,
-		MFA: e.sessions.MFA,
+		MFA:    e.sessions.MFA,
+		Config: ConfigDeps{Signer: e.signer, AppName: "Akari", APIEndpoints: []string{"https://api.example.com", "https://api-backup.example.net/panel"}},
 	}
 	e.h = New(d)
 	e.server = e.h.(*router).s

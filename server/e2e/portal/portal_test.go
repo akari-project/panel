@@ -31,6 +31,7 @@ import (
 
 	"github.com/akari-project/panel/server/internal/app"
 	"github.com/akari-project/panel/server/internal/auth/token"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/secretbox"
@@ -162,12 +163,16 @@ func TestM1_01_PortalPlaywright(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	signer, err := clientconfig.ParseKey(keyEnv(3))
+	if err != nil {
+		t.Fatal(err)
+	}
 	logs := &syncBuffer{}
 	done := make(chan error, 1)
 	go func() {
 		done <- app.Run(ctx, app.Deps{
 			Config: cfg, Log: slog.New(slog.NewTextHandler(logs, nil)), Clock: clock.Real{}, Pool: pool, KV: kvc,
-			Tokens: tokens, Keys: keys, Assets: os.DirFS(assets), Version: "e2e", Commit: commit,
+			Tokens: tokens, ConfigSigner: signer, Keys: keys, Assets: os.DirFS(assets), Version: "e2e", Commit: commit,
 		}, app.ModeAll)
 	}()
 	t.Cleanup(func() {

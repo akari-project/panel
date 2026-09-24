@@ -37,8 +37,12 @@ const (
 )
 
 // 附加数据包含账号 ID：密文不能在账号之间搬用。
-func secretAD(account uuid.UUID) []byte     { return []byte("mfa_totp.secret_enc:" + account.String()) }
-func enrollmentAD(account uuid.UUID) []byte { return []byte("mfa.enrollment:" + account.String()) }
+func secretAD(account uuid.UUID) []byte { return []byte("mfa_totp.secret_enc:" + account.String()) }
+
+// 待确认密钥的附加数据还包含发起绑定的会话 ID：记录中的会话 ID 不能被替换（AUTH-11）。
+func enrollmentAD(account, sid uuid.UUID) []byte {
+	return []byte("mfa.enrollment:" + account.String() + ":" + sid.String())
+}
 
 // Service 管理账号的二次验证。
 type Service struct {
@@ -62,8 +66,9 @@ type Enrollment struct {
 }
 
 // StartEnrollment 生成待确认的密钥（spec/30 POST /v1/me/mfa/totp）。已启用时返回 409 invalid_state。
-// 密钥加密后保存在 Valkey（CONV-19），确认后才写入数据库。
-func (s *Service) StartEnrollment(ctx context.Context, account uuid.UUID) (Enrollment, error) {
+// 调用方已检查重新验证（AUTH-23）。密钥加密后保存在 Valkey（CONV-19），记录为“会话 ID（16 字节）‖ 密文”，
+// 确认必须来自同一会话链；再次开始绑定时覆盖旧记录（AUTH-11）。确认后才写入数据库。
+func (s *Service) StartEnrollment(ctx context.Context, account, sid uuid.UUID) (Enrollment, error) {
 	q := sqlc.New(s.Pool)
 	if _, err := q.GetTotp(ctx, account); err == nil {
 		return Enrollment{}, apierr.InvalidState
@@ -78,11 +83,12 @@ func (s *Service) StartEnrollment(ctx context.Context, account uuid.UUID) (Enrol
 	if _, err := rand.Read(secret); err != nil {
 		return Enrollment{}, err
 	}
-	enc, err := s.Keys.Seal(secret, enrollmentAD(account))
+	enc, err := s.Keys.Seal(secret, enrollmentAD(account, sid))
 	if err != nil {
 		return Enrollment{}, err
 	}
-	if err := s.kvDo(ctx, s.KV.B().Set().Key(enrollmentKey(account)).Value(string(enc)).Ex(EnrollmentTTL).Build()); err != nil {
+	record := append(sid[:], enc...)
+	if err := s.kvDo(ctx, s.KV.B().Set().Key(enrollmentKey(account)).Value(string(record)).Ex(EnrollmentTTL).Build()); err != nil {
 		return Enrollment{}, apierr.Unavailable(err)
 	}
 	return Enrollment{Secret: EncodeSecret(secret), URI: URI(s.Issuer, a.Email, secret), ExpiresAt: s.Clock.Now().Add(EnrollmentTTL)}, nil
@@ -95,7 +101,8 @@ func (s *Service) kvDo(ctx context.Context, cmd valkey.Completed) error {
 }
 
 // Activate 用一次验证码确认绑定，生成恢复码（AUTH-11）。恢复码明文只在返回值中出现一次。
-func (s *Service) Activate(ctx context.Context, account uuid.UUID, code string) ([]string, error) {
+// 请求必须来自发起绑定的会话链（sid 为当前会话），否则与没有待确认密钥一样返回 409 invalid_state。
+func (s *Service) Activate(ctx context.Context, account, sid uuid.UUID, code string) ([]string, error) {
 	if len(code) != Digits {
 		return nil, apierr.Invalid(apierr.Field("totp_code", "invalid_format"))
 	}
@@ -108,9 +115,22 @@ func (s *Service) Activate(ctx context.Context, account uuid.UUID, code string) 
 	if err != nil {
 		return nil, apierr.Unavailable(err)
 	}
-	secret, err := s.Keys.Open(raw, enrollmentAD(account))
+	if len(raw) <= len(uuid.UUID{}) {
+		return nil, apierr.InvalidState
+	}
+	origin := uuid.UUID(raw[:16])
+	secret, err := s.Keys.Open(raw[16:], enrollmentAD(account, origin))
 	if err != nil {
 		return nil, apierr.InvalidState
+	}
+	if origin != sid {
+		same, err := sqlc.New(s.Pool).SessionDescendsFrom(ctx, sqlc.SessionDescendsFromParams{Current: sid, Ancestor: origin})
+		if err != nil {
+			return nil, err
+		}
+		if !same {
+			return nil, apierr.InvalidState
+		}
 	}
 	step, ok := Match(secret, code, s.Clock.Now(), nil)
 	if !ok {

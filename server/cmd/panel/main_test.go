@@ -49,6 +49,7 @@ func command(bin, dbURL string, args ...string) *exec.Cmd {
 		"PANEL_HTTP_SHUTDOWN_TIMEOUT=5s",
 		"PANEL_MASTER_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
 		"PANEL_TOKEN_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+		"PANEL_CONFIG_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)),
 		"PANEL_VALKEY_URL="+valkeyURL,
 	)
 	return cmd
@@ -84,6 +85,18 @@ func TestBinary(t *testing.T) {
 	out, err = command(bin, dbURL, "migrate", "status").Output()
 	if err != nil || !strings.Contains(string(out), "00001  applied") {
 		t.Fatalf("migrate status: %v\n%s", err, out)
+	}
+
+	// /v1/config 的签名密钥（CONV-30）：api 角色缺少时拒绝启动；与访问令牌密钥相同时拒绝启动。
+	for name, env := range map[string]string{
+		"missing":       "PANEL_CONFIG_KEY=",
+		"same as token": "PANEL_CONFIG_KEY=2:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+	} {
+		cmd := command(bin, dbURL, "api")
+		cmd.Env = append(cmd.Env, env)
+		if out, err := cmd.CombinedOutput(); err == nil || !strings.Contains(string(out), "PANEL_CONFIG_KEY") {
+			t.Fatalf("api with config key %s: err=%v out=%s", name, err, out)
+		}
 	}
 
 	for _, mode := range []string{"api", "gateway", "worker", "all"} {

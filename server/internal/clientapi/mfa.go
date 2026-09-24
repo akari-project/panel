@@ -13,10 +13,13 @@ import (
 	"github.com/akari-project/panel/server/internal/session"
 )
 
-// StartTotpEnrollment 开始绑定 TOTP（AUTH-11）。响应含密钥，不接受 Idempotency-Key（CONV-12）。
+// StartTotpEnrollment 开始绑定 TOTP（AUTH-11，需要重新验证，AUTH-23）。响应含密钥，不接受 Idempotency-Key（CONV-12）。
 func (s *Server) StartTotpEnrollment(ctx context.Context, _ gen.StartTotpEnrollmentRequestObject) (gen.StartTotpEnrollmentResponseObject, error) {
 	p, _ := auth.FromContext(ctx)
-	e, err := s.d.MFA.StartEnrollment(ctx, p.AccountID)
+	if err := s.d.Sessions.RequireRecentAuth(ctx, p); err != nil {
+		return nil, err
+	}
+	e, err := s.d.MFA.StartEnrollment(ctx, p.AccountID, p.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +32,7 @@ func (s *Server) ActivateTotp(ctx context.Context, req gen.ActivateTotpRequestOb
 		return nil, apierr.Invalid()
 	}
 	p, _ := auth.FromContext(ctx)
-	codes, err := s.d.MFA.Activate(ctx, p.AccountID, req.Body.TotpCode)
+	codes, err := s.d.MFA.Activate(ctx, p.AccountID, p.SessionID, req.Body.TotpCode)
 	if err != nil {
 		return nil, err
 	}
