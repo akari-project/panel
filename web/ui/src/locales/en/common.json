@@ -1,0 +1,87 @@
+{
+  "loading": "Loading…",
+  "empty": "Nothing here yet",
+  "retry": "Retry",
+  "request_id": "Request ID: {{id}}",
+  "skip_to_content": "Skip to main content",
+  "open_menu": "Open menu",
+  "close_menu": "Close menu",
+  "main_navigation": "Main navigation",
+  "source_code": "Source code",
+  "sign_out": "Sign out",
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "language": {
+    "label": "Language",
+    "zh-CN": "简体中文",
+    "en": "English"
+  },
+  "not_found": {
+    "title": "Page not found",
+    "back_home": "Back to home"
+  },
+  "errors": {
+    "invalid_request": "Some fields are invalid. Please check and try again.",
+    "unauthenticated": "Your session has expired. Please sign in again.",
+    "mfa_required": "Two-factor verification is required.",
+    "forbidden": "You don't have permission to do this.",
+    "email_unverified": "Your email address is not verified.",
+    "registration_closed": "Registration is closed.",
+    "account_suspended": "This account is suspended or pending deletion.",
+    "not_found": "Not found.",
+    "conflict": "This was changed elsewhere. Refresh and try again.",
+    "invalid_state": "This action isn't allowed right now.",
+    "quote_expired": "The quote has expired. Please get a new one.",
+    "entitlement_required": "An active plan is required.",
+    "device_limit_reached": "Device limit reached.",
+    "payment_unavailable": "Payment is currently unavailable.",
+    "kernel_protocol_unsupported": "The kernel doesn't support this protocol or transport.",
+    "payload_too_large": "The content exceeds the size limit.",
+    "idempotency_key_reused": "A repeated request had different content.",
+    "upgrade_required": "This client is outdated. Please upgrade.",
+    "precondition_required": "Version information is missing. Refresh and try again.",
+    "rate_limited": "Too many attempts. Please try again later.",
+    "internal": "Something went wrong. Please try again later.",
+    "service_unavailable": "The service is temporarily unavailable. Please try again later.",
+    "network": "Network error. Check your connection and try again.",
+    "unknown": "An unknown error occurred."
+  },
+  "field_errors": {
+    "required": "Required",
+    "invalid_format": "Invalid format",
+    "too_short": "Too short",
+    "too_long": "Too long",
+    "out_of_range": "Out of range",
+    "not_allowed": "Not allowed",
+    "invalid_code": "Invalid",
+    "incorrect": "Incorrect",
+    "expired": "Expired",
+    "exhausted": "No attempts left",
+    "taken": "Already in use"
+  },
+  "sign_in": {
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "mfa_title": "Two-factor verification",
+    "mfa_hint": "Enter the 6-digit code from your authenticator app.",
+    "totp_code": "Verification code",
+    "recovery_code": "Recovery code",
+    "use_recovery": "Use a recovery code instead",
+    "use_totp": "Use a verification code instead",
+    "verify": "Verify",
+    "back": "Back",
+    "enroll_hint": "First sign-in requires setting up an authenticator. Add the key below to your authenticator app, then enter the code it generates.",
+    "enroll_secret": "Key",
+    "failed": "Incorrect email, password or verification code."
+  },
+  "validation": {
+    "required": "Required",
+    "email": "Enter a valid email address",
+    "totp": "Enter 6 digits"
+  }
+}

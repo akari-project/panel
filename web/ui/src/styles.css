@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* 共享主题（UI-05）。颜色对比度按 WCAG AA 选取：正文与背景 ≥ 7:1，次要文字 ≥ 4.5:1。 */
+@import 'tailwindcss';
+@source '.';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg: #ffffff;
+  --color-surface: #f8fafc;
+  --color-fg: #0f172a;
+  --color-muted: #475569;
+  --color-border: #cbd5e1;
+  --color-primary: #1d4ed8;
+  --color-primary-hover: #1e40af;
+  --color-primary-fg: #ffffff;
+  --color-danger: #b91c1c;
+  --color-focus: #2563eb;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --color-bg: #0b1120;
+  --color-surface: #111827;
+  --color-fg: #e5e7eb;
+  --color-muted: #9ca3af;
+  --color-border: #334155;
+  --color-primary: #60a5fa;
+  --color-primary-hover: #93c5fd;
+  --color-primary-fg: #0b1120;
+  --color-danger: #f87171;
+  --color-focus: #93c5fd;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}
+
+/* 统一且明显的键盘焦点样式。 */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}

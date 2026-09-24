@@ -1,0 +1,13 @@
+{
+  "nav": {
+    "overview": "Overview"
+  },
+  "login": {
+    "title": "Console sign in"
+  },
+  "home": {
+    "title": "Overview",
+    "welcome": "Signed in as {{email}}",
+    "empty": "Active users, new purchases, renewals and revenue will appear here."
+  }
+}
