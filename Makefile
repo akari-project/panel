@@ -101,9 +101,9 @@ check-clock:
 	if [ -n "$$hits" ]; then echo "禁止直接调用 time.Now/Since/Until（CONV-04），请使用 internal/clock："; echo "$$hits"; exit 1; fi; \
 	echo "check-clock: 通过"
 
-# 源文件前两行内必须有 SPDX 标识（CONV-25）。无法加头的文件登记在 REUSE.toml；完整检查由 CI 的 REUSE lint 执行。
+# 源文件前两行内必须有 SPDX 标识（CONV-25）。无法加头的文件（生成代码、锁文件）登记在 REUSE.toml 并在此排除；完整检查由 CI 的 REUSE lint 执行。
 check-spdx:
-	@missing="$$(find . -path ./.git -prune -o -path ./.worktrees -prune -o -path ./.claude -prune -o -path '*/node_modules' -prune -o -path ./$(GENERATED) -prune \
+	@missing="$$(find . -path ./.git -prune -o -path ./.worktrees -prune -o -path ./.claude -prune -o -path '*/node_modules' -prune -o -path ./$(GENERATED) -prune -o -path ./$(WEB)/pnpm-lock.yaml -prune \
 	  -o -path ./$(SERVER)/internal/webui/dist -prune -o -path '*/dist' -prune -o \
 	  -type f \( -name '*.go' -o -name '*.sql' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' -o -name '*.toml' -o -name Makefile \) -print \
 	  | while read -r f; do head -n 2 "$$f" | grep -q 'SPDX-License-Identif[i]er:' || echo "$$f"; done)"; \
