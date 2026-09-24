@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# 不能携带注释的文件（JSON、工具生成的锁文件）的许可证登记（spec/02 CONV-25）。
+version = 1
+
+[[annotations]]
+path = [
+  "web/**/package.json",
+  "web/pnpm-lock.yaml",
+  "web/openapi/lock.json",
+  "web/**/locales/**/*.json",
+]
+SPDX-FileCopyrightText = "akari-project contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

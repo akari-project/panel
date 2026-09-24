@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+packages:
+  - portal
+  - admin
+  - ui
+  - sdk
+# 只允许必要的依赖执行安装脚本；@scarf/scarf 是 Prism 带入的统计脚本，不执行。
+allowBuilds:
+  '@scarf/scarf': false
+  esbuild: true

@@ -1,0 +1,4803 @@
+# SPDX-License-Identifier: Apache-2.0
+openapi: 3.1.0
+info:
+  title: Client API
+  version: 0.1.0
+  summary: 用户中心与自研客户端共用的接口
+  description: |
+    面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
+
+    ## 认证
+    - 用户中心使用 Cookie 认证（`cookie`）：`POST /v1/sessions` 以 `platform=web` 登录时，访问令牌与刷新令牌都以
+      HttpOnly、Secure、SameSite=Strict 的 Cookie 下发，响应体不含令牌（spec/10 AUTH-08）。
+    - 自研客户端使用 Bearer 令牌（`bearer`）：访问令牌为 PASETO v4.public，有效期 15 分钟（AUTH-06）；
+      刷新令牌存入系统安全存储，通过 `POST /v1/oauth/token` 轮换（AUTH-07）。
+    - 标有 `security: []` 的接口无需认证；同时列出空要求与认证方式的接口（如公告、帮助文档、地区）认证可选，
+      认证后返回与本人相关的内容。
+    - 需要重新验证的操作（AUTH-23）在 5 分钟内未重新验证时返回 401 `mfa_required`，客户端调用
+      `POST /v1/me/reauthentications` 后重试原请求（spec/32 UI-09）。
+
+    ## 错误（CONV-16）
+    除 `/v1/oauth/*` 外，错误一律为 RFC 9457 `application/problem+json`，必含 `type`、`title`、`status`、`code`、
+    `request_id`；参数错误附 `errors[]`（`{field, code}`）。客户端依据 `code` 显示本地化文案。`/v1/oauth/*` 按
+    RFC 6749 §5.2 与 RFC 8628 返回 `application/json` 的 `{error, error_description}`，这是唯一的例外。
+    自研客户端版本低于 `/v1/config` 的 `min_version[platform]` 时，任何接口都可能返回 426 `upgrade_required`
+    （API-03）；超过限流返回 429 `rate_limited` 并带 `Retry-After`（API-04）。
+
+    ## 分页（CONV-11）
+    游标分页：`?limit=50&cursor=...`，`limit` 默认 50、最大 200；响应为 `{items, next_cursor}`，最后一页
+    `next_cursor` 为 `null`；非法游标返回 400 `invalid_request`。设备、公告、文章列表不分页，上限见各接口描述。
+
+    ## 幂等（CONV-12）
+    产生副作用的 `POST` 接受 `Idempotency-Key`（UUID）。作用域：已认证请求为“账号 + 键”，未认证请求为“路由 + 键”；
+    记录保存 24 小时。同键同体返回相同结果；同键不同体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回
+    409 `conflict` 并带 `Retry-After`；5xx 不缓存。响应中含令牌、密钥、恢复码或导入链接的接口
+    （`POST /v1/sessions`、`/v1/oauth/*`、`POST /v1/device-links`、`POST /v1/me/reauthentications`、
+    TOTP 与恢复码、导入链接重置）不接受该请求头，避免在幂等记录中保存秘密。
+
+    ## 缓存（CONV-13）
+    `GET /v1/config`、`GET /v1/me/configuration`、`GET /v1/configurations/{token}` 返回强 `ETag`，支持
+    `If-None-Match` 与 304。客户端接口中只修改本人设置的操作不要求 `If-Match`（CONV-28）。
+
+    ## 命名（API-01）
+    路径、字段、枚举值与错误码中不使用 subscribe、server、node、traffic 四个词；唯一例外是响应头
+    `Subscription-Userinfo`。
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+- url: https://api.example.invalid
+  description: 示例地址，部署时替换为站点 API 域名
+security:
+- bearer: []
+- cookie: []
+tags:
+- name: config
+  description: 客户端启动配置、版本与公共资源
+- name: auth
+  description: 注册、登录、令牌、设备授权与扫码登录
+- name: account
+  description: 当前账号信息、注销与通知偏好
+- name: security
+  description: 密码、重新验证、二次验证与 Passkey
+- name: devices
+  description: 已注册设备与登录会话
+- name: connectivity
+  description: 地区、连接配置、导入链接、用量与事件流
+- name: commerce
+  description: 套餐、报价、订单、权益、余额与兑换码
+- name: content
+  description: 公告与帮助文档（模块可关闭，spec/13 OPS-08）
+- name: support
+  description: 工单（模块可关闭）
+- name: referrals
+  description: 邀请返利（模块可关闭）
+- name: diagnostics
+  description: 诊断日志（模块可关闭，默认关闭）
+paths:
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: 客户端启动配置（已签名）
+      description: |
+        返回最低版本、公告版本、功能开关与备用域名。`signature` 为 Ed25519 签名，签名对象是 `payload` 按
+        RFC 8785（JCS）规范化后的 UTF-8 字节；`key_id` 标识签名密钥，客户端内置当前与下一把公钥（CONV-30）。
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedConfig'
+              example:
+                payload:
+                  min_version:
+                    ios: 1.2.0
+                    android: 1.2.0
+                    windows: 1.1.0
+                    macos: 1.1.0
+                    linux: 1.1.0
+                  announcement_version: 17
+                  features:
+                    announcements: true
+                    articles: true
+                    support: true
+                    referrals: false
+                    diagnostics: false
+                  api_endpoints:
+                  - https://api.example.invalid
+                  - https://api-backup.example.invalid
+                  issued_at: '2026-10-01T10:00:00+08:00'
+                signature: 3q2+7w8Jb1l0m9Kp3yVZ4aQeX2nR6tUoHcFgWjD5sLkP0vN1iE8rT7yB4uA2zC9xM6qS3hG5fJ1dK0wL8oY7eQ==
+                key_id: cfg-2026-01
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/releases/latest:
+    get:
+      tags: [config]
+      operationId: getLatestRelease
+      summary: 指定平台的最新版本与安装包签名
+      security: []
+      parameters:
+      - name: platform
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ClientPlatform'
+        example: android
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Release'
+              example:
+                platform: android
+                version: 1.4.0
+                url: https://downloads.example.invalid/client/1.4.0/app-release.apk
+                sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                signature: MEUCIQDx3v8fJb1l0m9Kp3yVZ4aQeX2nR6tUoHcFgWjD5sLkPwIgN1iE8rT7yB4uA2zC9xM6qS3hG5fJ1dK0wL8oY7eQ
+                key_id: rel-2026-01
+                notes: 修复导入配置后偶发断线的问题。
+                is_mandatory: false
+                published_at: '2026-09-20T12:00:00+08:00'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/assets/{digest}:
+    get:
+      tags: [config]
+      operationId: getAsset
+      summary: 按内容寻址的公共资源（规则集等）
+      description: 内容由 SHA-256 摘要寻址，永不变化，可由 CDN 长期缓存。
+      security: []
+      parameters:
+      - name: digest
+        in: path
+        required: true
+        description: 资源内容的 SHA-256（小写十六进制）
+        schema:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        example: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+      responses:
+        '200':
+          description: 资源内容
+          headers:
+            Cache-Control:
+              description: '`public, max-age=31536000, immutable`'
+              schema:
+                type: string
+              example: public, max-age=31536000, immutable
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                contentMediaType: application/octet-stream
+              example: SRS1...binary...
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/plans:
+    get:
+      tags: [commerce]
+      operationId: listPlans
+      summary: 在售套餐、价格与加购项价格
+      description: |
+        只返回 `on_sale` 的套餐与在售价格行，以及在售的加购项价格（spec/11 BIL-21、BIL-24）。
+        列表不分页：在售套餐与加购项由运营者维护，数量上限为 200（超出时服务端只返回按排序的前 200 项）。
+        已购用户的续费价格以 `GET /v1/me/entitlements` 的 `locked_price` 与报价结果为准。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, addon_prices]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 200
+                    items:
+                      $ref: '#/components/schemas/Plan'
+                  addon_prices:
+                    type: array
+                    maxItems: 200
+                    items:
+                      $ref: '#/components/schemas/AddonPrice'
+              example:
+                items:
+                - id: 0192f0c4-1a00-7000-8000-00000000a001
+                  name: 标准版
+                  description: 适合日常使用，每月 200 GB。
+                  kind: recurring
+                  tier: 1
+                  bytes_per_cycle: 214748364800
+                  device_limit: 3
+                  speed_limit_mbps: null
+                  reset_policy: purchase_anchor
+                  location_count: 12
+                  prices:
+                  - id: 0192f0c4-1b00-7000-8000-00000000b001
+                    period: month
+                    period_days: null
+                    amount_minor: 3000
+                    currency: CNY
+                  - id: 0192f0c4-1b00-7000-8000-00000000b002
+                    period: year
+                    period_days: null
+                    amount_minor: 30000
+                    currency: CNY
+                addon_prices:
+                - id: 0192f0c4-1c00-7000-8000-00000000c001
+                  kind: data
+                  name: 50 GB 流量包
+                  bytes_total: 53687091200
+                  extra_devices: null
+                  amount_minor: 1000
+                  currency: CNY
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/locations:
+    get:
+      tags: [connectivity]
+      operationId: listLocations
+      summary: 可用地区、负载提示与倍率
+      description: |
+        未认证时返回全部公开地区；认证后 `is_accessible` 表示当前权益能否使用该地区。列表不分页，
+        数量上限为 500（面向用户的地区由运营者维护）。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: '#/components/schemas/Location'
+              example:
+                items:
+                - id: 0192f0c4-2a00-7000-8000-00000000d001
+                  name: 东京 01
+                  region_code: JP
+                  city: Tokyo
+                  load_percent: 42
+                  is_available: true
+                  is_accessible: true
+                  usage_multiplier: '1.00'
+                - id: 0192f0c4-2a00-7000-8000-00000000d002
+                  name: 洛杉矶 01
+                  region_code: US
+                  city: Los Angeles
+                  load_percent: 18
+                  is_available: true
+                  is_accessible: false
+                  usage_multiplier: '1.50'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/accounts:
+    post:
+      tags: [auth]
+      operationId: createAccount
+      summary: 注册
+      description: |
+        spec/10 AUTH-01、AUTH-02。邮箱已注册时同样返回 202，不创建账号，改为向该邮箱发送提醒。
+        注册成功后不登录，用户完成邮箱验证或直接调用 `POST /v1/sessions` 登录（未验证邮箱不能下单，AUTH-03）。
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+                invite_code:
+                  type: string
+                  maxLength: 64
+                  description: 账号邀请码或管理员生成的注册码；注册策略为“仅邀请码”时必填
+                locale:
+                  type: string
+                  description: BCP 47 语言标签
+                timezone:
+                  type: string
+                  description: IANA 时区名
+                captcha_token:
+                  type: string
+                  description: 人机验证令牌（预留，AUTH-02）
+            example:
+              email: alice@example.com
+              password: correct-horse-battery
+              invite_code: K7Q2XM
+              locale: zh-CN
+              timezone: Asia/Shanghai
+      responses:
+        '202':
+          description: 已受理，验证邮件已发送（无论邮箱是否已注册）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+              example:
+                status: accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/RegistrationClosed'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/accounts/verification:
+    post:
+      tags: [auth]
+      operationId: verifyEmail
+      summary: 提交邮箱验证码
+      description: |
+        AUTH-03：6 位数字，15 分钟有效，最多尝试 5 次。已登录时只需 `code`；未登录时必须同时提交 `email`。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 未登录时必填
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+            example:
+              email: alice@example.com
+              code: '482913'
+      responses:
+        '204':
+          description: 已验证
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/accounts/verification/resend:
+    post:
+      tags: [auth]
+      operationId: resendVerification
+      summary: 重新发送邮箱验证码
+      description: |
+        AUTH-03：每个账号每分钟 1 次、每天 10 次；发送新码后旧码作废。未登录时提交 `email`，
+        无论邮箱是否存在都返回 202。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: 未登录时必填
+                captcha_token:
+                  type: string
+            example:
+              email: alice@example.com
+      responses:
+        '202':
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+              example:
+                status: accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/password-resets:
+    post:
+      tags: [auth]
+      operationId: requestPasswordReset
+      summary: 发起找回密码
+      description: AUTH-04：发送 30 分钟有效的一次性链接；无论邮箱是否存在都返回 202。限流见 API-04。
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                captcha_token:
+                  type: string
+            example:
+              email: alice@example.com
+      responses:
+        '202':
+          description: 已受理（无论邮箱是否存在）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+              example:
+                status: accepted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/password-resets/confirmation:
+    post:
+      tags: [auth]
+      operationId: confirmPasswordReset
+      summary: 确认找回密码并设置新密码
+      description: |
+        AUTH-04：`token` 取自邮件链接的 URL 片段 `#token=`。成功后吊销该账号的全部会话。
+        令牌无效返回 400，`errors[].code` 为 `invalid_code`；过期为 `expired`。
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  description: 32 字节随机值的 base64url
+                  pattern: ^[A-Za-z0-9_-]{43}$
+                new_password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+            example:
+              token: q3v8fJb1l0m9Kp3yVZ4aQeX2nR6tUoHcFgWjD5sLkP0
+              new_password: new-correct-horse-battery
+      responses:
+        '204':
+          description: 密码已重置
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/sessions:
+    post:
+      tags: [auth]
+      operationId: createSession
+      summary: 登录并注册设备
+      description: |
+        两步登录（AUTH-20）：
+        1. 提交 `email`、`password`、`device`。账号已启用二次验证时返回 401 `mfa_required`，problem 附
+           `challenge_id`（5 分钟有效）与 `methods`。
+        2. 再次调用本接口，提交 `challenge_id`、`device`，以及 `totp_code`、`webauthn_assertion`、`recovery_code`
+           三者之一，不再提交密码。每个 challenge 最多尝试 5 次。
+
+        `device.platform=web` 时只注册 web 设备，不生成代理凭据，令牌以 Cookie 下发，响应体不含令牌（AUTH-08、AUTH-10）。
+        其他平台可以带上已有的 `device_id` 与 `device_proof` 复用原设备记录。设备数已达上限时登录照常成功，
+        `credential_status` 为 `device_limit_reached`（AUTH-14）。限流与冷却见 AUTH-09。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - $ref: '#/components/schemas/PasswordLogin'
+              - $ref: '#/components/schemas/MfaLoginTotp'
+              - $ref: '#/components/schemas/MfaLoginPasskey'
+              - $ref: '#/components/schemas/MfaLoginRecoveryCode'
+            examples:
+              password:
+                summary: 第一步：邮箱与密码
+                value:
+                  email: alice@example.com
+                  password: correct-horse-battery
+                  device:
+                    platform: ios
+                    model: iPhone17,1
+                    app_version: 1.4.0
+                    public_key: MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=
+              totp:
+                summary: 第二步：TOTP
+                value:
+                  challenge_id: 0192f0c4-3a00-7000-8000-00000000e001
+                  totp_code: '731946'
+                  device:
+                    platform: ios
+                    model: iPhone17,1
+                    app_version: 1.4.0
+                    public_key: MCowBQYDK2VwAyEAGb9ECWmEzf6FQbrBZ9w7lshQhqowtrbLDFw4rXAxZuE=
+      responses:
+        '201':
+          description: 已登录。`platform=web` 时令牌通过 `Set-Cookie` 下发。
+          headers:
+            Set-Cookie:
+              description: 仅 `platform=web`：HttpOnly、Secure、SameSite=Strict 的访问令牌与刷新令牌 Cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              examples:
+                app:
+                  summary: 自研客户端
+                  value:
+                    device_id: 0192f0c4-4a00-7000-8000-00000000f001
+                    token_type: Bearer
+                    access_token: v4.public.eyJzdWIiOiIwMTkyZjBjNCIsInNpZCI6IjAxOTJmMGM0In0.c2lnbmF0dXJl
+                    refresh_token: rt_Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tUoHcFgWjD5sL
+                    expires_in: 900
+                    credential_status: issued
+                web:
+                  summary: 用户中心
+                  value:
+                    device_id: 0192f0c4-4a00-7000-8000-00000000f002
+                    token_type: Bearer
+                    expires_in: 900
+                    credential_status: web_device
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/LoginUnauthorized'
+        '403':
+          $ref: '#/components/responses/AccountSuspended'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/sessions/nonces:
+    post:
+      tags: [auth]
+      operationId: createSessionNonce
+      summary: 取得设备证明用的 nonce
+      description: |
+        AUTH-10：带已有 `device_id` 重新登录前调用。客户端用该设备的 Ed25519 私钥对返回的 `nonce` 签名，
+        放入 `POST /v1/sessions` 的 `device.device_proof`。nonce 有效 60 秒，只能使用一次。
+        响应含一次性值，不接受 `Idempotency-Key`。
+      security: []
+      responses:
+        '201':
+          description: 新的 nonce
+          headers:
+            Cache-Control:
+              description: '`no-store`'
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce, expires_at]
+                properties:
+                  nonce:
+                    type: string
+                    description: 32 字节随机值的 base64url
+                    pattern: ^[A-Za-z0-9_-]{43}$
+                  expires_at:
+                    type: string
+                    format: date-time
+              example:
+                nonce: Tq7Lm2Xc9Vb4Nz1Kd8Rf5Hs0Jw3Pg6Ya2Ue9Io4Qx7B
+                expires_at: '2026-10-01T10:01:00+08:00'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/sessions/current:
+    delete:
+      tags: [auth]
+      operationId: deleteCurrentSession
+      summary: 登出，并吊销本设备及其代理凭据
+      description: AUTH-10：吊销本会话与本设备，释放设备名额；web 设备同时清除 Cookie。
+      responses:
+        '204':
+          description: 已登出
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/oauth/token:
+    post:
+      tags: [auth]
+      operationId: issueToken
+      summary: 刷新令牌轮换；设备授权与扫码登录的轮询
+      description: |
+        RFC 6749 / RFC 8628。错误为 `application/json` 的 `{error, error_description}`（CONV-16 例外）。
+        - `grant_type=refresh_token`：刷新令牌轮换（AUTH-07）。浏览器中省略 `refresh_token`，由 Cookie 携带，新令牌同样以 Cookie 下发。
+        - `grant_type=urn:ietf:params:oauth:grant-type:device_code`：设备授权时 `device_code` 取自
+          `POST /v1/oauth/device_authorization`；扫码登录时把 `POST /v1/device-links` 返回的 `poll_token` 作为
+          `device_code` 提交（AUTH-24）。批准前返回 `authorization_pending`，轮询过快返回 `slow_down`。
+          签发的令牌受众只能是 `client`，设备计入设备上限。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  enum:
+                  - refresh_token
+                  - urn:ietf:params:oauth:grant-type:device_code
+                refresh_token:
+                  type: string
+                  description: '`grant_type=refresh_token` 时必填（浏览器由 Cookie 携带）'
+                device_code:
+                  type: string
+                  description: 设备授权的 `device_code`，或扫码登录的 `poll_token`
+                client_id:
+                  type: string
+                  description: 公开客户端标识，例如 `app`、`tv`
+            example:
+              grant_type: urn:ietf:params:oauth:grant-type:device_code
+              device_code: GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS
+              client_id: tv
+      responses:
+        '200':
+          description: 新令牌对
+          headers:
+            Cache-Control:
+              description: '`no-store`（RFC 6749 §5.1）'
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+              example:
+                access_token: v4.public.eyJzdWIiOiIwMTkyZjBjNCIsInNpZCI6IjAxOTJmMGM1In0.c2lnbmF0dXJl
+                refresh_token: rt_Bx7Jc2Kq9m3Lr5Ns8Pt1Qv4Rw6Sx0Ty2Uz5Va8Wb3Xc
+                token_type: Bearer
+                expires_in: 900
+                device_id: 0192f0c4-4a00-7000-8000-00000000f003
+        '400':
+          $ref: '#/components/responses/OAuthError'
+        default:
+          $ref: '#/components/responses/OAuthError'
+  /v1/oauth/device_authorization:
+    post:
+      tags: [auth]
+      operationId: startDeviceAuthorization
+      summary: 电视、路由器等设备取得设备授权码
+      description: |
+        RFC 8628 §3.1–3.2。用户在用户中心 `/activate` 页面输入 `user_code` 批准（`POST /v1/me/device-authorizations`），
+        设备以 `device_code` 轮询 `POST /v1/oauth/token`。错误格式同 `/v1/oauth/token`。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [device_platform]
+              properties:
+                client_id:
+                  type: string
+                device_platform:
+                  $ref: '#/components/schemas/ClientPlatform'
+                device_model:
+                  type: string
+                  maxLength: 100
+                app_version:
+                  type: string
+                  maxLength: 32
+                public_key:
+                  type: string
+                  description: Ed25519 公钥（SPKI DER 的 base64）
+            example:
+              client_id: tv
+              device_platform: android
+              device_model: Chromecast with Google TV
+              app_version: 1.4.0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device_code, user_code, verification_uri, expires_in, interval]
+                properties:
+                  device_code:
+                    type: string
+                  user_code:
+                    type: string
+                  verification_uri:
+                    type: string
+                    format: uri
+                  verification_uri_complete:
+                    type: string
+                    format: uri
+                  expires_in:
+                    type: integer
+                  interval:
+                    type: integer
+              example:
+                device_code: GmRhmhcxhwAzkoEqiMEg_DnyEysNkuNhszIySk9eS
+                user_code: WDJB-MJHT
+                verification_uri: https://portal.example.invalid/activate
+                verification_uri_complete: https://portal.example.invalid/activate?user_code=WDJB-MJHT
+                expires_in: 900
+                interval: 5
+        '400':
+          $ref: '#/components/responses/OAuthError'
+        default:
+          $ref: '#/components/responses/OAuthError'
+  /v1/me/device-authorizations:
+    post:
+      tags: [auth]
+      operationId: approveDeviceAuthorization
+      summary: 用户中心提交 user_code 批准设备授权
+      description: AUTH-24。`user_code` 无效返回 400 `invalid_code`，过期返回 `expired`。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_code]
+              properties:
+                user_code:
+                  type: string
+                  maxLength: 16
+            example:
+              user_code: WDJB-MJHT
+      responses:
+        '200':
+          description: 已批准；返回被批准的设备
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [device]
+                properties:
+                  device:
+                    $ref: '#/components/schemas/RequestingDevice'
+              example:
+                device:
+                  platform: android
+                  model: Chromecast with Google TV
+                  app_version: 1.4.0
+                  ip_prefix: 203.0.113.0/24
+                  region: 中国 上海
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/device-links:
+    post:
+      tags: [auth]
+      operationId: createDeviceLink
+      summary: 新设备发起扫码登录
+      description: |
+        AUTH-24。新设备显示 `qr_content` 生成的二维码与 `check_digits`（2 位校验数字），并以 `poll_token`
+        作为 `device_code` 轮询 `POST /v1/oauth/token`。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device]
+              properties:
+                device:
+                  $ref: '#/components/schemas/DeviceInfo'
+            example:
+              device:
+                platform: macos
+                model: MacBookAir10,1
+                app_version: 1.4.0
+                public_key: MCowBQYDK2VwAyEAe7rUf1aK4dQm0vZ3jH9sN2pL6cX8bW5tY1gR4kF0oE8=
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceLinkCreated'
+              example:
+                id: 0192f0c4-5a00-7000-8000-000000010001
+                qr_content: https://portal.example.invalid/link/0192f0c4-5a00-7000-8000-000000010001
+                poll_token: dl_Hq8Zp3Lw6Nc1Vt9Ks4Rb7Jm2Xf5Yd0Ga3Ue6Io9Po2Q
+                check_digits: '47'
+                expires_in: 300
+                interval: 3
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/device-links/{id}:
+    get:
+      tags: [auth]
+      operationId: getDeviceLink
+      summary: 批准方查看扫码登录请求
+      description: |
+        返回请求设备的平台、型号、IP 前缀与所在地区，以及 `candidate_digits`（3 个 2 位数字，其中一个与新设备
+        屏幕上的 `check_digits` 相同），用户需选出相同的数字后批准（AUTH-24）。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceLink'
+              example:
+                id: 0192f0c4-5a00-7000-8000-000000010001
+                status: pending
+                device:
+                  platform: macos
+                  model: MacBookAir10,1
+                  app_version: 1.4.0
+                  ip_prefix: 198.51.100.0/24
+                  region: 中国 杭州
+                candidate_digits: ['12', '47', '85']
+                expires_at: '2026-10-01T10:05:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/device-links/{id}/approve:
+    post:
+      tags: [auth]
+      operationId: approveDeviceLink
+      summary: 带校验数字批准扫码登录
+      description: |
+        `check_digits` 与新设备不一致时返回 400（`errors[].code` 为 `invalid_code`），多次失败后请求作废
+        （`exhausted`）。非 web 批准方用本设备私钥对 `id` 与 `check_digits` 签名（AUTH-10）。
+        请求已批准、已过期时返回 409 `invalid_state`。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [check_digits]
+              properties:
+                check_digits:
+                  type: string
+                  pattern: ^[0-9]{2}$
+                device_signature:
+                  type: string
+                  description: 非 web 批准方必填：Ed25519 对 `{id}.{check_digits}` 的签名（base64）
+            example:
+              check_digits: '47'
+              device_signature: 4n5pZ0l3q2Vx8Kj7Rb1Tc6Ud9We2Yf5Ag8Bh1Ci4Dj7Ek0Fl3Gm6Hn9Io2Jp5Kq8Lr1Ms4Nt7Ou0Pv3Qw6Rx9Sy2Tz5A==
+      responses:
+        '204':
+          description: 已批准
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/deletion-cancellations:
+    post:
+      tags: [auth]
+      operationId: cancelAccountDeletion
+      summary: 用邮件中的令牌撤销注销
+      description: |
+        AUTH-05：注销后 30 天内有效。恢复后需要重新登录，代理凭据重新生成；已结束的权益与作废的余额不恢复。
+      security: []
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  pattern: ^[A-Za-z0-9_-]{43}$
+            example:
+              token: Vx8Kj7Rb1Tc6Ud9We2Yf5Ag8Bh1Ci4Dj7Ek0Fl3Gm6H
+      responses:
+        '204':
+          description: 注销已撤销
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me:
+    get:
+      tags: [account]
+      operationId: getMe
+      summary: 当前账号信息
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                id: 0192f0c4-0a00-7000-8000-000000000001
+                email: alice@example.com
+                is_email_verified: true
+                status: active
+                locale: zh-CN
+                timezone: Asia/Shanghai
+                is_auto_renew: false
+                is_mfa_enabled: true
+                mfa_methods: [totp, recovery_code]
+                entitlement_status: active
+                device_limit: 3
+                referral_code: K7Q2XM
+                created_at: '2026-09-01T09:12:00+08:00'
+                deletion_scheduled_at: null
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      tags: [account]
+      operationId: updateMe
+      summary: 修改语言、时区与自动续费开关
+      description: |
+        只修改本人设置，不要求 `If-Match`（CONV-28）。`is_auto_renew` 是账号级开关，权益变更后保留（spec/11 BIL-19）。
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                locale:
+                  type: string
+                  description: BCP 47 语言标签
+                timezone:
+                  type: string
+                  description: IANA 时区名
+                is_auto_renew:
+                  type: boolean
+            example:
+              is_auto_renew: true
+      responses:
+        '200':
+          description: 更新后的账号
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+              example:
+                id: 0192f0c4-0a00-7000-8000-000000000001
+                email: alice@example.com
+                is_email_verified: true
+                status: active
+                locale: zh-CN
+                timezone: Asia/Shanghai
+                is_auto_renew: true
+                is_mfa_enabled: true
+                mfa_methods: [totp, recovery_code]
+                entitlement_status: active
+                device_limit: 3
+                referral_code: K7Q2XM
+                created_at: '2026-09-01T09:12:00+08:00'
+                deletion_scheduled_at: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [account]
+      operationId: deleteMe
+      summary: 注销账号
+      description: |
+        AUTH-05。需要 5 分钟内完成过重新验证，否则返回 401 `mfa_required`。持有管理员角色、存在 `pending`
+        订单或已支付未开通订单时返回 409 `invalid_state`。受理后立即吊销全部会话与代理凭据，生效中的权益立即结束、
+        不退款，余额作废；30 天内可凭邮件中的令牌撤销（`POST /v1/deletion-cancellations`）。
+      responses:
+        '202':
+          description: 注销已受理
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, purge_at]
+                properties:
+                  status:
+                    type: string
+                    const: deleting
+                  purge_at:
+                    type: string
+                    format: date-time
+                    description: 删除个人数据的时间
+              example:
+                status: deleting
+                purge_at: '2026-10-31T10:00:00+08:00'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/reauthentications:
+    post:
+      tags: [security]
+      operationId: reauthenticate
+      summary: 重新验证（step-up）
+      description: |
+        AUTH-23：提交密码，或 `totp_code`、`webauthn_assertion`、`recovery_code` 之一；成功后 5 分钟内可以执行
+        需要重新验证的操作。可附上 401 `mfa_required` 返回的 `challenge_id`。密码总是可用，不列入 `methods`。
+        密码或验证码不正确时返回 400，`errors[].code` 为 `incorrect`，并计入 AUTH-09 的失败次数。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Reauthentication'
+            examples:
+              password:
+                value:
+                  password: correct-horse-battery
+              totp:
+                value:
+                  challenge_id: 0192f0c4-3a00-7000-8000-00000000e002
+                  totp_code: '105277'
+      responses:
+        '200':
+          description: 已重新验证
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [expires_at]
+                properties:
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: 重新验证的有效期截止时间
+              example:
+                expires_at: '2026-10-01T10:05:00+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/password:
+    put:
+      tags: [security]
+      operationId: changePassword
+      summary: 修改密码
+      description: 需要重新验证（AUTH-23）。成功后吊销除当前会话外的全部会话。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+                  minLength: 8
+                  maxLength: 128
+            example:
+              new_password: new-correct-horse-battery
+      responses:
+        '204':
+          description: 已修改
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/mfa/totp:
+    post:
+      tags: [security]
+      operationId: startTotpEnrollment
+      summary: 开始绑定 TOTP
+      description: 返回待确认的密钥；调用 `POST /v1/me/mfa/totp/activation` 提交一次验证码后才生效。已启用时返回 409 `invalid_state`。
+      responses:
+        '201':
+          description: 待确认的 TOTP 密钥
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, otpauth_uri, expires_at]
+                properties:
+                  secret:
+                    type: string
+                    description: Base32 密钥
+                  otpauth_uri:
+                    type: string
+                    description: '`otpauth://` URI，供生成二维码'
+                  expires_at:
+                    type: string
+                    format: date-time
+              example:
+                secret: JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+                otpauth_uri: otpauth://totp/Example:alice%40example.com?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Example
+                expires_at: '2026-10-01T10:15:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      tags: [security]
+      operationId: disableTotp
+      summary: 停用 TOTP
+      description: 需要重新验证（AUTH-23）。持有管理员角色的账号不能停用（AUTH-12），返回 409 `invalid_state`。
+      responses:
+        '204':
+          description: 已停用，恢复码同时作废
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/mfa/totp/activation:
+    post:
+      tags: [security]
+      operationId: activateTotp
+      summary: 确认绑定 TOTP 并取得恢复码
+      description: AUTH-11：生效时生成 10 个一次性恢复码，明文只在此响应中出现一次。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [totp_code]
+              properties:
+                totp_code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+            example:
+              totp_code: '731946'
+      responses:
+        '200':
+          description: 已启用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryCodes'
+              example:
+                recovery_codes: [7KQ2-XM4P, 9RTB-3VNL, H6WD-2CJE, M8FA-5YQS, P3ZG-7KXR, T2NV-8LHD, W5JC-4PEB, X9QM-6RFT, Y4HK-1SGA, Z7LE-3UWN]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/mfa/recovery-codes:
+    post:
+      tags: [security]
+      operationId: regenerateRecoveryCodes
+      summary: 重新生成恢复码
+      description: 需要重新验证（AUTH-23）。旧恢复码立即作废。未启用 TOTP 时返回 409 `invalid_state`。
+      responses:
+        '200':
+          description: 新的恢复码
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryCodes'
+              example:
+                recovery_codes: [2HQD-8KXM, 4JRV-7LPN, 5MWT-3CQB, 6NYE-9DRF, 7PZF-1EGS, 8QAG-2FHT, 9RBH-4GJU, AB3K-5HKV, CD4L-6JLW, EF5M-7KMX]
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/passkeys/options:
+    post:
+      tags: [security]
+      operationId: createPasskeyOptions
+      summary: 取得 Passkey 注册选项（M4）
+      description: 返回 WebAuthn `PublicKeyCredentialCreationOptions` 的 JSON 形式（WebAuthn Level 3 `toJSON`），5 分钟有效。
+      responses:
+        '200':
+          description: 注册选项
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [public_key]
+                properties:
+                  public_key:
+                    type: object
+                    additionalProperties: true
+                    description: PublicKeyCredentialCreationOptionsJSON
+              example:
+                public_key:
+                  challenge: Y2hhbGxlbmdlLTAxOTJmMGM0
+                  rp:
+                    id: portal.example.invalid
+                    name: Example
+                  user:
+                    id: MDE5MmYwYzQtMGEwMA
+                    name: alice@example.com
+                    displayName: alice@example.com
+                  pubKeyCredParams:
+                  - type: public-key
+                    alg: -7
+                  timeout: 300000
+                  attestation: none
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/passkeys:
+    get:
+      tags: [security]
+      operationId: listPasskeys
+      summary: Passkey 列表（M4）
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Passkey'
+                  next_cursor:
+                    $ref: '#/components/schemas/NextCursor'
+              example:
+                items:
+                - id: 0192f0c4-6a00-7000-8000-000000020001
+                  name: iPhone
+                  created_at: '2026-09-10T20:00:00+08:00'
+                  last_used_at: '2026-09-30T08:31:00+08:00'
+                next_cursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [security]
+      operationId: registerPasskey
+      summary: 注册 Passkey（M4）
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                name:
+                  type: string
+                  maxLength: 64
+                credential:
+                  type: object
+                  additionalProperties: true
+                  description: RegistrationResponseJSON（WebAuthn Level 3）
+            example:
+              name: iPhone
+              credential:
+                id: AbCdEf0123456789
+                rawId: AbCdEf0123456789
+                type: public-key
+                response:
+                  clientDataJSON: eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIn0
+                  attestationObject: o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YQ
+      responses:
+        '201':
+          description: 已注册
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Passkey'
+              example:
+                id: 0192f0c4-6a00-7000-8000-000000020001
+                name: iPhone
+                created_at: '2026-10-01T10:00:00+08:00'
+                last_used_at: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/passkeys/{id}:
+    delete:
+      tags: [security]
+      operationId: deletePasskey
+      summary: 删除 Passkey（M4）
+      description: 需要重新验证（AUTH-23）。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: 已删除
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/devices:
+    get:
+      tags: [devices]
+      operationId: listDevices
+      summary: 设备与登录会话列表
+      description: |
+        只返回未吊销的设备，包括 web 设备（浏览器登录），不分页（CONV-11）。非 web 设备数量受设备上限约束；
+        web 设备不计入上限，服务端对每个账号未吊销的 web 设备最多保留 50 条（超出时吊销最久未活跃的一条），
+        因此列表总数不超过“设备上限 + 50”。`has_credential` 为假表示因设备上限未下发代理凭据（AUTH-14）。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, device_limit]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+                  device_limit:
+                    type: integer
+                    description: 当前设备上限（含额外设备名额）
+              example:
+                device_limit: 3
+                items:
+                - id: 0192f0c4-4a00-7000-8000-00000000f001
+                  platform: ios
+                  model: iPhone17,1
+                  app_version: 1.4.0
+                  created_at: '2026-09-01T09:20:00+08:00'
+                  last_seen_at: '2026-10-01T09:58:00+08:00'
+                  ip_prefix: 203.0.113.0/24
+                  is_current: false
+                  has_credential: true
+                - id: 0192f0c4-4a00-7000-8000-00000000f002
+                  platform: web
+                  model: Firefox 131 on Windows
+                  app_version: null
+                  created_at: '2026-10-01T09:00:00+08:00'
+                  last_seen_at: '2026-10-01T10:00:00+08:00'
+                  ip_prefix: 198.51.100.0/24
+                  is_current: true
+                  has_credential: false
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/devices/{id}:
+    delete:
+      tags: [devices]
+      operationId: removeDevice
+      summary: 移除设备
+      description: AUTH-15：吊销该设备的会话与代理凭据；因设备上限未获得凭据的其他设备随后自动获得凭据（AUTH-14）。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: 已移除
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/notification-preferences:
+    get:
+      tags: [account]
+      operationId: getNotificationPreferences
+      summary: 通知偏好
+      description: OPS-04、OPS-05。安全类与交易类不可关闭，`is_locked` 为真。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+              example:
+                items:
+                - {category: security, channel: email, is_enabled: true, is_locked: true}
+                - {category: transaction, channel: email, is_enabled: true, is_locked: true}
+                - {category: reminder, channel: email, is_enabled: true, is_locked: false}
+                - {category: marketing, channel: email, is_enabled: false, is_locked: false}
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+    put:
+      tags: [account]
+      operationId: replaceNotificationPreferences
+      summary: 修改通知偏好
+      description: 整体替换可修改的项。把安全类或交易类设为关闭返回 400，`errors[].code` 为 `not_allowed`。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [category, channel, is_enabled]
+                    properties:
+                      category:
+                        $ref: '#/components/schemas/NotificationCategory'
+                      channel:
+                        $ref: '#/components/schemas/NotificationChannel'
+                      is_enabled:
+                        type: boolean
+            example:
+              items:
+              - {category: reminder, channel: email, is_enabled: true}
+              - {category: marketing, channel: email, is_enabled: false}
+      responses:
+        '200':
+          description: 修改后的偏好
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+              example:
+                items:
+                - {category: security, channel: email, is_enabled: true, is_locked: true}
+                - {category: transaction, channel: email, is_enabled: true, is_locked: true}
+                - {category: reminder, channel: email, is_enabled: true, is_locked: false}
+                - {category: marketing, channel: email, is_enabled: false, is_locked: false}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/configuration:
+    get:
+      tags: [connectivity]
+      operationId: getMyConfiguration
+      summary: 本设备的结构化连接配置
+      description: |
+        返回本设备的代理凭据、可连接的入站与规则集资源，带强 ETag（CONV-13）。未下发凭据时 `credential` 为 null，
+        `credential_status` 说明原因：`device_limit_reached`（AUTH-14）、`entitlement_inactive`（免费账号，或权益为
+        `over_quota`、`suspended`，spec/11 ACS-01）、`web_device`（web 设备不生成凭据）。客户端缓存最后一次结果（API-06）。
+      parameters:
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Configuration'
+              examples:
+                issued:
+                  summary: 已下发凭据
+                  value:
+                    version: 1842
+                    credential_status: issued
+                    entitlement_status: active
+                    credential:
+                      id: 0192f0c4-7a00-7000-8000-000000030001
+                      secret: 5f1c0b7e-3d2a-4c8b-9e6f-1a2b3c4d5e6f
+                    endpoints:
+                    - location_id: 0192f0c4-2a00-7000-8000-00000000d001
+                      protocol: vless
+                      kernel: singbox
+                      host: jp1.example.invalid
+                      port: 443
+                      transport:
+                        type: tcp
+                      tls:
+                        type: reality
+                        sni: www.example.com
+                        public_key: jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0
+                        short_id: 6ba85179e30d4fc2
+                      flow: xtls-rprx-vision
+                    - location_id: 0192f0c4-2a00-7000-8000-00000000d001
+                      protocol: hysteria2
+                      kernel: singbox
+                      host: jp1.example.invalid
+                      port: 8443
+                      transport:
+                        type: quic
+                      tls:
+                        type: tls
+                        sni: jp1.example.invalid
+                    rule_assets:
+                    - name: geosite-cn
+                      digest: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+                limit:
+                  summary: 设备数已达上限，未下发凭据
+                  value:
+                    version: 1842
+                    credential_status: device_limit_reached
+                    entitlement_status: active
+                    credential: null
+                    endpoints: []
+                    rule_assets: []
+        '304':
+          $ref: '#/components/responses/NotModified'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '426':
+          $ref: '#/components/responses/UpgradeRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/export-link:
+    get:
+      tags: [connectivity]
+      operationId: getExportLink
+      summary: 第三方客户端导入链接
+      description: AUTH-16：用户中心随时可以读取，界面默认遮挡。
+      responses:
+        '200':
+          description: OK
+          headers:
+            Cache-Control:
+              description: '`private, no-store`'
+              schema:
+                type: string
+              example: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportLink'
+              example:
+                url: https://api.example.invalid/v1/configurations/Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tU
+                created_at: '2026-09-01T09:12:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/export-link/rotation:
+    post:
+      tags: [connectivity]
+      operationId: rotateExportLink
+      summary: 重置导入链接
+      description: |
+        AUTH-16：需要重新验证（AUTH-23）。在同一事务中生成新令牌并轮换共用凭据；旧链接立即失效。
+      responses:
+        '200':
+          description: 新的导入链接
+          headers:
+            Cache-Control:
+              description: '`private, no-store`'
+              schema:
+                type: string
+              example: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportLink'
+              example:
+                url: https://api.example.invalid/v1/configurations/Hq8Zp3Lw6Nc1Vt9Ks4Rb7Jm2Xf5Yd0Ga
+                created_at: '2026-10-01T10:00:00+08:00'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/usage:
+    get:
+      tags: [connectivity]
+      operationId: getUsage
+      summary: 当前周期用量、每日用量与按地区分布
+      description: |
+        `cycle` 为当前流量周期（spec/11 BIL-16）；`daily` 覆盖最近 `days` 天（按用户时区分日）；`by_location` 为当前
+        周期内按地区的分布。`bytes_billed` 为乘以倍率后的计费字节。免费账号 `cycle` 为 null。
+      parameters:
+      - name: days
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 30
+        example: 30
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usage'
+              example:
+                cycle:
+                  starts_at: '2026-09-15T00:00:00+08:00'
+                  ends_at: '2026-10-15T00:00:00+08:00'
+                  bytes_used: 96636764160
+                  bytes_limit: 214748364800
+                  bytes_addon_remaining: 53687091200
+                daily:
+                - date: '2026-09-30'
+                  bytes_up: 314572800
+                  bytes_down: 4294967296
+                  bytes_billed: 4609540096
+                - date: '2026-10-01'
+                  bytes_up: 209715200
+                  bytes_down: 3221225472
+                  bytes_billed: 3430940672
+                by_location:
+                - location_id: 0192f0c4-2a00-7000-8000-00000000d001
+                  location_name: 东京 01
+                  bytes_up: 1073741824
+                  bytes_down: 64424509440
+                  bytes_billed: 65498251264
+                - location_id: 0192f0c4-2a00-7000-8000-00000000d002
+                  location_name: 洛杉矶 01
+                  bytes_up: 536870912
+                  bytes_down: 20937965568
+                  bytes_billed: 32212254720
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/events:
+    get:
+      tags: [connectivity]
+      operationId: streamEvents
+      summary: 事件流（SSE）
+      description: |
+        每条事件的 `event` 字段取值见 `EventType`，`data` 为 JSON。会话被吊销或令牌过期时发送 `session_revoked`
+        后关闭连接（AUTH-06）。支持 `Last-Event-ID` 续传。
+      parameters:
+      - name: Last-Event-ID
+        in: header
+        schema:
+          type: string
+      responses:
+        '200':
+          description: text/event-stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE 帧；每条事件的 `event` 行取值见 `EventMessage.event`
+                contentSchema:
+                  $ref: '#/components/schemas/EventMessage'
+              example: |+
+                id: 0192f0c4-8a00-7000-8000-000000040001
+                event: quota_warning
+                data: {"percent":80,"bytes_used":171798691840,"bytes_limit":214748364800}
+
+                id: 0192f0c4-8a00-7000-8000-000000040002
+                event: profile_updated
+                data: {"version":1843}
+
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/configurations/{token}:
+    get:
+      tags: [connectivity]
+      operationId: exportConfiguration
+      summary: 第三方客户端配置导出
+      description: |
+        spec/23。令牌只按 SHA-256 查找，无效令牌返回 404（EXP-01）。格式由 `format` 决定，省略时等同于 `auto`，
+        按 User-Agent 识别（EXP-02）；浏览器（User-Agent 以 `Mozilla/` 开头且 `Accept` 含 `text/html`）返回 302
+        到用户中心的导入页。强 ETag，支持 `If-None-Match` 与 304（EXP-04）。免费账号、权益为 `over_quota` 或
+        `suspended`、账号状态不是 `active` 时返回不含入站的配置（EXP-06）。限流：每个令牌每分钟 30 次，每个 IP
+        每分钟 60 次（EXP-01）。
+      security: []
+      parameters:
+      - name: token
+        in: path
+        required: true
+        description: 导出令牌
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{16,128}$
+        example: Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tU
+      - name: format
+        in: query
+        schema:
+          type: string
+          enum: [auto, singbox, mihomo, base64]
+          default: auto
+        example: auto
+      - $ref: '#/components/parameters/IfNoneMatch'
+      responses:
+        '200':
+          description: 目标客户端格式的配置
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Subscription-Userinfo:
+              $ref: '#/components/headers/UsageUserinfoHeader'
+            Profile-Update-Interval:
+              $ref: '#/components/headers/ProfileUpdateInterval'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlPrivateNoCache'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: sing-box 配置（`format=singbox`）
+              example:
+                log:
+                  level: warn
+                outbounds:
+                - type: direct
+                  tag: direct
+                route:
+                  final: direct
+            application/yaml:
+              schema:
+                type: string
+                description: mihomo 配置（`format=mihomo`）
+              example: |
+                mixed-port: 7890
+                mode: rule
+                proxies: []
+                rules:
+                  - MATCH,DIRECT
+            text/plain:
+              schema:
+                type: string
+                description: base64 编码的分享链接列表（`format=base64`）
+              example: dmxlc3M6Ly81ZjFjMGI3ZS0zZDJhLTRjOGItOWU2Zi0xYTJiM2M0ZDVlNmZAanAxLmV4YW1wbGUuaW52YWxpZDo0NDMjJUU0JUI4JTlDJUU0JUJBJUFDMDE=
+        '302':
+          description: 浏览器访问，重定向到用户中心的导入页
+          headers:
+            Location:
+              description: 用户中心导入页地址
+              schema:
+                type: string
+                format: uri
+              example: https://portal.example.invalid/import
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlPrivateNoCache'
+        '304':
+          description: 未修改；同样携带实时的 `Subscription-Userinfo`（EXP-05）
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Subscription-Userinfo:
+              $ref: '#/components/headers/UsageUserinfoHeader'
+            Profile-Update-Interval:
+              $ref: '#/components/headers/ProfileUpdateInterval'
+            Cache-Control:
+              $ref: '#/components/headers/CacheControlPrivateNoCache'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/quotes:
+    post:
+      tags: [commerce]
+      operationId: createQuote
+      summary: 报价
+      description: |
+        spec/12 ORD-01。`price_id`（套餐价格行）与 `addon_price_id`（加购项价格）二选一；二者只用来确定购买对象，
+        金额由服务端按场景确定（spec/11 BIL-21）。场景由报价时的权益状态决定；`mode=downgrade_immediate`
+        请求立即降级（BIL-23）。报价 15 分钟有效。
+        - 套餐状态不允许购买、立即降级时长不足 1 小时：400 `invalid_request`；
+        - 优惠码无效、过期或次数用完：400，`errors[].code` 为 `invalid_code`、`expired`、`exhausted`；
+        - 免费账号续费、升降级或购买加购项：409 `entitlement_required`；
+        - 存在下一段时续费或再次降级：409 `conflict`（BIL-22）；权益为 `suspended`：409 `invalid_state`。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+            examples:
+              plan:
+                summary: 套餐
+                value:
+                  price_id: 0192f0c4-1b00-7000-8000-00000000b001
+                  coupon_code: AUTUMN10
+                  is_credit_applied: true
+              addon:
+                summary: 加购项
+                value:
+                  addon_price_id: 0192f0c4-1c00-7000-8000-00000000c001
+                  is_credit_applied: false
+      responses:
+        '201':
+          description: 报价
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+              example:
+                id: 0192f0c4-9a00-7000-8000-000000050001
+                order_type: upgrade
+                plan_id: 0192f0c4-1a00-7000-8000-00000000a002
+                price_id: 0192f0c4-1b00-7000-8000-00000000b003
+                addon_price_id: null
+                list_price_minor: 8000
+                remaining_value_minor: 2500
+                discount_minor: 550
+                credit_applied_minor: 1000
+                credit_refund_minor: 0
+                amount_due_minor: 3950
+                currency: CNY
+                is_locked_price_lost: false
+                entitlement_expires_at: '2026-11-01T10:00:00+08:00'
+                expires_at: '2026-10-01T10:15:00+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/QuoteConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/orders:
+    get:
+      tags: [commerce]
+      operationId: listOrders
+      summary: 订单列表
+      description: 按创建时间倒序（排序键 `created_at` + `id`）。
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/OrderStatus'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  next_cursor:
+                    $ref: '#/components/schemas/NextCursor'
+              example:
+                items:
+                - id: 0192f0c4-9b00-7000-8000-000000060001
+                  number: ORD-20260901-K7Q2XM
+                  type: new
+                  status: fulfilled
+                  plan_id: 0192f0c4-1a00-7000-8000-00000000a001
+                  plan_name: 标准版
+                  price_id: 0192f0c4-1b00-7000-8000-00000000b001
+                  addon_price_id: null
+                  list_price_minor: 3000
+                  remaining_value_minor: 0
+                  discount_minor: 0
+                  credit_applied_minor: 0
+                  amount_due_minor: 3000
+                  currency: CNY
+                  payment_method: alipay_f2f
+                  payment: null
+                  expires_at: '2026-09-01T10:00:00+08:00'
+                  paid_at: '2026-09-01T09:32:10+08:00'
+                  created_at: '2026-09-01T09:30:00+08:00'
+                next_cursor: MjAyNi0wOS0wMVQwMTozMDowMFp8MDE5MmYwYzQtOWIwMA
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [commerce]
+      operationId: createOrder
+      summary: 下单并取得支付指引
+      description: |
+        spec/12。未验证邮箱返回 403 `email_unverified`（AUTH-03）；报价过期或冻结余额后余额不足返回 409
+        `quote_expired`（ORD-01、ORD-15）；支付渠道未启用返回 409 `payment_unavailable`（PAY-03）。
+        `payment_method=credit` 只在应付为 0 时合法，否则 400（ORD-03）。支付指引见 API-05。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [quote_id]
+              properties:
+                quote_id:
+                  type: string
+                  format: uuid
+                payment_method:
+                  $ref: '#/components/schemas/PaymentMethod'
+            example:
+              quote_id: 0192f0c4-9a00-7000-8000-000000050001
+              payment_method: alipay_f2f
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+              example:
+                id: 0192f0c4-9b00-7000-8000-000000060002
+                number: ORD-20261001-P3ZG7K
+                type: upgrade
+                status: pending
+                plan_id: 0192f0c4-1a00-7000-8000-00000000a002
+                plan_name: 高级版
+                price_id: 0192f0c4-1b00-7000-8000-00000000b003
+                addon_price_id: null
+                list_price_minor: 8000
+                remaining_value_minor: 2500
+                discount_minor: 550
+                credit_applied_minor: 1000
+                amount_due_minor: 3950
+                currency: CNY
+                payment_method: alipay_f2f
+                payment:
+                  method: alipay_qr
+                  qr_content: https://qr.alipay.com/bax08422uxbjfsfmsvvp0028
+                  expires_at: '2026-10-01T10:30:00+08:00'
+                expires_at: '2026-10-01T10:30:00+08:00'
+                paid_at: null
+                created_at: '2026-10-01T10:00:00+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/EmailUnverified'
+        '409':
+          $ref: '#/components/responses/OrderConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/orders/{id}:
+    get:
+      tags: [commerce]
+      operationId: getOrder
+      summary: 订单详情
+      description: 支付页轮询本接口取得订单状态。他人订单返回 404（CONV-15）。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+              example:
+                id: 0192f0c4-9b00-7000-8000-000000060002
+                number: ORD-20261001-P3ZG7K
+                type: upgrade
+                status: fulfilled
+                plan_id: 0192f0c4-1a00-7000-8000-00000000a002
+                plan_name: 高级版
+                price_id: 0192f0c4-1b00-7000-8000-00000000b003
+                addon_price_id: null
+                list_price_minor: 8000
+                remaining_value_minor: 2500
+                discount_minor: 550
+                credit_applied_minor: 1000
+                amount_due_minor: 3950
+                currency: CNY
+                payment_method: alipay_f2f
+                payment: null
+                expires_at: '2026-10-01T10:30:00+08:00'
+                paid_at: '2026-10-01T10:02:41+08:00'
+                created_at: '2026-10-01T10:00:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/orders/{id}/cancel:
+    post:
+      tags: [commerce]
+      operationId: cancelOrder
+      summary: 取消订单
+      description: ORD-02：同步关闭支付渠道交易，退回冻结的余额。已支付的订单返回 409 `invalid_state`。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 已取消的订单
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+              example:
+                id: 0192f0c4-9b00-7000-8000-000000060002
+                number: ORD-20261001-P3ZG7K
+                type: upgrade
+                status: cancelled
+                plan_id: 0192f0c4-1a00-7000-8000-00000000a002
+                plan_name: 高级版
+                price_id: 0192f0c4-1b00-7000-8000-00000000b003
+                addon_price_id: null
+                list_price_minor: 8000
+                remaining_value_minor: 2500
+                discount_minor: 550
+                credit_applied_minor: 1000
+                amount_due_minor: 3950
+                currency: CNY
+                payment_method: alipay_f2f
+                payment: null
+                expires_at: '2026-10-01T10:30:00+08:00'
+                paid_at: null
+                created_at: '2026-10-01T10:00:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/entitlements:
+    get:
+      tags: [commerce]
+      operationId: getEntitlements
+      summary: 当前权益、下一段与加购项
+      description: |
+        `entitlement_status` 取值见 spec/11 11.1：`none`（无权益）、`free`（持有免费套餐权益）、`active`、
+        `over_quota`、`suspended`。`is_auto_renew` 只读，修改请用 `PATCH /v1/me`。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entitlements'
+              example:
+                entitlement_status: active
+                is_auto_renew: false
+                current:
+                  id: 0192f0c4-aa00-7000-8000-000000070001
+                  plan_id: 0192f0c4-1a00-7000-8000-00000000a001
+                  plan_name: 标准版
+                  plan_kind: recurring
+                  tier: 1
+                  status: active
+                  starts_at: '2026-09-01T09:32:10+08:00'
+                  expires_at: '2026-11-01T09:32:10+08:00'
+                  cycle_starts_at: '2026-10-01T09:32:10+08:00'
+                  cycle_ends_at: '2026-11-01T09:32:10+08:00'
+                  bytes_limit: 214748364800
+                  bytes_used: 32212254720
+                  device_limit: 4
+                  speed_limit_mbps: null
+                  reset_policy: purchase_anchor
+                  locked_price:
+                    id: 0192f0c4-1b00-7000-8000-00000000b001
+                    period: month
+                    period_days: null
+                    amount_minor: 3000
+                    currency: CNY
+                  addons:
+                  - id: 0192f0c4-ab00-7000-8000-000000080001
+                    kind: data
+                    name: 50 GB 流量包
+                    bytes_total: 53687091200
+                    bytes_used: 0
+                    extra_devices: null
+                    expires_at: '2026-11-01T09:32:10+08:00'
+                    purchased_at: '2026-10-01T12:00:00+08:00'
+                  - id: 0192f0c4-ab00-7000-8000-000000080002
+                    kind: devices
+                    name: 额外设备 1 台
+                    bytes_total: null
+                    bytes_used: null
+                    extra_devices: 1
+                    expires_at: '2026-11-01T09:32:10+08:00'
+                    purchased_at: '2026-09-05T08:00:00+08:00'
+                next: null
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/entitlements/next:
+    delete:
+      tags: [commerce]
+      operationId: cancelNextEntitlement
+      summary: 取消下一段
+      description: 下一段结束（`scheduled_cancelled`），其实付全额退回余额（spec/11 11.6）。没有下一段时返回 404。
+      responses:
+        '204':
+          description: 已取消，金额退回余额
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/credits:
+    get:
+      tags: [commerce]
+      operationId: getCredits
+      summary: 余额
+      description: 余额由流水求和（ORD-11）；流水见 `GET /v1/me/credit-entries`。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [balance_minor, currency]
+                properties:
+                  balance_minor:
+                    type: integer
+                    format: int64
+                    description: 可能为负（返利退款，spec/13 OPS-06）；为负时不能用于抵扣
+                  currency:
+                    $ref: '#/components/schemas/Currency'
+              example:
+                balance_minor: 1250
+                currency: CNY
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/credit-entries:
+    get:
+      tags: [commerce]
+      operationId: listCreditEntries
+      summary: 余额流水
+      description: 按创建时间倒序（排序键 `created_at` + `id`）。
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CreditEntry'
+                  next_cursor:
+                    $ref: '#/components/schemas/NextCursor'
+              example:
+                items:
+                - id: 0192f0c4-ac00-7000-8000-000000090002
+                  amount_minor: -1000
+                  currency: CNY
+                  reason: order_payment
+                  order_id: 0192f0c4-9b00-7000-8000-000000060002
+                  created_at: '2026-10-01T10:00:00+08:00'
+                - id: 0192f0c4-ac00-7000-8000-000000090001
+                  amount_minor: 2000
+                  currency: CNY
+                  reason: redemption
+                  order_id: null
+                  created_at: '2026-09-15T20:00:00+08:00'
+                next_cursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/redemptions:
+    post:
+      tags: [commerce]
+      operationId: redeemCode
+      summary: 兑换码
+      description: |
+        ORD-14：充值余额，或开通套餐。码无效、过期、次数用完返回 400（`invalid_code`、`expired`、`exhausted`）；
+        套餐兑换码只能用于免费账号（新购）或持有同一套餐（续费），否则返回 409 `entitlement_required`。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  minLength: 16
+                  maxLength: 19
+                  description: 16 位兑换码，可以带分隔符
+            example:
+              code: HKQ7-M2XP-9RTB-3VNL
+      responses:
+        '200':
+          description: 兑换结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Redemption'
+              examples:
+                credit:
+                  summary: 充值余额
+                  value:
+                    kind: credit
+                    amount_minor: 2000
+                    currency: CNY
+                    entitlement_id: null
+                plan:
+                  summary: 开通套餐
+                  value:
+                    kind: plan
+                    amount_minor: null
+                    currency: null
+                    entitlement_id: 0192f0c4-aa00-7000-8000-000000070002
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '409':
+          $ref: '#/components/responses/RedemptionConflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/announcements:
+    get:
+      tags: [content]
+      operationId: listAnnouncements
+      summary: 生效中的公告
+      description: |
+        只返回生效中的公告，不分页（CONV-11）；公告由运营者维护，上限 100 条。认证后按目标人群（全部、有效用户、
+        指定套餐）筛选。客户端在 `/v1/config` 的 `announcement_version` 变化时拉取。模块关闭时返回 404（OPS-08）。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      parameters:
+      - name: locale
+        in: query
+        description: BCP 47 语言标签；省略时按 `Accept-Language` 与账号语言
+        schema:
+          type: string
+        example: zh-CN
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 100
+                    items:
+                      $ref: '#/components/schemas/Announcement'
+              example:
+                items:
+                - id: 0192f0c4-ba00-7000-8000-0000000a0001
+                  title: 国庆期间客服时间调整
+                  body_md: 10 月 1 日至 7 日，工单回复时间为每天 10:00–18:00。
+                  is_pinned: true
+                  starts_at: '2026-09-28T00:00:00+08:00'
+                  ends_at: '2026-10-08T00:00:00+08:00'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/articles:
+    get:
+      tags: [content]
+      operationId: listArticles
+      summary: 帮助文档列表
+      description: |
+        只返回已发布的文章，不分页（CONV-11）；文章由运营者维护，上限 200 篇。可以按平台筛选。模块关闭时返回 404。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      parameters:
+      - name: platform
+        in: query
+        schema:
+          $ref: '#/components/schemas/ClientPlatform'
+        example: ios
+      - name: locale
+        in: query
+        schema:
+          type: string
+        example: zh-CN
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 200
+                    items:
+                      $ref: '#/components/schemas/ArticleSummary'
+              example:
+                items:
+                - slug: ios-import
+                  title: 在 iOS 上导入配置
+                  category: 使用教程
+                  platforms: [ios]
+                  updated_at: '2026-09-20T12:00:00+08:00'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/articles/{slug}:
+    get:
+      tags: [content]
+      operationId: getArticle
+      summary: 帮助文档详情
+      description: |
+        OPS-12：服务端渲染白名单变量。未登录时用户变量渲染为“登录后显示”的占位提示；响应含用户变量时带
+        `Cache-Control: private, no-store`，不参与共享缓存与 ETag（`has_user_variables` 为真）。
+      security:
+      - {}
+      - bearer: []
+      - cookie: []
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[a-z0-9]+(?:-[a-z0-9]+)*$
+          maxLength: 100
+        example: ios-import
+      - name: locale
+        in: query
+        schema:
+          type: string
+        example: zh-CN
+      responses:
+        '200':
+          description: OK
+          headers:
+            Cache-Control:
+              description: 含用户变量时为 `private, no-store`，否则为 `public, max-age=300`
+              schema:
+                type: string
+              example: private, no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Article'
+              example:
+                slug: ios-import
+                title: 在 iOS 上导入配置
+                category: 使用教程
+                platforms: [ios]
+                body_md: "1. 安装客户端。\n2. 复制导入链接：`https://api.example.invalid/v1/configurations/Zk3q••••`\n3. 在客户端中选择“从剪贴板导入”。"
+                has_user_variables: true
+                updated_at: '2026-09-20T12:00:00+08:00'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/support/tickets:
+    get:
+      tags: [support]
+      operationId: listTickets
+      summary: 工单列表
+      description: 按最后更新时间倒序（排序键 `updated_at` + `id`）。模块关闭时返回 404。
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/TicketStatus'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Ticket'
+                  next_cursor:
+                    $ref: '#/components/schemas/NextCursor'
+              example:
+                items:
+                - id: 0192f0c4-ca00-7000-8000-0000000b0001
+                  number: TCK-20261001-H6WD2C
+                  subject: 支付成功但套餐未开通
+                  category: billing
+                  status: waiting_user
+                  created_at: '2026-10-01T10:10:00+08:00'
+                  updated_at: '2026-10-01T11:02:00+08:00'
+                next_cursor: null
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      tags: [support]
+      operationId: createTicket
+      summary: 创建工单
+      description: 附件先通过 `POST /v1/support/attachments` 上传，每条消息最多 4 个（OPS-10）。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subject, category, body]
+              properties:
+                subject:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                category:
+                  type: string
+                  maxLength: 32
+                  description: 分类键，由运营者配置
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
+                attachment_ids:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: uuid
+            example:
+              subject: 支付成功但套餐未开通
+              category: billing
+              body: 订单 ORD-20261001-P3ZG7K 已在支付宝付款，页面仍显示待支付。
+              attachment_ids: [0192f0c4-cc00-7000-8000-0000000d0001]
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+              example:
+                id: 0192f0c4-ca00-7000-8000-0000000b0001
+                number: TCK-20261001-H6WD2C
+                subject: 支付成功但套餐未开通
+                category: billing
+                status: open
+                created_at: '2026-10-01T10:10:00+08:00'
+                updated_at: '2026-10-01T10:10:00+08:00'
+                messages:
+                - id: 0192f0c4-cb00-7000-8000-0000000c0001
+                  author: user
+                  body: 订单 ORD-20261001-P3ZG7K 已在支付宝付款，页面仍显示待支付。
+                  attachments:
+                  - id: 0192f0c4-cc00-7000-8000-0000000d0001
+                    filename: alipay-receipt.png
+                    content_type: image/png
+                    bytes_size: 184320
+                    created_at: '2026-10-01T10:09:30+08:00'
+                  created_at: '2026-10-01T10:10:00+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/support/tickets/{id}:
+    get:
+      tags: [support]
+      operationId: getTicket
+      summary: 工单详情与消息
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketDetail'
+              example:
+                id: 0192f0c4-ca00-7000-8000-0000000b0001
+                number: TCK-20261001-H6WD2C
+                subject: 支付成功但套餐未开通
+                category: billing
+                status: waiting_user
+                created_at: '2026-10-01T10:10:00+08:00'
+                updated_at: '2026-10-01T11:02:00+08:00'
+                messages:
+                - id: 0192f0c4-cb00-7000-8000-0000000c0001
+                  author: user
+                  body: 订单 ORD-20261001-P3ZG7K 已在支付宝付款，页面仍显示待支付。
+                  attachments: []
+                  created_at: '2026-10-01T10:10:00+08:00'
+                - id: 0192f0c4-cb00-7000-8000-0000000c0002
+                  author: staff
+                  body: 已为您补单开通，请刷新页面确认。
+                  attachments: []
+                  created_at: '2026-10-01T11:02:00+08:00'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/support/tickets/{id}/messages:
+    post:
+      tags: [support]
+      operationId: replyTicket
+      summary: 回复工单
+      description: |
+        OPS-11：用户回复后工单变为 `open`；关闭超过 30 天的工单不能回复，返回 409 `invalid_state`，需新建工单。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 10000
+                attachment_ids:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: uuid
+            example:
+              body: 已确认开通，谢谢。
+      responses:
+        '201':
+          description: 已回复
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessage'
+              example:
+                id: 0192f0c4-cb00-7000-8000-0000000c0003
+                author: user
+                body: 已确认开通，谢谢。
+                attachments: []
+                created_at: '2026-10-01T11:10:00+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/InvalidState'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/support/attachments:
+    post:
+      tags: [support]
+      operationId: uploadAttachment
+      summary: 上传工单附件
+      description: |
+        OPS-10：只允许 PNG、JPEG、WebP，按文件内容识别类型；单个不超过 5 MB，超限返回 413 `payload_too_large`；
+        类型不符返回 400，`errors[].code` 为 `invalid_format`。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  contentMediaType: application/octet-stream
+                  maxLength: 5242880
+      responses:
+        '201':
+          description: 已上传
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attachment'
+              example:
+                id: 0192f0c4-cc00-7000-8000-0000000d0001
+                filename: alipay-receipt.png
+                content_type: image/png
+                bytes_size: 184320
+                created_at: '2026-10-01T10:09:30+08:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/support/attachments/{id}:
+    get:
+      tags: [support]
+      operationId: downloadAttachment
+      summary: 下载工单附件
+      description: |
+        OPS-10：只有工单所有人可以下载，他人与不存在的附件都返回 404（CONV-15）。模块关闭时返回 404。
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: 附件内容
+          headers:
+            Content-Disposition:
+              description: 恒为 `attachment`
+              schema:
+                type: string
+              example: attachment; filename="alipay-receipt.png"
+            X-Content-Type-Options:
+              description: 恒为 `nosniff`
+              schema:
+                type: string
+                const: nosniff
+              example: nosniff
+            Cache-Control:
+              description: '`private, no-store`'
+              schema:
+                type: string
+              example: private, no-store
+          content:
+            image/png:
+              schema:
+                type: string
+                contentMediaType: image/png
+              example: iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==
+            image/jpeg:
+              schema:
+                type: string
+                contentMediaType: image/jpeg
+              example: /9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8U
+            image/webp:
+              schema:
+                type: string
+                contentMediaType: image/webp
+              example: UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/me/referrals:
+    get:
+      tags: [referrals]
+      operationId: getReferrals
+      summary: 邀请返利概要
+      description: spec/13 13.5、OPS-06。返利先冻结（默认 14 天），期满转入余额。模块关闭时返回 404。
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Referrals'
+              example:
+                referral_code: K7Q2XM
+                invite_url: https://portal.example.invalid/register?invite=K7Q2XM
+                invited_count: 5
+                frozen_minor: 600
+                settled_minor: 1800
+                currency: CNY
+                rule:
+                  rate_bps: 1000
+                  is_first_order_only: true
+                  cap_minor: null
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Problem'
+  /v1/diagnostics:
+    post:
+      tags: [diagnostics]
+      operationId: submitDiagnostics
+      summary: 提交诊断日志
+      description: |
+        用户主动提交；模块默认关闭，关闭时返回 404（OPS-08）。客户端在上传前去除令牌、凭据、完整 IP 与访问目标
+        （CONV-24）。日志文件不超过 5 MB，超限返回 413。
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [platform, app_version, log]
+              properties:
+                platform:
+                  $ref: '#/components/schemas/ClientPlatform'
+                app_version:
+                  type: string
+                  maxLength: 32
+                description:
+                  type: string
+                  maxLength: 2000
+                log:
+                  type: string
+                  contentMediaType: application/gzip
+                  maxLength: 5242880
+      responses:
+        '202':
+          description: 已受理
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+              example:
+                id: 0192f0c4-da00-7000-8000-0000000e0001
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '422':
+          $ref: '#/components/responses/IdempotencyKeyReused'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: PASETO v4.public
+      description: 自研客户端。访问令牌有效期 15 分钟，受众为 `client`（AUTH-06）。
+    cookie:
+      type: apiKey
+      in: cookie
+      name: __Host-access_token
+      description: |
+        用户中心。登录时以 HttpOnly、Secure、SameSite=Strict Cookie 下发访问令牌；刷新令牌 Cookie
+        （`__Host-refresh_token`）只随 `POST /v1/oauth/token` 发送（AUTH-08）。
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 0192f0c4-9b00-7000-8000-000000060002
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 幂等键（CONV-12），UUID
+      schema:
+        type: string
+        format: uuid
+      example: 7d7c2b0e-4f6a-4e1b-9a3c-2d5e8f1a0b4c
+    Limit:
+      name: limit
+      in: query
+      description: 每页条数（CONV-11）
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+      example: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: 不透明的 base64url 游标，取自上一页的 `next_cursor`
+      schema:
+        type: string
+        pattern: ^[A-Za-z0-9_-]+$
+      example: MjAyNi0wOS0wMVQwMTozMDowMFp8MDE5MmYwYzQtOWIwMA
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      required: false
+      description: 上次响应的 `ETag`；未变化时返回 304（CONV-13）
+      schema:
+        type: string
+      example: '"b1946ac92492d2347c6235b4d2611184"'
+  headers:
+    ETag:
+      description: 强 ETag
+      schema:
+        type: string
+      example: '"b1946ac92492d2347c6235b4d2611184"'
+    RetryAfter:
+      description: 建议的重试等待秒数
+      schema:
+        type: integer
+        minimum: 0
+      example: 30
+    UsageUserinfoHeader:
+      description: |
+        第三方客户端依赖的标准响应头（API-01 唯一例外）：`upload`、`download` 为本周期计费字节，`total` 为额度字节，
+        `expire` 为到期的 Unix 秒（EXP-05、EXP-06）。按实时用量生成。
+      schema:
+        type: string
+      example: upload=1610612736; download=95026151424; total=214748364800; expire=1793496730
+    ProfileUpdateInterval:
+      description: 建议的更新间隔（小时），默认 24
+      schema:
+        type: integer
+        minimum: 1
+      example: 24
+    CacheControlPrivateNoCache:
+      description: '`private, no-cache`'
+      schema:
+        type: string
+      example: private, no-cache
+  responses:
+    Problem:
+      description: 其他错误（RFC 9457 problem details）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            internal:
+              value:
+                type: https://api.example.invalid/problems/internal
+                title: Internal Error
+                status: 500
+                code: internal
+                request_id: req_0192f0c4ffa07c3d
+            service_unavailable:
+              value:
+                type: https://api.example.invalid/problems/service_unavailable
+                title: Service Unavailable
+                status: 503
+                code: service_unavailable
+                request_id: req_0192f0c4ffa07c3e
+    NotModified:
+      description: 未修改
+      headers:
+        ETag:
+          $ref: '#/components/headers/ETag'
+    BadRequest:
+      description: 参数错误（`invalid_request`），`errors[]` 给出逐项原因
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            invalid_request:
+              value:
+                type: https://api.example.invalid/problems/invalid_request
+                title: Bad Request
+                status: 400
+                code: invalid_request
+                request_id: req_0192f0c4ffa07c40
+                errors:
+                - field: password
+                  code: too_short
+            invalid_code:
+              value:
+                type: https://api.example.invalid/problems/invalid_request
+                title: Bad Request
+                status: 400
+                code: invalid_request
+                request_id: req_0192f0c4ffa07c41
+                errors:
+                - field: code
+                  code: invalid_code
+            incorrect:
+              value:
+                type: https://api.example.invalid/problems/invalid_request
+                title: Bad Request
+                status: 400
+                code: invalid_request
+                request_id: req_0192f0c4ffa07c5a
+                errors:
+                - field: password
+                  code: incorrect
+    Unauthenticated:
+      description: 未登录或令牌失效（`unauthenticated`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/unauthenticated
+            title: Unauthorized
+            status: 401
+            code: unauthenticated
+            request_id: req_0192f0c4ffa07c42
+    MfaRequired:
+      description: 需要重新验证（`mfa_required`，AUTH-23），或未登录（`unauthenticated`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            mfa_required:
+              value:
+                type: https://api.example.invalid/problems/mfa_required
+                title: Reauthentication Required
+                status: 401
+                code: mfa_required
+                request_id: req_0192f0c4ffa07c43
+                challenge_id: 0192f0c4-3a00-7000-8000-00000000e002
+                methods: [totp, recovery_code]
+            unauthenticated:
+              value:
+                type: https://api.example.invalid/problems/unauthenticated
+                title: Unauthorized
+                status: 401
+                code: unauthenticated
+                request_id: req_0192f0c4ffa07c44
+    LoginUnauthorized:
+      description: 需要二次验证（`mfa_required`，AUTH-20），或邮箱、密码、二次验证码错误（`unauthenticated`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            mfa_required:
+              value:
+                type: https://api.example.invalid/problems/mfa_required
+                title: Two-factor Authentication Required
+                status: 401
+                code: mfa_required
+                request_id: req_0192f0c4ffa07c45
+                challenge_id: 0192f0c4-3a00-7000-8000-00000000e001
+                methods: [totp, recovery_code]
+            unauthenticated:
+              value:
+                type: https://api.example.invalid/problems/unauthenticated
+                title: Unauthorized
+                status: 401
+                code: unauthenticated
+                detail: 邮箱或密码错误
+                request_id: req_0192f0c4ffa07c46
+    AccountSuspended:
+      description: 账号已暂停或正在注销（`account_suspended`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/account_suspended
+            title: Account Suspended
+            status: 403
+            code: account_suspended
+            request_id: req_0192f0c4ffa07c47
+    RegistrationClosed:
+      description: 注册已关闭，或策略要求邀请码而请求未提供（`registration_closed`，AUTH-02）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/registration_closed
+            title: Registration Closed
+            status: 403
+            code: registration_closed
+            request_id: req_0192f0c4ffa07c48
+    EmailUnverified:
+      description: 邮箱未验证，不能下单（`email_unverified`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/email_unverified
+            title: Email Unverified
+            status: 403
+            code: email_unverified
+            request_id: req_0192f0c4ffa07c49
+    NotFound:
+      description: 不存在或无权查看；模块关闭时同样返回（`not_found`，CONV-15、OPS-08）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/not_found
+            title: Not Found
+            status: 404
+            code: not_found
+            request_id: req_0192f0c4ffa07c4a
+    Conflict:
+      description: 同一幂等键的请求仍在处理（`conflict`），稍后按 `Retry-After` 重试
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/conflict
+            title: Conflict
+            status: 409
+            code: conflict
+            request_id: req_0192f0c4ffa07c4b
+    InvalidState:
+      description: 资源当前状态不允许该操作（`invalid_state`），或同一幂等键的请求仍在处理（`conflict`）
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            invalid_state:
+              value:
+                type: https://api.example.invalid/problems/invalid_state
+                title: Invalid State
+                status: 409
+                code: invalid_state
+                request_id: req_0192f0c4ffa07c4c
+            conflict:
+              value:
+                type: https://api.example.invalid/problems/conflict
+                title: Conflict
+                status: 409
+                code: conflict
+                request_id: req_0192f0c4ffa07c4d
+    QuoteConflict:
+      description: 需要生效中的权益（`entitlement_required`）、存在下一段或幂等请求处理中（`conflict`）、权益已暂停（`invalid_state`）
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            entitlement_required:
+              value:
+                type: https://api.example.invalid/problems/entitlement_required
+                title: Entitlement Required
+                status: 409
+                code: entitlement_required
+                request_id: req_0192f0c4ffa07c4e
+            conflict:
+              value:
+                type: https://api.example.invalid/problems/conflict
+                title: Conflict
+                status: 409
+                code: conflict
+                detail: 请先取消下一段
+                request_id: req_0192f0c4ffa07c4f
+            invalid_state:
+              value:
+                type: https://api.example.invalid/problems/invalid_state
+                title: Invalid State
+                status: 409
+                code: invalid_state
+                request_id: req_0192f0c4ffa07c50
+    OrderConflict:
+      description: 报价过期（`quote_expired`）、支付渠道不可用（`payment_unavailable`）或幂等请求处理中（`conflict`）
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            quote_expired:
+              value:
+                type: https://api.example.invalid/problems/quote_expired
+                title: Quote Expired
+                status: 409
+                code: quote_expired
+                request_id: req_0192f0c4ffa07c51
+            payment_unavailable:
+              value:
+                type: https://api.example.invalid/problems/payment_unavailable
+                title: Payment Unavailable
+                status: 409
+                code: payment_unavailable
+                request_id: req_0192f0c4ffa07c52
+            conflict:
+              value:
+                type: https://api.example.invalid/problems/conflict
+                title: Conflict
+                status: 409
+                code: conflict
+                request_id: req_0192f0c4ffa07c53
+    RedemptionConflict:
+      description: 套餐兑换码与当前权益不匹配（`entitlement_required`），或幂等请求处理中（`conflict`）
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            entitlement_required:
+              value:
+                type: https://api.example.invalid/problems/entitlement_required
+                title: Entitlement Required
+                status: 409
+                code: entitlement_required
+                request_id: req_0192f0c4ffa07c54
+            conflict:
+              value:
+                type: https://api.example.invalid/problems/conflict
+                title: Conflict
+                status: 409
+                code: conflict
+                request_id: req_0192f0c4ffa07c55
+    PayloadTooLarge:
+      description: 请求体或附件超过上限（`payload_too_large`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/payload_too_large
+            title: Payload Too Large
+            status: 413
+            code: payload_too_large
+            request_id: req_0192f0c4ffa07c56
+    IdempotencyKeyReused:
+      description: 同一幂等键用于不同的请求体（`idempotency_key_reused`）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/idempotency_key_reused
+            title: Idempotency Key Reused
+            status: 422
+            code: idempotency_key_reused
+            request_id: req_0192f0c4ffa07c57
+    UpgradeRequired:
+      description: 客户端版本过低（`upgrade_required`，API-03）
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/upgrade_required
+            title: Upgrade Required
+            status: 426
+            code: upgrade_required
+            request_id: req_0192f0c4ffa07c58
+    TooManyRequests:
+      description: 超过限流（`rate_limited`，API-04）
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: https://api.example.invalid/problems/rate_limited
+            title: Too Many Requests
+            status: 429
+            code: rate_limited
+            request_id: req_0192f0c4ffa07c59
+    OAuthError:
+      description: OAuth 错误（RFC 6749 §5.2、RFC 8628 §3.5；CONV-16 例外）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthErrorBody'
+          examples:
+            authorization_pending:
+              value:
+                error: authorization_pending
+                error_description: 等待用户批准
+            slow_down:
+              value:
+                error: slow_down
+                error_description: 轮询过快，请把间隔增加 5 秒
+            expired_token:
+              value:
+                error: expired_token
+                error_description: 设备码已过期
+            invalid_grant:
+              value:
+                error: invalid_grant
+                error_description: 刷新令牌无效或已被使用
+  schemas:
+    Problem:
+      type: object
+      description: RFC 9457 problem details（CONV-16）
+      required: [type, title, status, code, request_id]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          $ref: '#/components/schemas/ProblemCode'
+        detail:
+          type: string
+        instance:
+          type: string
+        request_id:
+          type: string
+        errors:
+          type: array
+          description: 参数错误的逐项原因（仅 `invalid_request`）
+          items:
+            type: object
+            required: [field, code]
+            properties:
+              field:
+                type: string
+                description: 字段路径，如 `device.platform`
+              code:
+                $ref: '#/components/schemas/FieldErrorCode'
+        challenge_id:
+          type: string
+          format: uuid
+          description: 仅 `mfa_required`：二次验证挑战 ID，5 分钟有效（AUTH-20）
+        methods:
+          type: array
+          description: 仅 `mfa_required`：可用的二次验证方式
+          items:
+            $ref: '#/components/schemas/MfaMethod'
+    ProblemCode:
+      type: string
+      description: 错误码，取值见 spec/02 CONV-16
+      enum:
+      - invalid_request
+      - unauthenticated
+      - mfa_required
+      - forbidden
+      - email_unverified
+      - registration_closed
+      - account_suspended
+      - not_found
+      - conflict
+      - invalid_state
+      - quote_expired
+      - entitlement_required
+      - device_limit_reached
+      - payment_unavailable
+      - kernel_protocol_unsupported
+      - payload_too_large
+      - idempotency_key_reused
+      - upgrade_required
+      - precondition_required
+      - rate_limited
+      - internal
+      - service_unavailable
+    FieldErrorCode:
+      type: string
+      description: '`errors[].code`，取值见 spec/02 CONV-16'
+      enum:
+      - required
+      - invalid_format
+      - too_short
+      - too_long
+      - out_of_range
+      - not_allowed
+      - invalid_code
+      - incorrect
+      - expired
+      - exhausted
+      - taken
+    OAuthErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum:
+          - invalid_request
+          - invalid_client
+          - invalid_grant
+          - unsupported_grant_type
+          - authorization_pending
+          - slow_down
+          - access_denied
+          - expired_token
+        error_description:
+          type: string
+    MfaMethod:
+      type: string
+      enum: [totp, passkey, recovery_code]
+    Accepted:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: accepted
+    Currency:
+      type: string
+      description: ISO 4217 货币代码
+      pattern: ^[A-Z]{3}$
+    NextCursor:
+      type: [string, 'null']
+      description: 下一页游标；最后一页为 null
+    ClientPlatform:
+      type: string
+      description: 自研客户端平台
+      enum: [ios, android, windows, macos, linux]
+    Platform:
+      type: string
+      description: 设备平台；`web` 为浏览器中的用户中心
+      enum: [ios, android, windows, macos, linux, web, other]
+    DeviceInfo:
+      type: object
+      required: [platform]
+      properties:
+        platform:
+          $ref: '#/components/schemas/Platform'
+        model:
+          type: string
+          maxLength: 100
+        app_version:
+          type: string
+          maxLength: 32
+        public_key:
+          type: string
+          description: Ed25519 公钥（SPKI DER 的 base64）；非 web 设备必填（AUTH-10）
+        device_id:
+          type: string
+          format: uuid
+          description: 已有设备的 ID；与 `device_proof` 一起提交以复用原设备记录与名额
+        device_proof:
+          type: object
+          description: 设备证明（AUTH-10）：`nonce` 取自 `POST /v1/sessions/nonces`，`signature` 为该设备 Ed25519 私钥对该 nonce 字符串 UTF-8 字节的签名（base64）
+          required: [nonce, signature]
+          properties:
+            nonce:
+              type: string
+            signature:
+              type: string
+    PasswordLogin:
+      type: object
+      title: 第一步：邮箱与密码
+      additionalProperties: false
+      required: [email, password, device]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        device:
+          $ref: '#/components/schemas/DeviceInfo'
+        captcha_token:
+          type: string
+    MfaLoginTotp:
+      type: object
+      title: 第二步：TOTP
+      additionalProperties: false
+      required: [challenge_id, device, totp_code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        device:
+          $ref: '#/components/schemas/DeviceInfo'
+        totp_code:
+          type: string
+          pattern: ^[0-9]{6}$
+    MfaLoginPasskey:
+      type: object
+      title: 第二步：Passkey
+      additionalProperties: false
+      required: [challenge_id, device, webauthn_assertion]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        device:
+          $ref: '#/components/schemas/DeviceInfo'
+        webauthn_assertion:
+          type: object
+          additionalProperties: true
+          description: AuthenticationResponseJSON（WebAuthn Level 3）
+    MfaLoginRecoveryCode:
+      type: object
+      title: 第二步：恢复码
+      additionalProperties: false
+      required: [challenge_id, device, recovery_code]
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        device:
+          $ref: '#/components/schemas/DeviceInfo'
+        recovery_code:
+          type: string
+          maxLength: 32
+    Reauthentication:
+      oneOf:
+      - type: object
+        title: 密码
+        additionalProperties: false
+        required: [password]
+        properties:
+          challenge_id:
+            type: string
+            format: uuid
+          password:
+            type: string
+            maxLength: 128
+      - type: object
+        title: TOTP
+        additionalProperties: false
+        required: [totp_code]
+        properties:
+          challenge_id:
+            type: string
+            format: uuid
+          totp_code:
+            type: string
+            pattern: ^[0-9]{6}$
+      - type: object
+        title: Passkey
+        additionalProperties: false
+        required: [webauthn_assertion]
+        properties:
+          challenge_id:
+            type: string
+            format: uuid
+          webauthn_assertion:
+            type: object
+            additionalProperties: true
+            description: AuthenticationResponseJSON（WebAuthn Level 3）
+      - type: object
+        title: 恢复码
+        additionalProperties: false
+        required: [recovery_code]
+        properties:
+          challenge_id:
+            type: string
+            format: uuid
+          recovery_code:
+            type: string
+            maxLength: 32
+    CredentialStatus:
+      type: string
+      description: |
+        本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
+        `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+      enum: [issued, device_limit_reached, entitlement_inactive, web_device]
+    Session:
+      type: object
+      required: [device_id, token_type, expires_in, credential_status]
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        token_type:
+          type: string
+          const: Bearer
+        access_token:
+          type: string
+          description: 非 web 设备返回；web 设备以 Cookie 下发
+        refresh_token:
+          type: string
+          description: 非 web 设备返回；web 设备以 Cookie 下发
+        expires_in:
+          type: integer
+          description: 访问令牌有效秒数
+        credential_status:
+          $ref: '#/components/schemas/CredentialStatus'
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+        device_id:
+          type: string
+          format: uuid
+    RequestingDevice:
+      type: object
+      description: 请求登录的设备，供批准方核对（AUTH-24）
+      required: [platform]
+      properties:
+        platform:
+          $ref: '#/components/schemas/Platform'
+        model:
+          type: [string, 'null']
+        app_version:
+          type: [string, 'null']
+        ip_prefix:
+          type: string
+          description: /24（IPv4）或 /48（IPv6）前缀（CONV-24）
+        region:
+          type: [string, 'null']
+          description: 按 IP 推断的所在地区；未配置 GeoIP 时为 null
+    DeviceLinkCreated:
+      type: object
+      required: [id, qr_content, poll_token, check_digits, expires_in, interval]
+      properties:
+        id:
+          type: string
+          format: uuid
+        qr_content:
+          type: string
+          description: 二维码内容（用户中心批准页地址）
+        poll_token:
+          type: string
+          description: 作为 `device_code` 轮询 `POST /v1/oauth/token`
+        check_digits:
+          type: string
+          pattern: ^[0-9]{2}$
+          description: 在新设备屏幕上显示的校验数字
+        expires_in:
+          type: integer
+        interval:
+          type: integer
+          description: 最短轮询间隔（秒）
+    DeviceLink:
+      type: object
+      required: [id, status, device, candidate_digits, expires_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, approved, expired]
+        device:
+          $ref: '#/components/schemas/RequestingDevice'
+        candidate_digits:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: string
+            pattern: ^[0-9]{2}$
+        expires_at:
+          type: string
+          format: date-time
+    SignedConfig:
+      type: object
+      required: [payload, signature, key_id]
+      properties:
+        payload:
+          type: object
+          required: [min_version, announcement_version, features, api_endpoints, issued_at]
+          properties:
+            min_version:
+              type: object
+              description: 按平台的最低版本（API-03）
+              propertyNames:
+                $ref: '#/components/schemas/ClientPlatform'
+              additionalProperties:
+                type: string
+            announcement_version:
+              type: integer
+              format: int64
+            features:
+              type: object
+              description: 运营模块开关（OPS-08）。键名由 spec/13 OPS-08 规定，是 CONV-10 布尔字段须以 `is_`/`has_` 开头的例外。
+              required: [announcements, articles, support, referrals, diagnostics]
+              properties:
+                announcements:
+                  type: boolean
+                articles:
+                  type: boolean
+                support:
+                  type: boolean
+                referrals:
+                  type: boolean
+                diagnostics:
+                  type: boolean
+            api_endpoints:
+              type: array
+              description: 主域名与备用域名
+              items:
+                type: string
+                format: uri
+            issued_at:
+              type: string
+              format: date-time
+        signature:
+          type: string
+          contentEncoding: base64
+          description: Ed25519 签名，对象为 `payload` 的 RFC 8785 规范化字节
+        key_id:
+          type: string
+    Release:
+      type: object
+      required: [platform, version, url, sha256, signature, key_id, is_mandatory]
+      properties:
+        platform:
+          $ref: '#/components/schemas/ClientPlatform'
+        version:
+          type: string
+        url:
+          type: string
+          format: uri
+        sha256:
+          type: string
+          pattern: ^[a-f0-9]{64}$
+        signature:
+          type: string
+        key_id:
+          type: string
+        notes:
+          type: string
+        is_mandatory:
+          type: boolean
+        published_at:
+          type: string
+          format: date-time
+    EntitlementStatus:
+      type: string
+      description: '`none` 无权益；`free` 持有免费套餐权益；其余为付费权益的状态（spec/11 11.1）'
+      enum: [none, free, active, over_quota, suspended]
+    Me:
+      type: object
+      required: [id, email, is_email_verified, status, locale, timezone, is_auto_renew, is_mfa_enabled, mfa_methods, entitlement_status, device_limit, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        is_email_verified:
+          type: boolean
+        status:
+          type: string
+          enum: [active, suspended, deleting]
+        locale:
+          type: string
+        timezone:
+          type: string
+        is_auto_renew:
+          type: boolean
+          description: 余额自动续费开关（BIL-19）
+        is_mfa_enabled:
+          type: boolean
+        mfa_methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/MfaMethod'
+        entitlement_status:
+          $ref: '#/components/schemas/EntitlementStatus'
+        device_limit:
+          type: integer
+        referral_code:
+          type: [string, 'null']
+          description: 邀请码；返利模块关闭时仍可用于“仅邀请码”注册（AUTH-02）
+        created_at:
+          type: string
+          format: date-time
+        deletion_scheduled_at:
+          type: [string, 'null']
+          format: date-time
+    RecoveryCodes:
+      type: object
+      required: [recovery_codes]
+      properties:
+        recovery_codes:
+          type: array
+          minItems: 10
+          maxItems: 10
+          items:
+            type: string
+    Passkey:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+    Device:
+      type: object
+      required: [id, platform, created_at, is_current, has_credential]
+      properties:
+        id:
+          type: string
+          format: uuid
+        platform:
+          $ref: '#/components/schemas/Platform'
+        model:
+          type: [string, 'null']
+        app_version:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: [string, 'null']
+          format: date-time
+        ip_prefix:
+          type: [string, 'null']
+          description: 最近一次活跃的 IP 前缀（CONV-24）
+        is_current:
+          type: boolean
+        has_credential:
+          type: boolean
+          description: 是否持有已下发的代理凭据；web 设备恒为假
+    NotificationCategory:
+      type: string
+      enum: [security, transaction, reminder, marketing]
+    NotificationChannel:
+      type: string
+      enum: [email, telegram]
+    NotificationPreferences:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [category, channel, is_enabled, is_locked]
+            properties:
+              category:
+                $ref: '#/components/schemas/NotificationCategory'
+              channel:
+                $ref: '#/components/schemas/NotificationChannel'
+              is_enabled:
+                type: boolean
+              is_locked:
+                type: boolean
+                description: 安全类与交易类不可关闭
+    Credential:
+      type: object
+      required: [id, secret]
+      properties:
+        id:
+          type: string
+          format: uuid
+        secret:
+          type: string
+          description: 代理凭据值（UUID 或密码，按协议使用）
+    Endpoint:
+      type: object
+      description: 一个可连接的入站
+      required: [location_id, protocol, kernel, host, port, transport, tls]
+      properties:
+        location_id:
+          type: string
+          format: uuid
+        protocol:
+          type: string
+          enum: [vless, vmess, trojan, shadowsocks, hysteria2, tuic, anytls]
+        kernel:
+          type: string
+          enum: [singbox, xray]
+          description: 所在内核；自研客户端只连接 sing-box 内核上的 Reality 入站（API-09）
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        transport:
+          type: object
+          required: [type]
+          additionalProperties: true
+          properties:
+            type:
+              type: string
+              enum: [tcp, ws, grpc, httpupgrade, xhttp, mkcp, quic]
+        tls:
+          type: object
+          required: [type]
+          additionalProperties: true
+          properties:
+            type:
+              type: string
+              enum: [none, tls, reality]
+            sni:
+              type: string
+            public_key:
+              type: string
+              description: 仅 Reality
+            short_id:
+              type: string
+              description: 仅 Reality
+        flow:
+          type: string
+          description: 仅 VLESS，例如 `xtls-rprx-vision`
+    Configuration:
+      type: object
+      required: [version, credential_status, entitlement_status, credential, endpoints, rule_assets]
+      properties:
+        version:
+          type: integer
+          format: int64
+        credential_status:
+          $ref: '#/components/schemas/CredentialStatus'
+        entitlement_status:
+          $ref: '#/components/schemas/EntitlementStatus'
+        credential:
+          oneOf:
+          - $ref: '#/components/schemas/Credential'
+          - type: 'null'
+          description: 本设备代理凭据；未下发时为 null
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Endpoint'
+        rule_assets:
+          type: array
+          items:
+            type: object
+            required: [name, digest]
+            properties:
+              name:
+                type: string
+              digest:
+                type: string
+                pattern: ^[a-f0-9]{64}$
+                description: 通过 `GET /v1/assets/{digest}` 取得
+    ExportLink:
+      type: object
+      required: [url, created_at]
+      properties:
+        url:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+    LocationUsage:
+      type: object
+      required: [location_id, location_name, bytes_up, bytes_down, bytes_billed]
+      properties:
+        location_id:
+          type: string
+          format: uuid
+        location_name:
+          type: string
+        bytes_up:
+          type: integer
+          format: int64
+        bytes_down:
+          type: integer
+          format: int64
+        bytes_billed:
+          type: integer
+          format: int64
+          description: 乘以倍率后的计费字节
+    Usage:
+      type: object
+      required: [cycle, daily, by_location]
+      properties:
+        cycle:
+          oneOf:
+          - type: object
+            required: [starts_at, ends_at, bytes_used, bytes_limit, bytes_addon_remaining]
+            properties:
+              starts_at:
+                type: string
+                format: date-time
+              ends_at:
+                type: [string, 'null']
+                format: date-time
+                description: 重置规则为 `never` 时为权益到期时间，长期有效时为 null
+              bytes_used:
+                type: integer
+                format: int64
+              bytes_limit:
+                type: integer
+                format: int64
+                description: 周期额度；0 表示不限
+              bytes_addon_remaining:
+                type: integer
+                format: int64
+                description: 流量包剩余字节
+          - type: 'null'
+        daily:
+          type: array
+          items:
+            type: object
+            required: [date, bytes_up, bytes_down, bytes_billed]
+            properties:
+              date:
+                type: string
+                format: date
+              bytes_up:
+                type: integer
+                format: int64
+              bytes_down:
+                type: integer
+                format: int64
+              bytes_billed:
+                type: integer
+                format: int64
+        by_location:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationUsage'
+    EventType:
+      type: string
+      description: '`GET /v1/me/events` 中 SSE 的 `event` 取值'
+      enum: [quota_warning, plan_changed, profile_updated, device_revoked, session_revoked, announcement]
+    EventMessage:
+      type: object
+      description: 一条 SSE 事件的逻辑结构：`id` 行、`event` 行与 JSON `data` 行
+      required: [id, event, data]
+      properties:
+        id:
+          type: string
+        event:
+          $ref: '#/components/schemas/EventType'
+        data:
+          type: object
+          additionalProperties: true
+    Location:
+      type: object
+      required: [id, name, region_code, load_percent, is_available, usage_multiplier]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        region_code:
+          type: string
+          description: ISO 3166-1 alpha-2
+          pattern: ^[A-Z]{2}$
+        city:
+          type: [string, 'null']
+        load_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: 负载提示
+        is_available:
+          type: boolean
+        is_accessible:
+          type: [boolean, 'null']
+          description: 当前权益能否使用；未认证时为 null
+        usage_multiplier:
+          type: string
+          pattern: ^[0-9]+\.[0-9]{2}$
+          description: 计费倍率，十进制字符串，例如 `1.50`
+    PlanPrice:
+      type: object
+      required: [id, period, amount_minor, currency]
+      properties:
+        id:
+          type: string
+          format: uuid
+        period:
+          type: string
+          enum: [month, quarter, half_year, year, one_time]
+        period_days:
+          type: [integer, 'null']
+          description: 仅 `one_time`：有效天数；null 表示长期有效（BIL-09）
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          $ref: '#/components/schemas/Currency'
+    Plan:
+      type: object
+      required: [id, name, kind, tier, bytes_per_cycle, device_limit, reset_policy, location_count, prices]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum: [recurring, one_time, free]
+        tier:
+          type: integer
+          minimum: 0
+        bytes_per_cycle:
+          type: integer
+          format: int64
+          description: 周期额度；0 表示不限
+        device_limit:
+          type: integer
+        speed_limit_mbps:
+          type: [integer, 'null']
+        reset_policy:
+          type: string
+          enum: [purchase_anchor, calendar_month, never]
+        location_count:
+          type: integer
+          description: 可访问的地区数
+        prices:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanPrice'
+    AddonKind:
+      type: string
+      description: '`data` 流量包；`devices` 额外设备名额（BIL-24）'
+      enum: [data, devices]
+    AddonPrice:
+      type: object
+      required: [id, kind, name, amount_minor, currency]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/AddonKind'
+        name:
+          type: string
+        bytes_total:
+          type: [integer, 'null']
+          format: int64
+          description: 仅 `data`
+        extra_devices:
+          type: [integer, 'null']
+          description: 仅 `devices`
+        amount_minor:
+          type: integer
+          format: int64
+        currency:
+          $ref: '#/components/schemas/Currency'
+    QuoteRequest:
+      description: '`price_id` 与 `addon_price_id` 二选一'
+      oneOf:
+      - type: object
+        title: 套餐
+        additionalProperties: false
+        required: [price_id]
+        properties:
+          price_id:
+            type: string
+            format: uuid
+          mode:
+            type: string
+            enum: [auto, downgrade_immediate]
+            default: auto
+            description: '`downgrade_immediate` 请求立即降级（BIL-23）；其余由服务端判定场景'
+          coupon_code:
+            type: string
+            maxLength: 64
+          is_credit_applied:
+            type: boolean
+            default: true
+            description: 是否用余额抵扣（预估额见 `Quote.credit_applied_minor`，以下单时冻结为准，ORD-15）
+      - type: object
+        title: 加购项
+        additionalProperties: false
+        required: [addon_price_id]
+        properties:
+          addon_price_id:
+            type: string
+            format: uuid
+          coupon_code:
+            type: string
+            maxLength: 64
+          is_credit_applied:
+            type: boolean
+            default: true
+            description: 是否用余额抵扣（预估额见 `Quote.credit_applied_minor`，以下单时冻结为准，ORD-15）
+    OrderType:
+      type: string
+      description: 购买场景（ORD-01）
+      enum: [new, renew, upgrade, downgrade_scheduled, downgrade_immediate, addon]
+    Quote:
+      type: object
+      required: [id, order_type, list_price_minor, remaining_value_minor, discount_minor, credit_applied_minor, credit_refund_minor, amount_due_minor, currency, is_locked_price_lost, expires_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        order_type:
+          $ref: '#/components/schemas/OrderType'
+        plan_id:
+          type: [string, 'null']
+          format: uuid
+        price_id:
+          type: [string, 'null']
+          format: uuid
+        addon_price_id:
+          type: [string, 'null']
+          format: uuid
+        list_price_minor:
+          type: integer
+          format: int64
+          description: 原价
+        remaining_value_minor:
+          type: integer
+          format: int64
+          description: 剩余价值抵扣（11.4）
+        discount_minor:
+          type: integer
+          format: int64
+          description: 优惠
+        credit_applied_minor:
+          type: integer
+          format: int64
+          description: 余额抵扣（预估，以下单时冻结为准，ORD-15）
+        credit_refund_minor:
+          type: integer
+          format: int64
+          description: 剩余价值超出新价格、记入余额的部分
+        amount_due_minor:
+          type: integer
+          format: int64
+          description: 应付
+        currency:
+          $ref: '#/components/schemas/Currency'
+        is_locked_price_lost:
+          type: boolean
+          description: 续费改换周期，原锁定价格将失效（BIL-08）
+        entitlement_expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: 开通后的到期时间；长期有效为 null
+        expires_at:
+          type: string
+          format: date-time
+          description: 报价有效期（15 分钟）
+    OrderStatus:
+      type: string
+      enum: [pending, paid, fulfilled, credited, cancelled, expired, refunded]
+    PaymentMethod:
+      type: string
+      description: '`credit` 只在应付为 0 时合法（ORD-03）；`test` 仅开发与测试环境（PAY-11）'
+      enum: [alipay_f2f, credit, test]
+      default: alipay_f2f
+    PaymentInstruction:
+      type: object
+      description: 支付指引（API-05）
+      required: [method, expires_at]
+      properties:
+        method:
+          type: string
+          enum: [alipay_qr, test_checkout]
+        qr_content:
+          type: string
+          description: 支付宝二维码内容；前端渲染为二维码，移动端可直接作为“打开支付宝”的链接
+        test_checkout_url:
+          type: string
+          format: uri
+          description: 仅测试渠道
+        expires_at:
+          type: string
+          format: date-time
+    Order:
+      type: object
+      required: [id, number, type, status, list_price_minor, remaining_value_minor, discount_minor, credit_applied_minor, amount_due_minor, currency, payment_method, payment, expires_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          pattern: ^ORD-[0-9]{8}-[A-Z0-9]{6}$
+        type:
+          $ref: '#/components/schemas/OrderType'
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        plan_id:
+          type: [string, 'null']
+          format: uuid
+        plan_name:
+          type: [string, 'null']
+        price_id:
+          type: [string, 'null']
+          format: uuid
+        addon_price_id:
+          type: [string, 'null']
+          format: uuid
+        list_price_minor:
+          type: integer
+          format: int64
+        remaining_value_minor:
+          type: integer
+          format: int64
+        discount_minor:
+          type: integer
+          format: int64
+        credit_applied_minor:
+          type: integer
+          format: int64
+        amount_due_minor:
+          type: integer
+          format: int64
+        currency:
+          $ref: '#/components/schemas/Currency'
+        payment_method:
+          $ref: '#/components/schemas/PaymentMethod'
+        payment:
+          oneOf:
+          - $ref: '#/components/schemas/PaymentInstruction'
+          - type: 'null'
+          description: 待支付订单的支付指引；应付为 0 或不再待支付时为 null
+        expires_at:
+          type: string
+          format: date-time
+          description: 订单有效期（ORD-04）
+        paid_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    Addon:
+      type: object
+      required: [id, kind, name, expires_at, purchased_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/AddonKind'
+        name:
+          type: string
+        bytes_total:
+          type: [integer, 'null']
+          format: int64
+        bytes_used:
+          type: [integer, 'null']
+          format: int64
+        extra_devices:
+          type: [integer, 'null']
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        purchased_at:
+          type: string
+          format: date-time
+    Entitlement:
+      type: object
+      required: [id, plan_id, plan_name, plan_kind, tier, status, starts_at, expires_at, bytes_limit, bytes_used, device_limit, reset_policy, locked_price, addons]
+      properties:
+        id:
+          type: string
+          format: uuid
+        plan_id:
+          type: string
+          format: uuid
+        plan_name:
+          type: string
+        plan_kind:
+          type: string
+          enum: [recurring, one_time, free]
+        tier:
+          type: integer
+        status:
+          type: string
+          enum: [scheduled, active, over_quota, suspended]
+        starts_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        cycle_starts_at:
+          type: [string, 'null']
+          format: date-time
+        cycle_ends_at:
+          type: [string, 'null']
+          format: date-time
+        bytes_limit:
+          type: integer
+          format: int64
+          description: 周期额度（快照，BIL-02）；0 表示不限
+        bytes_used:
+          type: integer
+          format: int64
+          description: 本周期已用计费字节
+        device_limit:
+          type: integer
+          description: 设备上限（含额外设备名额）
+        speed_limit_mbps:
+          type: [integer, 'null']
+        reset_policy:
+          type: string
+          enum: [purchase_anchor, calendar_month, never]
+        locked_price:
+          oneOf:
+          - $ref: '#/components/schemas/PlanPrice'
+          - type: 'null'
+          description: 锁定价格（BIL-07）；免费套餐与兑换开通时可能为 null
+        addons:
+          type: array
+          description: 挂在本权益上、未到期的加购项（BIL-25）
+          items:
+            $ref: '#/components/schemas/Addon'
+    Entitlements:
+      type: object
+      required: [entitlement_status, is_auto_renew, current, next]
+      properties:
+        entitlement_status:
+          $ref: '#/components/schemas/EntitlementStatus'
+        is_auto_renew:
+          type: boolean
+          readOnly: true
+        current:
+          oneOf:
+          - $ref: '#/components/schemas/Entitlement'
+          - type: 'null'
+        next:
+          oneOf:
+          - $ref: '#/components/schemas/Entitlement'
+          - type: 'null'
+    CreditEntry:
+      type: object
+      required: [id, amount_minor, currency, reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount_minor:
+          type: integer
+          format: int64
+          description: 正数为入账，负数为支出
+        currency:
+          $ref: '#/components/schemas/Currency'
+        reason:
+          type: string
+          description: |
+            原因。已定义的取值：`order_payment`、`order_release`、`quote_adjustment`、`stale_quote`、`late_payment`、
+            `refund`、`scheduled_cancelled`、`upgrade_surplus`、`redemption`、`referral`、`admin_adjust`、`account_deletion`。
+            客户端对未知取值显示通用文案。
+        order_id:
+          type: [string, 'null']
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+    Redemption:
+      type: object
+      required: [kind, amount_minor, currency, entitlement_id]
+      properties:
+        kind:
+          type: string
+          enum: [credit, plan]
+        amount_minor:
+          type: [integer, 'null']
+          format: int64
+        currency:
+          oneOf:
+          - $ref: '#/components/schemas/Currency'
+          - type: 'null'
+        entitlement_id:
+          type: [string, 'null']
+          format: uuid
+    Announcement:
+      type: object
+      required: [id, title, body_md, is_pinned, starts_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        body_md:
+          type: string
+        is_pinned:
+          type: boolean
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: [string, 'null']
+          format: date-time
+    ArticleSummary:
+      type: object
+      required: [slug, title, category, platforms, updated_at]
+      properties:
+        slug:
+          type: string
+        title:
+          type: string
+        category:
+          type: string
+        platforms:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientPlatform'
+        updated_at:
+          type: string
+          format: date-time
+    Article:
+      allOf:
+      - $ref: '#/components/schemas/ArticleSummary'
+      - type: object
+        required: [body_md, has_user_variables]
+        properties:
+          body_md:
+            type: string
+            description: 已渲染白名单变量的 Markdown（OPS-12）
+          has_user_variables:
+            type: boolean
+    TicketStatus:
+      type: string
+      enum: [open, in_progress, waiting_user, closed]
+    Ticket:
+      type: object
+      required: [id, number, subject, category, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        number:
+          type: string
+          pattern: ^TCK-[0-9]{8}-[A-Z0-9]{6}$
+        subject:
+          type: string
+        category:
+          type: string
+        status:
+          $ref: '#/components/schemas/TicketStatus'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    TicketDetail:
+      allOf:
+      - $ref: '#/components/schemas/Ticket'
+      - type: object
+        required: [messages]
+        properties:
+          messages:
+            type: array
+            items:
+              $ref: '#/components/schemas/TicketMessage'
+    TicketMessage:
+      type: object
+      required: [id, author, body, attachments, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        author:
+          type: string
+          enum: [user, staff]
+        body:
+          type: string
+        attachments:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Attachment'
+        created_at:
+          type: string
+          format: date-time
+    Attachment:
+      type: object
+      required: [id, filename, content_type, bytes_size, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+          maxLength: 255
+          description: 上传时 multipart 分段的文件名（已去除路径与控制字符）；下载时用于 `Content-Disposition`
+        content_type:
+          type: string
+          enum: [image/png, image/jpeg, image/webp]
+          description: 按文件内容识别的类型（OPS-10）
+        bytes_size:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 5242880
+          description: 文件字节数
+        created_at:
+          type: string
+          format: date-time
+    Referrals:
+      type: object
+      required: [referral_code, invite_url, invited_count, frozen_minor, settled_minor, currency, rule]
+      properties:
+        referral_code:
+          type: string
+        invite_url:
+          type: string
+          format: uri
+        invited_count:
+          type: integer
+        frozen_minor:
+          type: integer
+          format: int64
+          description: 冻结中的返利
+        settled_minor:
+          type: integer
+          format: int64
+          description: 已转入余额的返利
+        currency:
+          $ref: '#/components/schemas/Currency'
+        rule:
+          type: object
+          required: [rate_bps, is_first_order_only]
+          properties:
+            rate_bps:
+              type: integer
+              minimum: 0
+              maximum: 10000
+              description: 返利比例（基点）
+            is_first_order_only:
+              type: boolean
+            cap_minor:
+              type: [integer, 'null']
+              format: int64
+              description: 单人上限
