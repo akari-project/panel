@@ -1,7 +1,31 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# 不能携带注释的文件（JSON、工具生成的锁文件）的许可证登记（spec/02 CONV-25）。
+#
+# REUSE 登记（spec/02 CONV-25）。源文件在头部带 SPDX-License-Identifier；
+# 下列无法或不宜加注释头的文件在此登记。
 version = 1
 
+# 版权声明对全部文件生效，与文件头中的许可证标识合并。
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "akari-project contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# 生成代码、依赖锁文件、嵌入产物占位、说明文档与 Claude Code 配置。
+[[annotations]]
+path = [
+  "server/internal/db/sqlc/**",
+  "server/internal/webui/dist/**",
+  "server/go.mod",
+  "server/go.sum",
+  "**/CLAUDE.md",
+  ".claude/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "akari-project contributors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# 不能携带注释的前端文件（JSON、工具生成的锁文件），与 M0-06（m0-06/web-skeleton）登记的条目相同。
 [[annotations]]
 path = [
   "web/**/package.json",

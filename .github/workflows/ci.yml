@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# panel CI（spec/42 42.2）：make ci（lint、生成代码一致性、依赖许可证、-race 单元与集成测试、性质测试、
+# 端到端测试、noui 构建、前端检查、嵌入产物一致性）、REUSE lint、govulncheck。
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      # 集成测试用 testcontainers 启动 PostgreSQL 18；数据库不可用时失败而不是跳过。
+      PANEL_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      # pnpm 版本取 web/package.json 的 packageManager 字段；前端尚不存在时跳过（make ci 同样跳过前端步骤）。
+      - uses: pnpm/action-setup@v4
+        if: hashFiles('web/package.json') != ''
+        with:
+          package_json_file: web/package.json
+      - run: make ci
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: fsfe/reuse-action@v5
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - run: make vulncheck
