@@ -8,11 +8,13 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/akari-project/panel/server/internal/db"
+	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/testdb"
 )
 
@@ -141,7 +143,7 @@ func TestSchemaConventions(t *testing.T) {
 		"ingest_batches", "traffic_hourly", "traffic_daily",
 		"announcements", "support_tickets", "support_messages", "support_attachments", "articles", "referral_earnings",
 		"notification_templates", "notification_preferences", "notification_outbox",
-		"settings", "outbox", "consumed_events", "idempotency_keys", "job_fencing", "audit_logs",
+		"settings", "outbox", "consumed_events", "idempotency_keys", "job_fencing", "audit_logs", "reason_texts",
 	} {
 		if !slices.Contains(tables, want) {
 			t.Errorf("table %s missing (spec/03 3.1)", want)
@@ -191,7 +193,8 @@ func TestAppendOnlyTables(t *testing.T) {
 	mustExec(t, pool, `INSERT INTO entitlement_events (entitlement_id, account_id, type, order_id, diff) VALUES ($1, $2, 'purchase', $3, '{}')`,
 		f.entitlement, f.account, f.order)
 	mustExec(t, pool, `INSERT INTO credit_ledger (account_id, amount_minor, currency, reason, order_id) VALUES ($1, 500, 'CNY', 'redeem', NULL)`, f.account)
-	mustExec(t, pool, `INSERT INTO audit_logs (action, target_type, target_id, request_id, reason) VALUES ('plans.update', 'plan', $1, 'req_1', 'r')`, f.plan)
+	reason := mustID(t, pool, `INSERT INTO reason_texts (body) VALUES ('r') RETURNING id`)
+	mustExec(t, pool, `INSERT INTO audit_logs (action, target_type, target_id, request_id, reason_id) VALUES ('plans.update', 'plan', $1, 'req_1', $2)`, f.plan, reason)
 	mustExec(t, pool, `INSERT INTO payment_notifications (provider, order_id, is_verified, result, raw, received_at)
 		VALUES ('alipay_f2f', $1, true, 'processed', '{}', '2026-10-01T00:01:00Z')`, f.order)
 
@@ -452,15 +455,17 @@ func TestNodeKernelGuard(t *testing.T) {
 	})
 }
 
-// CONV-26：站点时区初始化后只读。
-func TestSiteTimezoneReadOnly(t *testing.T) {
+// CONV-26、CONV-08：站点时区与结算货币初始化后只读。
+func TestSiteTimezoneAndCurrencyReadOnly(t *testing.T) {
 	pool := testdb.New(t)
 	ctx := context.Background()
-	mustExec(t, pool, `INSERT INTO settings (key, value) VALUES ('site_timezone', '"Asia/Shanghai"')`)
-	_, err := pool.Exec(ctx, `UPDATE settings SET value = '"UTC"' WHERE key = 'site_timezone'`)
-	wantSQLState(t, err, sqlstateRestrictViolation)
-	_, err = pool.Exec(ctx, `DELETE FROM settings WHERE key = 'site_timezone'`)
-	wantSQLState(t, err, sqlstateRestrictViolation)
+	mustExec(t, pool, `INSERT INTO settings (key, value) VALUES ('site_timezone', '"Asia/Shanghai"'), ('site_currency', '"CNY"')`)
+	for key, value := range map[string]string{"site_timezone": `"UTC"`, "site_currency": `"USD"`} {
+		_, err := pool.Exec(ctx, `UPDATE settings SET value = $2 WHERE key = $1`, key, value)
+		wantSQLState(t, err, sqlstateRestrictViolation)
+		_, err = pool.Exec(ctx, `DELETE FROM settings WHERE key = $1`, key)
+		wantSQLState(t, err, sqlstateRestrictViolation)
+	}
 	mustExec(t, pool, `INSERT INTO settings (key, value) VALUES ('free_device_limit', '1')`)
 	mustExec(t, pool, `UPDATE settings SET value = '2' WHERE key = 'free_device_limit'`)
 }
@@ -524,5 +529,62 @@ func TestBuiltinRoles(t *testing.T) {
 	}
 	if !slices.Equal(got, []string{"operator", "superadmin", "support"}) {
 		t.Errorf("builtin roles = %v", got)
+	}
+}
+
+// CONV-29：只追加表不保存自由文本，原因以 reason_id 引用可变表 reason_texts；
+// admin_adjust 必须带原因；删除账号个人数据时清空原因文本、保留行与引用。
+func TestReasonTexts(t *testing.T) {
+	pool := testdb.New(t)
+	f := newFixture(t, pool)
+	ctx := context.Background()
+
+	// 只追加表中没有 text / varchar 类型的自由文本原因列。
+	rows, err := pool.Query(ctx, `SELECT table_name, column_name FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = ANY($1) AND column_name IN ('reason','note','comment','body')
+		  AND data_type IN ('text','character varying')`, appendOnlyTables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var tbl, col string
+		_ = rows.Scan(&tbl, &col)
+		if !(tbl == "credit_ledger" && col == "reason") { // credit_ledger.reason 是枚举（ORD-16），不是自由文本
+			t.Errorf("append-only table %s has free-text column %s", tbl, col)
+		}
+	}
+	rows.Close()
+
+	_, err = pool.Exec(ctx, `INSERT INTO entitlement_events (entitlement_id, account_id, type, diff) VALUES ($1, $2, 'admin_adjust', '{}')`,
+		f.entitlement, f.account)
+	wantSQLState(t, err, sqlstateCheckViolation)
+
+	reason := mustID(t, pool, `INSERT INTO reason_texts (account_id, body) VALUES ($1, 'user asked by phone, 138xxxx') RETURNING id`, f.account)
+	mustExec(t, pool, `INSERT INTO entitlement_events (entitlement_id, account_id, type, reason_id, diff) VALUES ($1, $2, 'admin_adjust', $3, '{}')`,
+		f.entitlement, f.account, reason)
+	mustExec(t, pool, `INSERT INTO audit_logs (action, target_type, target_id, reason_id) VALUES ('entitlements.adjust', 'account', $1, $2)`, f.account, reason)
+	other := mustID(t, pool, `INSERT INTO reason_texts (body) VALUES ('global maintenance') RETURNING id`)
+
+	q := sqlc.New(pool)
+	n, err := q.ClearAccountReasonTexts(ctx, uuid.MustParse(f.account))
+	if err != nil || n != 1 {
+		t.Fatalf("ClearAccountReasonTexts = %d, %v", n, err)
+	}
+	var body string
+	if err := pool.QueryRow(ctx, `SELECT r.body FROM entitlement_events e JOIN reason_texts r ON r.id = e.reason_id WHERE e.type = 'admin_adjust'`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		t.Errorf("reason body after account data deletion = %q", body)
+	}
+	var auditRefs int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs WHERE reason_id = $1`, reason).Scan(&auditRefs); err != nil || auditRefs != 1 {
+		t.Errorf("audit reference lost: %d %v", auditRefs, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT body FROM reason_texts WHERE id = $1`, other).Scan(&body); err != nil || body != "global maintenance" {
+		t.Errorf("unrelated reason changed: %q %v", body, err)
+	}
+	if n, _ := q.ClearAccountReasonTexts(ctx, uuid.MustParse(f.account)); n != 0 {
+		t.Errorf("second clear touched %d rows", n)
 	}
 }

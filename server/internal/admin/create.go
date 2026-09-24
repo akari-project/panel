@@ -123,13 +123,17 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		// 审计记录不含邮箱明文（CONV-29）。
 		diff, _ := json.Marshal(map[string]any{"roles": []string{SuperadminRole}})
 		target := res.AccountID.String()
-		reason := "panel admin create"
+		// 原因文本放在可变表 reason_texts，审计日志只引用其 ID（CONV-29）。
+		reasonID, err := q.InsertReasonText(ctx, sqlc.InsertReasonTextParams{AccountID: &res.AccountID, Body: "panel admin create"})
+		if err != nil {
+			return err
+		}
 		return q.InsertAuditLog(ctx, sqlc.InsertAuditLogParams{
 			Action:     "staff.create",
 			TargetType: "account",
 			TargetID:   &target,
 			Diff:       diff,
-			Reason:     &reason,
+			ReasonID:   &reasonID,
 		})
 	})
 	if err != nil {

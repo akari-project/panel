@@ -9,6 +9,7 @@
 --   纯关联表：account_roles、node_group_members、plan_groups、coupon_redemptions、consumed_events；
 --   其余为可变表，带 updated_at，由触发器 touch_updated_at 维护。
 -- 参与业务判断的时间列没有数据库默认值，由应用用注入的时钟写入（CONV-27）。
+-- 只追加表不保存自由文本，原因文本放在可变表 reason_texts，以 reason_id 引用（CONV-29）。
 
 -- +goose Up
 
@@ -36,11 +37,11 @@ CREATE TABLE settings (
 );
 CREATE TRIGGER settings_touch BEFORE UPDATE ON settings FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
--- 站点时区在初始化时设定，之后只读（CONV-26）
+-- 站点时区（site_timezone，CONV-26）与结算货币（site_currency，ISO 4217，CONV-08）在初始化时设定，之后只读
 -- +goose StatementBegin
 CREATE FUNCTION settings_readonly_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.key = 'site_timezone' AND (TG_OP = 'DELETE' OR NEW.value IS DISTINCT FROM OLD.value OR NEW.key IS DISTINCT FROM OLD.key) THEN
+  IF OLD.key IN ('site_timezone','site_currency') AND (TG_OP = 'DELETE' OR NEW.value IS DISTINCT FROM OLD.value OR NEW.key IS DISTINCT FROM OLD.key) THEN
     RAISE EXCEPTION 'settings: % is read-only after initialization', OLD.key USING ERRCODE = 'restrict_violation';
   END IF;
   IF TG_OP = 'DELETE' THEN
@@ -68,6 +69,18 @@ CREATE TABLE accounts (
 );
 CREATE UNIQUE INDEX accounts_email_uq ON accounts (lower(email));
 CREATE TRIGGER accounts_touch BEFORE UPDATE ON accounts FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+
+-- 操作原因的自由文本（CONV-29）。只追加表不保存自由文本，改为以 reason_id 引用本表。
+-- account_id 为原因所涉及的账号；删除该账号个人数据时清空其 body（置为空串），行保留以维持引用。
+CREATE TABLE reason_texts (
+  id          uuid PRIMARY KEY DEFAULT uuidv7(),
+  account_id  uuid REFERENCES accounts(id),
+  body        text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX reason_texts_account ON reason_texts (account_id) WHERE account_id IS NOT NULL;
+CREATE TRIGGER reason_texts_touch BEFORE UPDATE ON reason_texts FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 -- 权限字符串见 spec/10 AUTH-17；内置角色不可修改、不可删除（AUTH-22），由应用层保证
 CREATE TABLE roles (
@@ -636,9 +649,10 @@ CREATE TABLE entitlement_events (
                     'redeem','scheduled_cancelled','free_grant','admin_adjust')),   -- spec/11 11.6
   order_id        uuid REFERENCES orders(id),
   actor_id        uuid,                          -- 空表示系统
-  reason          text,
+  reason_id       uuid REFERENCES reason_texts(id),   -- 原因文本（CONV-29）
   diff            jsonb NOT NULL,                -- 变更前后差异
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CHECK (type <> 'admin_adjust' OR reason_id IS NOT NULL)   -- admin_adjust 必须填写原因（spec/11 11.6）
 );
 CREATE INDEX entitlement_events_account ON entitlement_events (account_id, created_at);
 CREATE INDEX entitlement_events_entitlement ON entitlement_events (entitlement_id, created_at);
@@ -1012,7 +1026,7 @@ CREATE TABLE audit_logs (
   diff         jsonb,                          -- _enc 与 _hash 字段只记录“已修改”
   ip_prefix    text,
   request_id   text,
-  reason       text,
+  reason_id    uuid REFERENCES reason_texts(id),   -- 原因文本（AUTH-18、CONV-29）
   created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX audit_logs_target ON audit_logs (target_type, target_id, created_at);

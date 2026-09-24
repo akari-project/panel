@@ -76,8 +76,12 @@ func TestCreateFirstSuperadmin(t *testing.T) {
 		t.Errorf("outbox = %q, %v", topic, err)
 	}
 	var diff, reason string
-	if err := pool.QueryRow(ctx, `SELECT diff::text, reason FROM audit_logs WHERE target_id = $1`, res.AccountID.String()).Scan(&diff, &reason); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT a.diff::text, r.body FROM audit_logs a JOIN reason_texts r ON r.id = a.reason_id
+		WHERE a.target_id = $1 AND r.account_id = $2`, res.AccountID.String(), res.AccountID).Scan(&diff, &reason); err != nil {
 		t.Fatal(err)
+	}
+	if reason != "panel admin create" {
+		t.Errorf("reason = %q", reason)
 	}
 	if strings.Contains(diff+string(payload), "example.com") {
 		t.Error("audit log or outbox contains the email address (CONV-29)")

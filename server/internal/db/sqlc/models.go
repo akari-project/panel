@@ -100,7 +100,7 @@ type AuditLog struct {
 	Diff       []byte
 	IpPrefix   *string
 	RequestID  *string
-	Reason     *string
+	ReasonID   *uuid.UUID
 	CreatedAt  time.Time
 }
 
@@ -187,7 +187,7 @@ type EntitlementEvent struct {
 	Type          string
 	OrderID       *uuid.UUID
 	ActorID       *uuid.UUID
-	Reason        *string
+	ReasonID      *uuid.UUID
 	Diff          []byte
 	CreatedAt     time.Time
 }
@@ -506,6 +506,14 @@ type Quote struct {
 	ExpiresAt          time.Time
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+type ReasonText struct {
+	ID        uuid.UUID
+	AccountID *uuid.UUID
+	Body      string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type RedeemCode struct {

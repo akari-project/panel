@@ -94,7 +94,7 @@ func (q *Queries) GrantRole(ctx context.Context, arg GrantRoleParams) error {
 }
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
-INSERT INTO audit_logs (actor_id, action, target_type, target_id, diff, request_id, reason)
+INSERT INTO audit_logs (actor_id, action, target_type, target_id, diff, request_id, reason_id)
 VALUES ($1, $2, $3, $4, $5,
         $6, $7)
 `
@@ -106,7 +106,7 @@ type InsertAuditLogParams struct {
 	TargetID   *string
 	Diff       []byte
 	RequestID  *string
-	Reason     *string
+	ReasonID   *uuid.UUID
 }
 
 func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error {
@@ -117,7 +117,7 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.TargetID,
 		arg.Diff,
 		arg.RequestID,
-		arg.Reason,
+		arg.ReasonID,
 	)
 	return err
 }
@@ -135,6 +135,23 @@ type InsertOutboxEventParams struct {
 
 func (q *Queries) InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, insertOutboxEvent, arg.Topic, arg.Payload, arg.SchemaVersion)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertReasonText = `-- name: InsertReasonText :one
+INSERT INTO reason_texts (account_id, body) VALUES ($1, $2)
+RETURNING id
+`
+
+type InsertReasonTextParams struct {
+	AccountID *uuid.UUID
+	Body      string
+}
+
+func (q *Queries) InsertReasonText(ctx context.Context, arg InsertReasonTextParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertReasonText, arg.AccountID, arg.Body)
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
