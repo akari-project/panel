@@ -29,6 +29,7 @@ import (
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
 	"github.com/akari-project/panel/server/internal/logging"
+	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/ratelimit"
 	"github.com/akari-project/panel/server/internal/secretbox"
 	"github.com/akari-project/panel/server/internal/webui"
@@ -68,8 +69,8 @@ type Deps struct {
 	Log    *slog.Logger
 	Clock  clock.Clock
 	Pool   *pgxpool.Pool
-	// KV、Tokens、Keys 是 api 角色所需的 Valkey 客户端、访问令牌密钥环与主密钥环；
-	// 只启动 gateway 或 worker 时可为 nil。
+	// KV 与 Tokens 是 api 角色所需的 Valkey 客户端与访问令牌密钥环；Keys 是主密钥环，
+	// api 与 worker 角色需要。只启动 gateway 时都可为 nil。
 	KV     valkey.Client
 	Tokens *token.Keyring
 	Keys   *secretbox.Keyring
@@ -248,8 +249,20 @@ func workerHandler(health http.Handler) http.Handler {
 // runWorker 是 worker 角色的主循环。周期任务（spec/01 1.1）随各里程碑加入；
 // 多实例下的单执行者选举见 spec/40 DEP-08。目前的任务都可以由多个实例重复执行。
 func runWorker(ctx context.Context, d Deps, log *slog.Logger) error {
+	if d.Keys == nil {
+		return errors.New("worker: PANEL_MASTER_KEY is required")
+	}
 	idem := idempotency.Store{Pool: d.Pool, Clock: d.Clock}
+	deliverer := &notify.Deliverer{
+		Pool: d.Pool, Keys: d.Keys, Clock: d.Clock, Log: log, SiteName: d.Config.Site.Name,
+		Sender: notify.SMTPSender{Pool: d.Pool, Keys: d.Keys, Clock: d.Clock},
+	}
 	jobs := []job{
+		// 外发通知（spec/13 OPS-02）：多个 worker 并行时以 SKIP LOCKED 分摊。
+		{name: "notification-delivery", every: 5 * time.Second, run: func(ctx context.Context) error {
+			_, err := deliverer.RunOnce(ctx)
+			return err
+		}},
 		{name: "idempotency-sweep", every: time.Hour, run: func(ctx context.Context) error {
 			n, err := idem.Sweep(ctx)
 			if err == nil && n > 0 {

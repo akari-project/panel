@@ -136,16 +136,18 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		return err
 	}
 	defer pool.Close()
-	// api 角色需要 Valkey 与访问令牌签名密钥；只启动 gateway 或 worker 时不连接。
+	// api 角色需要 Valkey 与访问令牌签名密钥，api 与 worker 需要主密钥；只启动 gateway 时都不需要。
 	var (
 		kvc    valkey.Client
 		tokens *token.Keyring
 		keys   *secretbox.Keyring
 	)
-	if mode == app.ModeAPI || mode == app.ModeAll {
+	if mode != app.ModeGateway {
 		if keys, err = secretbox.ParseKeyring(cfg.Crypto.MasterKey, cfg.Crypto.PreviousMasterKey); err != nil {
 			return err
 		}
+	}
+	if mode == app.ModeAPI || mode == app.ModeAll {
 		if cfg.Valkey.URL == "" {
 			return errors.New("valkey.url is required for the api role (or set PANEL_VALKEY_URL)")
 		}

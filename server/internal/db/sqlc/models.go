@@ -592,6 +592,8 @@ type Session struct {
 	RevokedAt        *time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	// 会话链的绝对失效时间，轮换时继承；为空时以 expires_at 为准（AUTH-07）
+	AbsoluteExpiresAt *time.Time
 }
 
 type Setting struct {
