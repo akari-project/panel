@@ -128,7 +128,7 @@ vulncheck:
 # 前端 lint / typecheck / test / build（spec/42 42.2）。
 web-check:
 	@if [ ! -f $(WEB)/package.json ]; then echo "web-check: $(WEB)/package.json 不存在，跳过（M0-06）"; exit 0; fi; \
-	cd $(WEB) && pnpm install --frozen-lockfile && pnpm -r lint && pnpm -r typecheck && pnpm -r test && pnpm -r build
+	cd $(WEB) && pnpm install --frozen-lockfile && pnpm test:root && pnpm -r lint && pnpm -r typecheck && pnpm -r test && pnpm -r build
 
 # 嵌入产物一致性（DEP-01）：make build 的二进制内嵌前端且提交一致；
 # 用另一个提交构建的二进制必须拒绝启动。
