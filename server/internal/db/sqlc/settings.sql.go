@@ -22,3 +22,18 @@ func (q *Queries) GetSetting(ctx context.Context, key string) ([]byte, error) {
 	err := row.Scan(&value)
 	return value, err
 }
+
+const initSetting = `-- name: InitSetting :exec
+INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING
+`
+
+type InitSettingParams struct {
+	Key   string
+	Value []byte
+}
+
+// 写入尚不存在的设置项；已存在时不变（并发时先写入者生效）。
+func (q *Queries) InitSetting(ctx context.Context, arg InitSettingParams) error {
+	_, err := q.db.Exec(ctx, initSetting, arg.Key, arg.Value)
+	return err
+}

@@ -12,6 +12,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -30,6 +31,7 @@ import (
 	"github.com/akari-project/panel/server/internal/app"
 	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/buildinfo"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
@@ -136,11 +138,12 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		return err
 	}
 	defer pool.Close()
-	// api 角色需要 Valkey 与访问令牌签名密钥，api 与 worker 需要主密钥；只启动 gateway 时都不需要。
+	// api 角色需要 Valkey、访问令牌与 /v1/config 的签名密钥，api 与 worker 需要主密钥；只启动 gateway 时都不需要。
 	var (
 		kvc    valkey.Client
 		tokens *token.Keyring
 		keys   *secretbox.Keyring
+		signer *clientconfig.Signer
 	)
 	if mode != app.ModeGateway {
 		if keys, err = secretbox.ParseKeyring(cfg.Crypto.MasterKey, cfg.Crypto.PreviousMasterKey); err != nil {
@@ -154,6 +157,14 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		if tokens, err = token.NewKeyring(clock.Real{}, cfg.Crypto.TokenKey, cfg.Crypto.PreviousTokenKey); err != nil {
 			return err
 		}
+		if signer, err = clientconfig.ParseKey(cfg.Crypto.ConfigKey); err != nil {
+			return err
+		}
+		for _, pk := range tokens.PublicKeys() {
+			if bytes.Equal(signer.PublicKey(), pk) {
+				return errors.New("PANEL_CONFIG_KEY must differ from PANEL_TOKEN_KEY and PANEL_TOKEN_KEY_PREVIOUS (CONV-30)")
+			}
+		}
 		if cfg.Crypto.PreviousTokenKey != "" {
 			// 旧密钥只在轮换后的 30 分钟内需要（AUTH-06），提醒运维按时移除。
 			log.Warn("PANEL_TOKEN_KEY_PREVIOUS is set; remove it 30 minutes after rotating PANEL_TOKEN_KEY")
@@ -164,16 +175,17 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		defer kvc.Close()
 	}
 	return app.Run(ctx, app.Deps{
-		Config:  cfg,
-		Log:     log,
-		Clock:   clock.Real{},
-		Pool:    pool,
-		KV:      kvc,
-		Tokens:  tokens,
-		Keys:    keys,
-		Assets:  assets,
-		Version: buildinfo.Version,
-		Commit:  buildinfo.Commit,
+		Config:       cfg,
+		Log:          log,
+		Clock:        clock.Real{},
+		Pool:         pool,
+		KV:           kvc,
+		Tokens:       tokens,
+		ConfigSigner: signer,
+		Keys:         keys,
+		Assets:       assets,
+		Version:      buildinfo.Version,
+		Commit:       buildinfo.Commit,
 	}, mode)
 }
 

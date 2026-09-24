@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/akari-project/panel/server/internal/auth/token"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
@@ -54,6 +55,15 @@ func testTokens(t *testing.T) *token.Keyring {
 		t.Fatal(err)
 	}
 	return k
+}
+
+func testConfigSigner(t *testing.T) *clientconfig.Signer {
+	t.Helper()
+	s, err := clientconfig.ParseKey("1:" + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func testMasterKeys(t *testing.T) *secretbox.Keyring {
@@ -151,7 +161,8 @@ func health(t *testing.T, addr net.Addr, host string) httpx.Health {
 func TestRolesStartSeparatelyAndTogether(t *testing.T) {
 	pool := testdb.New(t)
 	d := Deps{Config: testConfig(t), Log: slog.New(slog.DiscardHandler), Clock: clock.Real{}, Pool: pool,
-		KV: testkv.New(t), Tokens: testTokens(t), Keys: testMasterKeys(t), Assets: testAssets(), Version: "test", Commit: testCommit}
+		KV: testkv.New(t), Tokens: testTokens(t), ConfigSigner: testConfigSigner(t), Keys: testMasterKeys(t), Assets: testAssets(),
+		Version: "test", Commit: testCommit}
 
 	for _, mode := range []Mode{ModeAPI, ModeGateway, ModeWorker} {
 		t.Run(string(mode), func(t *testing.T) {
@@ -174,8 +185,11 @@ func TestRolesStartSeparatelyAndTogether(t *testing.T) {
 		if _, body := get(t, addrs["api"], "", "/console/"); !strings.Contains(body, "admin") {
 			t.Errorf("GET /console/ = %s", body)
 		}
-		if resp, _ := get(t, addrs["api"], "", "/v1/config"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
+		if resp, _ := get(t, addrs["api"], "", "/v1/config"); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("GET /v1/config = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		}
+		if resp, _ := get(t, addrs["api"], "", "/v1/plans"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
+			t.Errorf("GET /v1/plans (not implemented) = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 		}
 	})
 
@@ -237,5 +251,23 @@ func TestParseMode(t *testing.T) {
 	}
 	if _, err := ParseMode("server"); err == nil {
 		t.Error("unknown mode accepted")
+	}
+}
+
+// api_endpoints：主地址取 api_base_url，否则取用户中心公开地址；备用地址在后，去重（spec/30 API-11）。
+func TestAPIEndpoints(t *testing.T) {
+	c := config.Default()
+	c.UI.Portal.PublicURL = "https://portal.example/app/"
+	c.Client.APIEndpoints = []string{"https://b.example", "https://portal.example/app"}
+	if got := apiEndpoints(c); strings.Join(got, " ") != "https://portal.example/app https://b.example" {
+		t.Fatalf("got %v", got)
+	}
+	c.UI.Portal.APIBaseURL = "https://api.example"
+	if got := apiEndpoints(c); strings.Join(got, " ") != "https://api.example https://b.example https://portal.example/app" {
+		t.Fatalf("got %v", got)
+	}
+	c = config.Default()
+	if got := apiEndpoints(c); len(got) != 0 {
+		t.Fatalf("no addresses configured: %v", got)
 	}
 }

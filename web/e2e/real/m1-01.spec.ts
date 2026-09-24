@@ -82,16 +82,13 @@ test('注册、验证邮箱、登录、启用 TOTP、二次验证登录', async 
   await page.getByRole('button', { name: '我已保存' }).click();
   await expect(page.getByText('已启用')).toBeVisible();
 
-  // 修改密码需要重新验证（AUTH-23）：弹出验证框，用当前密码验证后自动重试。
+  // 修改密码需要重新验证（AUTH-23）；以密码完成的登录视为一次重新验证，登录后 5 分钟内直接生效，不弹出验证框。
+  // 窗口过期后的验证框由 Go 测试（TestStepUp、TestLoginCountsAsReauth）与 Mock 端到端测试覆盖。
   await page.getByLabel('新密码', { exact: true }).fill(newPassword);
   await page.getByLabel('确认新密码').fill(newPassword);
   await page.getByRole('button', { name: '修改密码' }).click();
-  const dialog = page.getByRole('dialog', { name: '验证身份' });
-  await expect(dialog).toBeVisible();
-  await dialog.getByRole('textbox', { name: '密码' }).fill(password);
-  await dialog.getByRole('button', { name: '验证并继续' }).click();
-  await expect(dialog).toBeHidden();
   await expect(page.getByText('密码已修改。')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '验证身份' })).toHaveCount(0);
 
   // 退出后重新登录：第一步返回 mfa_required，第二步提交 TOTP。
   await signOut(page);

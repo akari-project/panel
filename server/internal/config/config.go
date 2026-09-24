@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,6 +45,7 @@ type Config struct {
 	Worker   Worker   `yaml:"worker"`
 	Site     Site     `yaml:"site"`
 	UI       UI       `yaml:"ui"`
+	Client   Client   `yaml:"client"`
 	Crypto   Crypto   `yaml:"-"`
 }
 
@@ -100,6 +102,16 @@ type Site struct {
 	SourceURL string `yaml:"source_url" env:"PANEL_SITE_SOURCE_URL"`
 }
 
+// Client 是自研客户端相关的部署配置（spec/30 API-03、API-11）。
+type Client struct {
+	// AppName 是自研客户端 User-Agent 的产品名（"<AppName>/x.y.z (平台 版本)"），必须是 RFC 9110 token。
+	// 由客户端固定，不随站点名称变化。
+	AppName string `yaml:"app_name" env:"PANEL_CLIENT_APP_NAME"`
+	// APIEndpoints 是 /v1/config 下发的备用接口根地址（不含 /v1 与末尾的 /），排在主地址之后。
+	// 放在部署配置而不是后台设置中：修改它等于把全部客户端引到另一个域名。
+	APIEndpoints []string `yaml:"api_endpoints"`
+}
+
 // UI 是两个内嵌前端的路由配置（spec/40 DEP-02）。
 type UI struct {
 	Portal App `yaml:"portal"`
@@ -141,7 +153,13 @@ type Crypto struct {
 	TokenKey string `env:"PANEL_TOKEN_KEY"`
 	// PreviousTokenKey 为轮换后仍用于验签的旧密钥，保留 30 分钟后移除，可为空。
 	PreviousTokenKey string `env:"PANEL_TOKEN_KEY_PREVIOUS"`
+	// ConfigKey 是 /v1/config 的 Ed25519 签名密钥（spec/30 API-11、CONV-30），格式与 TokenKey 相同。
+	// api 角色必须配置；没有 _PREVIOUS：只能切换到已内置在已发布客户端中的“下一把”公钥。
+	ConfigKey string `env:"PANEL_CONFIG_KEY"`
 }
+
+// tokenRE 为 RFC 9110 token。
+var tokenRE = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 // Default 返回默认配置。
 func Default() Config {
@@ -153,6 +171,7 @@ func Default() Config {
 		Gateway:  Gateway{Listen: ":8081"},
 		Worker:   Worker{Listen: "127.0.0.1:8082"},
 		Site:     Site{Name: "Akari", SourceURL: "https://github.com/akari-project/panel/tree/{commit}"},
+		Client:   Client{AppName: "Akari"},
 		UI: UI{
 			Portal: App{PathPrefix: "/"},
 			Admin:  App{PathPrefix: "/console/"},
@@ -334,6 +353,17 @@ func (c *Config) Validate() error {
 	}
 
 	c.validateApp("ui.portal", &c.UI.Portal, &errs)
+	if !tokenRE.MatchString(c.Client.AppName) {
+		add("client.app_name: must be an RFC 9110 token, got %q", c.Client.AppName)
+	}
+	for i, e := range c.Client.APIEndpoints {
+		u, err := url.Parse(e)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			add("client.api_endpoints[%d]: must be an absolute http(s) URL without query", i)
+			continue
+		}
+		c.Client.APIEndpoints[i] = strings.TrimSuffix(e, "/")
+	}
 	c.validateApp("ui.admin", &c.UI.Admin, &errs)
 	if appsOverlap(c.UI.Portal, c.UI.Admin) {
 		add("ui: portal and admin match the same host and path_prefix; give them different hosts or prefixes (spec/40 DEP-02)")

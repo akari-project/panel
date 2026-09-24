@@ -486,6 +486,29 @@ func (q *Queries) SessionByRefreshHash(ctx context.Context, refreshTokenHash str
 	return i, err
 }
 
+const sessionDescendsFrom = `-- name: SessionDescendsFrom :one
+WITH RECURSIVE chain AS (
+  SELECT id, parent_id, 0 AS depth FROM sessions WHERE sessions.id = $2
+  UNION ALL
+  SELECT s.id, s.parent_id, chain.depth + 1 FROM sessions s JOIN chain ON s.id = chain.parent_id WHERE chain.depth < 32
+)
+SELECT (count(*) > 0)::bool AS descends FROM chain WHERE chain.id = $1::uuid
+`
+
+type SessionDescendsFromParams struct {
+	Ancestor uuid.UUID
+	Current  uuid.UUID
+}
+
+// current 是否为 ancestor 本身，或由它经刷新轮换产生（AUTH-11：待确认的 TOTP 密钥绑定会话链）。
+// 只向上查 32 代：待确认密钥 10 分钟内有效，期间的轮换远少于此。
+func (q *Queries) SessionDescendsFrom(ctx context.Context, arg SessionDescendsFromParams) (bool, error) {
+	row := q.db.QueryRow(ctx, sessionDescendsFrom, arg.Ancestor, arg.Current)
+	var descends bool
+	err := row.Scan(&descends)
+	return descends, err
+}
+
 const sessionDevice = `-- name: SessionDevice :one
 SELECT device_id FROM sessions WHERE id = $1 AND account_id = $2
 `

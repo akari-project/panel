@@ -153,7 +153,8 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// complete 注册设备、决定凭据状态并建立会话（AUTH-10、AUTH-14）。
+// complete 注册设备、决定凭据状态并建立会话（AUTH-10、AUTH-14）。只用于以密码完成的登录（含二次验证第二步）：
+// 会话同时记为刚完成重新验证（AUTH-23）。AUTH-24 的设备授权与扫码登录不得经过这里。
 func (s *Service) complete(ctx context.Context, acct uuid.UUID, in Login, pubKey ed25519.PublicKey, amr []string) (Result, error) {
 	var res Result
 	res.IsWeb = in.Device.Platform == "web"
@@ -202,6 +203,8 @@ func (s *Service) complete(ctx context.Context, acct uuid.UUID, in Login, pubKey
 			return Result{}, apierr.Unavailable(err)
 		}
 	}
+	// 以密码完成的登录视为一次重新验证（AUTH-23）。写入失败不影响登录，之后的敏感操作要求重新验证。
+	_, _ = s.markReauth(ctx, res.SessionID)
 	return res, nil
 }
 

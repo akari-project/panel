@@ -3,6 +3,8 @@
 # 加密主密钥只从环境变量读取：PANEL_MASTER_KEY="<key_id>:<base64 32 字节>"，轮换期间另设 PANEL_MASTER_KEY_PREVIOUS。
 # 访问令牌签名密钥同样只从环境变量读取（api 角色必需）：PANEL_TOKEN_KEY="<key_id>:<base64 32 字节 Ed25519 种子>"，
 # 轮换时把旧值移到 PANEL_TOKEN_KEY_PREVIOUS，30 分钟后移除（spec/10 AUTH-06）。
+# /v1/config 的签名密钥（api 角色必需，spec/30 API-11、CONV-30）：PANEL_CONFIG_KEY，格式同上，必须与 PANEL_TOKEN_KEY 不同。
+# 没有 _PREVIOUS：只能换成已内置在已发布客户端中的“下一把”公钥。
 env: prod                      # dev | test | prod
 log:
   level: info                  # debug | info | warn | error
@@ -33,3 +35,7 @@ ui:
     hosts: [console.example.com]
     path_prefix: /
     # api_base_url: https://console.example.com   # 留空时取请求来源加路径前缀
+client:
+  app_name: Akari              # 自研客户端 User-Agent 的产品名（spec/30 API-03），不随站点名称变化
+  # 备用接口根地址（不含 /v1），在 /v1/config 中排在用户中心接口地址之后（spec/30 API-11）
+  # api_endpoints: [https://api-backup.example.net]

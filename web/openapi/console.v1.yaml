@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.4.0'
+  version: '0.5.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -7985,6 +7985,9 @@ paths:
                 free_device_limit: 1
                 free_plan_id: null
                 proration_mode: value
+                min_version:
+                  ios: 1.2.0
+                  android: 1.2.0
                 features:
                   announcements: true
                   articles: true
@@ -8052,6 +8055,9 @@ paths:
                 free_device_limit: 1
                 free_plan_id: null
                 proration_mode: value
+                min_version:
+                  ios: 1.2.0
+                  android: 1.2.0
                 features:
                   announcements: true
                   articles: true
@@ -13070,6 +13076,10 @@ components:
           minLength: 1
           maxLength: 500
           description: '操作原因，写入审计日志（spec/10 AUTH-18）'
+    ClientPlatform:
+      type: string
+      description: 自研客户端平台，与客户端接口的 `ClientPlatform` 相同
+      enum: [ios, android, windows, macos, linux]
     Settings:
       type: object
       required:
@@ -13079,6 +13089,7 @@ components:
       - registration_policy
       - free_device_limit
       - proration_mode
+      - min_version
       - features
       - updated_at
       properties:
@@ -13113,6 +13124,20 @@ components:
           - value
           - time_only
           description: '`time_only` 为“只按时间”折算（BIL-12）'
+        min_version:
+          type: object
+          description: |
+            客户端最低版本（spec/30 API-03、API-11），键为平台，值为 `x.y.z`；没有列出的平台不限制。
+            不应高于该平台已发布的版本（M1 只在界面提示，不校验）。平台或版本格式错误返回 `invalid_format`
+            （`errors[].field` 如 `min_version.ios`）。更新时整体替换，提交 `{}` 解除全部限制。修改后 `/v1/config` 重新签名。
+          propertyNames:
+            $ref: '#/components/schemas/ClientPlatform'
+          additionalProperties:
+            type: string
+            pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          example:
+            ios: 1.2.0
+            android: 1.2.0
         features:
           type: object
           description: '运营模块开关，键名与 `/v1/config` 的 features 相同（OPS-08）'
@@ -13233,6 +13258,20 @@ components:
           - value
           - time_only
           description: '`time_only` 为“只按时间”折算（BIL-12）'
+        min_version:
+          type: object
+          description: |
+            客户端最低版本（spec/30 API-03、API-11），键为平台，值为 `x.y.z`；没有列出的平台不限制。
+            不应高于该平台已发布的版本（M1 只在界面提示，不校验）。平台或版本格式错误返回 `invalid_format`
+            （`errors[].field` 如 `min_version.ios`）。更新时整体替换，提交 `{}` 解除全部限制。修改后 `/v1/config` 重新签名。
+          propertyNames:
+            $ref: '#/components/schemas/ClientPlatform'
+          additionalProperties:
+            type: string
+            pattern: '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          example:
+            ios: 1.2.0
+            android: 1.2.0
         features:
           type: object
           description: '运营模块开关，键名与 `/v1/config` 的 features 相同（OPS-08）'

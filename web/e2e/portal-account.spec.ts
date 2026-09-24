@@ -105,8 +105,14 @@ test('启用 TOTP 并保存恢复码', async ({ page }) => {
   await expect(page.getByText('已启用')).toBeVisible();
 });
 
+/** 登录时获得的重新验证窗口（AUTH-23）过期。 */
+async function expireReauth(page: Page) {
+  await page.context().clearCookies({ name: 'panel_mock_client_reauth' });
+}
+
 test('修改密码需要重新验证，完成后自动继续', async ({ page }) => {
   await signIn(page, 'carol@example.com', '/security');
+  await expireReauth(page);
   await page.getByLabel('新密码', { exact: true }).fill('new-correct-horse');
   await page.getByLabel('确认新密码').fill('new-correct-horse');
   await page.getByRole('button', { name: '修改密码' }).click();
@@ -131,6 +137,7 @@ test('停用二次验证：二次确认、重新验证后生效', async ({ page 
   await page.getByRole('button', { name: '验证', exact: true }).click();
   await page.getByRole('link', { name: '账号安全' }).click();
   await expect(page.getByText('已启用')).toBeVisible();
+  await expireReauth(page);
 
   await page.getByRole('button', { name: '停用二次验证' }).click();
   const confirm = page.getByRole('dialog', { name: '停用二次验证？' });
@@ -161,6 +168,17 @@ test('访问令牌过期时自动刷新；会话失效时回到登录页', async
   await page.getByLabel('确认新密码').fill('new-correct-horse');
   await page.getByRole('button', { name: '修改密码' }).click();
   await expect(page).toHaveURL(`${PORTAL}/login?redirect=%2Fsecurity`);
+});
+
+test('登录超过 5 分钟后开始绑定 TOTP 需要重新验证', async ({ page }) => {
+  await signIn(page, 'dave@example.com', '/security');
+  await expireReauth(page);
+  await page.getByRole('button', { name: '启用二次验证' }).click();
+  const dialog = page.getByRole('dialog', { name: '验证身份' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('textbox', { name: '密码' }).fill('correct-horse');
+  await dialog.getByRole('button', { name: '验证并继续' }).click();
+  await expect(page.getByRole('img', { name: '身份验证器二维码' })).toBeVisible();
 });
 
 test('移动端：账号安全与恢复码 @mobile', async ({ page }) => {

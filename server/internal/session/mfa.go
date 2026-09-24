@@ -207,11 +207,15 @@ func (s *Service) Reauthenticate(ctx context.Context, p auth.Principal, in Reaut
 	field := "password"
 	switch {
 	case in.Password != "":
+		// 没有密码的账号用固定哈希校验一次（耗时一致），结果一律视为不正确。
+		hash := DummyHash
 		if a.PasswordHash != nil {
-			if ok, err = s.verify(in.Password, *a.PasswordHash); err != nil {
-				return time.Time{}, err
-			}
+			hash = *a.PasswordHash
 		}
+		if ok, err = s.verify(in.Password, hash); err != nil {
+			return time.Time{}, err
+		}
+		ok = ok && a.PasswordHash != nil
 	default:
 		field = "totp_code"
 		if in.RecoveryCode != "" {
@@ -232,12 +236,18 @@ func (s *Service) Reauthenticate(ctx context.Context, p auth.Principal, in Reaut
 		}
 		return time.Time{}, apierr.Invalid(apierr.Field(field, "incorrect"))
 	}
-	expires := s.Clock.Now().Add(ReauthTTL)
-	v := strconv.FormatInt(expires.Unix(), 10)
-	if err := s.kv(ctx, s.KV.B().Set().Key(reauthKey(p.SessionID)).Value(v).Ex(ReauthTTL).Build())[0].Error(); err != nil {
+	expires, err := s.markReauth(ctx, p.SessionID)
+	if err != nil {
 		return time.Time{}, apierr.Unavailable(err)
 	}
 	return expires, nil
+}
+
+// markReauth 记录会话刚完成重新验证，5 分钟内有效（AUTH-23），返回失效时间。
+func (s *Service) markReauth(ctx context.Context, sid uuid.UUID) (time.Time, error) {
+	expires := s.Clock.Now().Add(ReauthTTL)
+	v := strconv.FormatInt(expires.Unix(), 10)
+	return expires, s.kv(ctx, s.KV.B().Set().Key(reauthKey(sid)).Value(v).Ex(ReauthTTL).Build())[0].Error()
 }
 
 // RequireRecentAuth 要求当前会话 5 分钟内完成过重新验证，否则返回 401 mfa_required（AUTH-23）。
