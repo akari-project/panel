@@ -4,5 +4,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["e2e", "tooling", "playwright.config.ts"]
+  "include": ["e2e", "tooling", "playwright.config.ts", "playwright.real.config.ts"]
 }

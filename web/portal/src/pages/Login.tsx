@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useRouteContext, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useRouteContext, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { unwrap, type ClientSchemas } from '@panel/sdk';
 import { AuthLayout, SignInFlow, type MfaAnswer } from '@panel/ui';
@@ -31,6 +31,14 @@ export function LoginPage() {
   return (
     <AuthLayout siteName={config.site_name} sourceUrl={config.source_url}>
       <SignInFlow title={t('login.title')} onPassword={onPassword} onMfa={onMfa} onSignedIn={onSignedIn} />
+      <div className="mt-6 flex flex-wrap justify-between gap-2 text-sm">
+        <Link to="/forgot-password" className="text-primary underline underline-offset-2">
+          {t('login.forgot_password')}
+        </Link>
+        <Link to="/register" className="text-primary underline underline-offset-2">
+          {t('login.register')}
+        </Link>
+      </div>
     </AuthLayout>
   );
 }

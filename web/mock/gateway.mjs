@@ -6,7 +6,16 @@
 //    网关向 Prism 补上 OpenAPI 声明的认证 Cookie，Prism 的认证校验因此通过；没有时 Prism 返回 401。
 //    登出（DELETE /v1/sessions/current 返回 204）时清除该 Cookie。
 // 2. 两步登录：提交密码时，管理接口一律返回 401 mfa_required（AUTH-21）；客户端接口在邮箱以 mfa 开头时返回。
-// 3. 可选地托管构建产物，并按 spec/40 DEP-02–05 模拟控制面：SPA 回退、注入 window.__PANEL_CONFIG__、
+// 3. 客户端接口的其余状态（都保存在本地 Cookie 中，各浏览器上下文互不影响）：
+//    - 访问令牌与刷新令牌分开模拟：删除 panel_mock_client_access 即模拟访问令牌过期，
+//      POST /v1/oauth/token 在仍有会话时重新下发，否则返回 400 invalid_grant（AUTH-07）。
+//    - 二次验证是否启用、邮箱是否已验证：登录邮箱以 mfa 开头时已启用，以 unverified 开头时未验证；
+//      启用、停用 TOTP 与验证邮箱会更新状态，并改写 GET /v1/me 的对应字段。
+//    - 重新验证（AUTH-23）：修改密码、停用 TOTP、重新生成恢复码等在 5 分钟内未重新验证时返回 401 mfa_required；
+//      POST /v1/me/reauthentications 的密码为 wrong-password 时返回 400 incorrect。
+//    - 特定输入返回错误示例：注册邮箱以 closed 开头 → 403 registration_closed；验证码 000000 → 400 invalid_code；
+//      重新发送的邮箱以 limited 开头 → 429（Retry-After）。
+// 4. 可选地托管构建产物，并按 spec/40 DEP-02–05 模拟控制面：SPA 回退、注入 window.__PANEL_CONFIG__、
 //    为已有脚本补 nonce、重写 index.html 中的相对路径、安全头与 CSP nonce。用于在嵌入前验证产物（M0-06 验收 4）。
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -59,37 +68,118 @@ function parseJson(buf) {
 export function createGateway({ api, upstream, authCookie, app }) {
   const sessionCookie = `panel_mock_${api}`;
 
+  const accessCookie = `${sessionCookie}_access`;
+  const mfaCookie = `${sessionCookie}_mfa`;
+  const unverifiedCookie = `${sessionCookie}_unverified`;
+  const reauthCookie = `${sessionCookie}_reauth`;
+  const cookieAttrs = 'Path=/; HttpOnly; SameSite=Strict';
+  const setFlag = (name, on, maxAge) =>
+    on ? `${name}=1; ${cookieAttrs}${maxAge ? `; Max-Age=${maxAge}` : ''}` : `${name}=; ${cookieAttrs}; Max-Age=0`;
+
+  // 需要重新验证的操作（spec/10 AUTH-23）。
+  const stepUp = new Set(['PUT /v1/me/password', 'DELETE /v1/me/mfa/totp', 'POST /v1/me/mfa/recovery-codes', 'DELETE /v1/me', 'POST /v1/me/export-link/rotation']);
+
+  function refreshToken(cookies, res) {
+    if (cookies[sessionCookie]) {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'set-cookie': [setFlag(accessCookie, true)] });
+      res.end(JSON.stringify({ access_token: '', refresh_token: '', token_type: 'Bearer', expires_in: 900 }));
+    } else {
+      res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ error: 'invalid_grant', error_description: 'mock: no session' }));
+    }
+  }
+
   async function proxy(req, res) {
     const body = await readBody(req);
     const url = new URL(req.url, upstream);
+    const route = `${req.method} ${url.pathname}`;
     const headers = { ...req.headers, host: url.host };
     delete headers.cookie;
     delete headers['content-length'];
     const cookies = readCookies(req.headers.cookie);
-    if (cookies[sessionCookie]) headers.cookie = `${authCookie}=mock-access-token`;
+    const client = api === 'client';
+    // 客户端接口另外模拟访问令牌的有效期；管理接口只看会话。
+    const hasAccess = client ? cookies[sessionCookie] && cookies[accessCookie] : cookies[sessionCookie];
+    if (hasAccess) headers.cookie = `${authCookie}=mock-access-token`;
 
+    if (client && route === 'POST /v1/oauth/token') {
+      refreshToken(cookies, res);
+      return;
+    }
+
+    const json = parseJson(body);
     const isLogin = req.method === 'POST' && url.pathname === '/v1/sessions';
+    let loginEmail;
+    // 第二步（提交 challenge_id）只会出现在启用了二次验证的账号上。
+    const mfaAccount = isLogin && (typeof json?.challenge_id === 'string' || (json?.email?.startsWith?.('mfa') ?? false));
     if (isLogin) {
-      const json = parseJson(body);
       const hasPassword = json && typeof json.password === 'string';
-      const wantsMfa = api === 'console' || (typeof json?.email === 'string' && json.email.startsWith('mfa'));
+      loginEmail = typeof json?.email === 'string' ? json.email : undefined;
+      const wantsMfa = api === 'console' || (loginEmail?.startsWith('mfa') ?? false);
       if (hasPassword && wantsMfa) headers.prefer = 'code=401, example=mfa_required';
-      else if (api === 'client') headers.prefer = 'code=201, example=web';
+      else if (client) headers.prefer = 'code=201, example=web';
+    }
+    if (client && stepUp.has(route)) {
+      // 这些操作的 401 有两个示例；未登录时必须是 unauthenticated，否则 Prism 取第一个（mfa_required）。
+      if (!hasAccess) headers.prefer = 'code=401, example=unauthenticated';
+      else if (!cookies[reauthCookie]) headers.prefer = 'code=401, example=mfa_required';
+    }
+    if (client && route === 'POST /v1/me/reauthentications' && json?.password === 'wrong-password') {
+      headers.prefer = 'code=400, example=incorrect';
+    }
+    if (client && route === 'POST /v1/accounts' && json?.email?.startsWith?.('closed')) headers.prefer = 'code=403';
+    if (client && route === 'POST /v1/accounts/verification' && json?.code === '000000') {
+      headers.prefer = 'code=400, example=invalid_code';
+    }
+    if (client && route === 'POST /v1/accounts/verification/resend' && json?.email?.startsWith?.('limited')) {
+      headers.prefer = 'code=429';
     }
 
     const upstreamReq = httpRequest(url, { method: req.method, headers }, (up) => {
       const out = { ...up.headers };
       // 上游的 Set-Cookie 带 Secure 与 __Host- 前缀，在本地 HTTP 下不可用，一律由网关自行下发。
       delete out['set-cookie'];
+      const status = up.statusCode ?? 502;
       const setCookies = [];
-      if (isLogin && up.statusCode === 201) {
-        setCookies.push(`${sessionCookie}=1; Path=/; HttpOnly; SameSite=Strict`);
+      if (isLogin && status === 201) {
+        setCookies.push(`${sessionCookie}=1; ${cookieAttrs}`, setFlag(accessCookie, true));
+        if (client) {
+          setCookies.push(setFlag(mfaCookie, mfaAccount));
+          setCookies.push(setFlag(unverifiedCookie, loginEmail?.startsWith('unverified') ?? false));
+        }
       }
-      if (req.method === 'DELETE' && url.pathname === '/v1/sessions/current' && up.statusCode === 204) {
-        setCookies.push(`${sessionCookie}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict`);
+      if (route === 'DELETE /v1/sessions/current' && status === 204) {
+        for (const name of [sessionCookie, accessCookie, mfaCookie, unverifiedCookie, reauthCookie]) setCookies.push(setFlag(name, false));
+      }
+      if (client && status < 300) {
+        if (route === 'POST /v1/me/reauthentications') setCookies.push(setFlag(reauthCookie, true, 300));
+        if (route === 'POST /v1/me/mfa/totp/activation') setCookies.push(setFlag(mfaCookie, true));
+        if (route === 'DELETE /v1/me/mfa/totp') setCookies.push(setFlag(mfaCookie, false));
+        if (route === 'POST /v1/accounts/verification' && cookies[sessionCookie]) setCookies.push(setFlag(unverifiedCookie, false));
       }
       if (setCookies.length) out['set-cookie'] = setCookies;
-      res.writeHead(up.statusCode ?? 502, out);
+
+      // GET /v1/me：按本地状态改写二次验证与邮箱验证字段。
+      if (client && route === 'GET /v1/me' && status === 200) {
+        const chunks = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const me = parseJson(Buffer.concat(chunks)) ?? {};
+          const mfa = !!cookies[mfaCookie];
+          const text = JSON.stringify({
+            ...me,
+            is_mfa_enabled: mfa,
+            mfa_methods: mfa ? ['totp', 'recovery_code'] : [],
+            is_email_verified: !cookies[unverifiedCookie],
+          });
+          delete out['content-length'];
+          delete out['transfer-encoding'];
+          res.writeHead(status, out);
+          res.end(text);
+        });
+        return;
+      }
+      res.writeHead(status, out);
       up.pipe(res);
     });
     upstreamReq.on('error', (err) => {

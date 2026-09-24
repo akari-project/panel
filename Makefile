@@ -16,9 +16,11 @@ SQLC_VERSION        := v1.31.1
 STATICCHECK_VERSION := v0.8.1
 GOVULNCHECK_VERSION := v1.8.0
 GO_LICENSES_VERSION := v2.0.1
+OAPI_CODEGEN_VERSION := v2.8.0
 
 SQLC        := go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 STATICCHECK := go run honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
+OAPI_CODEGEN := go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
 
 # 构建信息写入二进制（spec/40 DEP-01）；嵌入产物的 build.json 记录同一提交。
 # 前端构建以 PANEL_BUILD_COMMIT 写入各自的 build.json（web/README.md），与此处取同一个值。
@@ -27,9 +29,9 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG_BUILDINFO := github.com/akari-project/panel/server/internal/buildinfo
 LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Commit=$(COMMIT)
 
-GENERATED := $(SERVER)/internal/db/sqlc
+GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen
 
-.PHONY: ci build build-noui web-build embed gen check-generated test test-property e2e conformance lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-spec-version check-generated test test-property e2e e2e-portal conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -56,12 +58,32 @@ embed: web-build
 
 ## 生成 ---------------------------------------------------------------
 
+gen: gen-sqlc gen-clientapi
+
 # sqlc：SQL 在 server/internal/db/queries，生成代码在 server/internal/db/sqlc（spec/41）。
-gen:
+gen-sqlc:
 	cd $(SERVER) && $(SQLC) generate
 
+# 客户端接口（spec/30）：契约取自 go.mod 锁定的 panel-spec 版本；tools/oapiprep 改写为 oapi-codegen 可处理的
+# 3.0 形式并生成操作元数据，再由 oapi-codegen 生成 strict server，输出在 server/internal/clientapi/gen。
+gen-clientapi:
+	cd $(SERVER) && go mod download github.com/akari-project/panel-spec && \
+	spec="$$(go list -m -f '{{.Dir}}' github.com/akari-project/panel-spec)/openapi/client/v1.yaml" && \
+	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
+	go run ./tools/oapiprep -spec "$$spec" -out "$$tmp/client.yaml" -meta internal/clientapi/gen/opmeta.gen.go && \
+	$(OAPI_CODEGEN) -config internal/clientapi/oapi-codegen.yaml "$$tmp/client.yaml" && \
+	{ printf '// SPDX-License-Identifier: AGPL-3.0-or-later\n'; cat internal/clientapi/gen/api.gen.go; } > "$$tmp/api.gen.go" && \
+	mv "$$tmp/api.gen.go" internal/clientapi/gen/api.gen.go
+
+# 后端（server/go.mod）与前端（web/openapi/lock.json）必须使用同一版本的 panel-spec 契约。
+check-spec-version:
+	@mod="$$(cd $(SERVER) && go list -m -f '{{.Version}}' github.com/akari-project/panel-spec)"; \
+	web="$$(sed -n 's/.*"ref": *"\([^"]*\)".*/\1/p' $(WEB)/openapi/lock.json)"; \
+	if [ "$$mod" != "$$web" ]; then echo "panel-spec 版本不一致：server/go.mod 为 $$mod，web/openapi/lock.json 为 $$web"; exit 1; fi; \
+	echo "check-spec-version: $$mod"
+
 # 生成物必须已提交且与源一致。
-check-generated: gen
+check-generated: gen check-spec-version
 	git diff --exit-code -- $(GENERATED)
 	@untracked="$$(git ls-files --others --exclude-standard -- $(GENERATED))"; \
 	if [ -n "$$untracked" ]; then echo "未提交的生成文件："; echo "$$untracked"; exit 1; fi
@@ -82,6 +104,12 @@ test-property:
 # 端到端测试（spec/42 42.3）：模拟 Agent、测试用控制面端、协议一致性套件（含 1,000 节点规模测试）。
 e2e:
 	cd $(SERVER) && go test -race -count=1 -timeout 15m ./e2e/...
+
+# 用户中心在真实控制面上的 Playwright 测试（M1-01 验收 4）：testcontainers 启动 PostgreSQL、Valkey、Mailpit，
+# 进程内启动控制面，运行 web/playwright.real.config.ts。已设置 PLAYWRIGHT_BROWSERS_PATH 时不下载浏览器。
+e2e-portal: web-build
+	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
+	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_01_PortalPlaywright ./e2e/portal/
 
 # 协议一致性套件（spec/20 20.6）。对真实 Agent 运行：
 #   make conformance CONFORMANCE_AGENT=exec CONFORMANCE_AGENT_CMD='...'（见 server/e2e/conformance/README.md）
@@ -109,7 +137,7 @@ check-clock:
 
 # 源文件前两行内必须有 SPDX 标识（CONV-25）。无法加头的文件（生成代码、锁文件）登记在 REUSE.toml 并在此排除；完整检查由 CI 的 REUSE lint 执行。
 check-spdx:
-	@missing="$$(find . -path ./.git -prune -o -path ./.worktrees -prune -o -path ./.claude -prune -o -path '*/node_modules' -prune -o -path ./$(GENERATED) -prune -o -path ./$(WEB)/pnpm-lock.yaml -prune \
+	@missing="$$(find . -path ./.git -prune -o -path ./.worktrees -prune -o -path ./.claude -prune -o -path '*/node_modules' -prune -o -path ./$(SERVER)/internal/db/sqlc -prune -o -path ./$(WEB)/pnpm-lock.yaml -prune \
 	  -o -path ./$(SERVER)/internal/webui/dist -prune -o -path '*/dist' -prune -o \
 	  -type f \( -name '*.go' -o -name '*.sql' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' -o -name '*.toml' -o -name Makefile \) -print \
 	  | while read -r f; do head -n 2 "$$f" | grep -q 'SPDX-License-Identif[i]er:' || echo "$$f"; done)"; \
@@ -118,9 +146,13 @@ check-spdx:
 
 # 依赖许可证扫描（spec/42 42.2，AGPL-3.0 仓库的允许清单）。本模块自身不参与判定。
 ALLOWED_LICENSES := MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,MPL-2.0,LGPL-2.1,LGPL-3.0,GPL-3.0,AGPL-3.0
+# 人工核对过、但 go-licenses 无法自动识别的依赖：
+#   github.com/oapi-codegen/nullable：LICENSE 为 Apache-2.0 的标准声明而非全文（v1.2.0 已核对）。
+LICENSES_VERIFIED := github.com/oapi-codegen/nullable
 licenses:
 	cd $(SERVER) && go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION) check ./... \
-	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server
+	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server \
+	  $(foreach m,$(LICENSES_VERIFIED),--ignore $(m))
 
 vulncheck:
 	cd $(SERVER) && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
@@ -143,7 +175,7 @@ check-embed:
 
 ## CI -----------------------------------------------------------------
 
-ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed
+ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal
 
 clean:
 	rm -rf $(BIN)

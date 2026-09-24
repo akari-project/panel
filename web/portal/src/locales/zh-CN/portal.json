@@ -1,13 +1,119 @@
 {
   "nav": {
-    "overview": "概览"
+    "overview": "概览",
+    "security": "账号安全"
   },
   "login": {
-    "title": "登录"
+    "title": "登录",
+    "forgot_password": "忘记密码？",
+    "register": "注册新账号"
   },
   "home": {
     "title": "概览",
     "welcome": "欢迎，{{email}}",
-    "empty": "套餐、到期时间与剩余流量将显示在这里。"
+    "empty": "套餐、到期时间与剩余流量将显示在这里。",
+    "unverified": "你的邮箱尚未验证，验证后才能购买套餐。",
+    "verify_now": "去验证"
+  },
+  "fields": {
+    "email": "邮箱",
+    "password": "密码",
+    "new_password": "新密码",
+    "confirm_password": "确认新密码"
+  },
+  "validation": {
+    "password_length": "密码长度为 {{min}}–{{max}} 个字符",
+    "password_mismatch": "两次输入的密码不一致",
+    "email_code": "请输入 6 位数字验证码",
+    "too_long": "太长"
+  },
+  "register": {
+    "title": "注册",
+    "password_hint": "{{min}}–{{max}} 个字符",
+    "invite_code": "邀请码（可选）",
+    "invite_code_hint": "站点要求邀请码时必须填写。",
+    "closed": "当前不开放注册，或需要填写有效的邀请码。",
+    "submit": "注册",
+    "have_account": "已有账号？",
+    "sign_in": "登录"
+  },
+  "verify": {
+    "title": "验证邮箱",
+    "hint": "请输入邮件中的 6 位验证码，15 分钟内有效。",
+    "hint_sent": "验证码已发送到 {{email}}，15 分钟内有效。",
+    "code": "验证码",
+    "submit": "验证",
+    "resend": "重新发送验证码",
+    "resend_in": "重新发送（{{seconds}} 秒）",
+    "resent": "新的验证码已发送，之前的验证码已失效。",
+    "done": "邮箱已验证。",
+    "already": "你的邮箱已经验证过了。",
+    "to_overview": "返回概览",
+    "to_sign_in": "去登录"
+  },
+  "forgot": {
+    "title": "找回密码",
+    "hint": "输入注册邮箱，我们会发送一个重置密码的链接。",
+    "submit": "发送重置链接",
+    "sent": "如果 {{email}} 已注册，重置链接已发送到该邮箱，30 分钟内有效。",
+    "back": "返回登录"
+  },
+  "reset": {
+    "title": "设置新密码",
+    "submit": "重置密码",
+    "done": "密码已重置，所有设备上的登录均已退出。请用新密码登录。",
+    "to_sign_in": "去登录",
+    "link_invalid": "重置链接无效或已被使用。",
+    "link_expired": "重置链接已过期。",
+    "request_again": "重新获取重置链接"
+  },
+  "reauth": {
+    "title": "验证身份",
+    "description": "此操作需要再次验证你的身份。",
+    "method_label": "验证方式",
+    "method": {
+      "password": "密码",
+      "totp": "验证码",
+      "recovery_code": "恢复码"
+    },
+    "submit": "验证并继续"
+  },
+  "security": {
+    "title": "账号安全",
+    "mfa": {
+      "title": "二次验证",
+      "description": "登录时除了密码，还需要输入身份验证器生成的验证码。",
+      "status": "状态：",
+      "enabled": "已启用",
+      "disabled": "未启用",
+      "enable": "启用二次验证",
+      "disable": "停用二次验证",
+      "disable_title": "停用二次验证？",
+      "disable_impact": "停用后登录只需要密码，现有的恢复码全部作废。",
+      "regenerate": "重新生成恢复码",
+      "regenerate_title": "重新生成恢复码？",
+      "regenerate_impact": "现有的 10 个恢复码将立即作废，新的恢复码只显示一次。"
+    },
+    "enroll": {
+      "step_scan": "用身份验证器应用扫描二维码，或手动输入下方密钥。",
+      "step_code": "输入应用中显示的 6 位验证码完成绑定。",
+      "qr_label": "身份验证器二维码",
+      "secret": "密钥",
+      "expires": "请在 {{time}} 前完成绑定。",
+      "code": "验证码",
+      "submit": "确认启用"
+    },
+    "codes": {
+      "title": "请保存恢复码",
+      "warning": "无法使用身份验证器时，可用恢复码登录，每个只能用一次。恢复码只显示这一次，请复制或下载后妥善保存。",
+      "list_label": "恢复码",
+      "done": "我已保存"
+    },
+    "password": {
+      "title": "修改密码",
+      "description": "修改后，其他设备上的登录会退出。",
+      "submit": "修改密码",
+      "done": "密码已修改。"
+    }
   }
 }

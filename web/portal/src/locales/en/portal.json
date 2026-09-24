@@ -1,13 +1,119 @@
 {
   "nav": {
-    "overview": "Overview"
+    "overview": "Overview",
+    "security": "Security"
   },
   "login": {
-    "title": "Sign in"
+    "title": "Sign in",
+    "forgot_password": "Forgot password?",
+    "register": "Create an account"
   },
   "home": {
     "title": "Overview",
     "welcome": "Welcome, {{email}}",
-    "empty": "Your plan, expiry date and remaining data will appear here."
+    "empty": "Your plan, expiry date and remaining data will appear here.",
+    "unverified": "Your email address isn't verified yet. Verify it to purchase a plan.",
+    "verify_now": "Verify now"
+  },
+  "fields": {
+    "email": "Email",
+    "password": "Password",
+    "new_password": "New password",
+    "confirm_password": "Confirm new password"
+  },
+  "validation": {
+    "password_length": "Password must be {{min}}–{{max}} characters",
+    "password_mismatch": "Passwords don't match",
+    "email_code": "Enter the 6-digit code",
+    "too_long": "Too long"
+  },
+  "register": {
+    "title": "Create an account",
+    "password_hint": "{{min}}–{{max}} characters",
+    "invite_code": "Invite code (optional)",
+    "invite_code_hint": "Required if this site only accepts invited sign-ups.",
+    "closed": "Registration is closed, or a valid invite code is required.",
+    "submit": "Create account",
+    "have_account": "Already have an account?",
+    "sign_in": "Sign in"
+  },
+  "verify": {
+    "title": "Verify your email",
+    "hint": "Enter the 6-digit code from the email. It's valid for 15 minutes.",
+    "hint_sent": "We sent a code to {{email}}. It's valid for 15 minutes.",
+    "code": "Verification code",
+    "submit": "Verify",
+    "resend": "Resend code",
+    "resend_in": "Resend ({{seconds}}s)",
+    "resent": "A new code has been sent. Previous codes no longer work.",
+    "done": "Your email address is verified.",
+    "already": "Your email address is already verified.",
+    "to_overview": "Back to overview",
+    "to_sign_in": "Sign in"
+  },
+  "forgot": {
+    "title": "Reset your password",
+    "hint": "Enter your account email and we'll send you a link to reset your password.",
+    "submit": "Send reset link",
+    "sent": "If {{email}} has an account, a reset link has been sent. It's valid for 30 minutes.",
+    "back": "Back to sign in"
+  },
+  "reset": {
+    "title": "Set a new password",
+    "submit": "Reset password",
+    "done": "Your password has been reset and you've been signed out everywhere. Sign in with your new password.",
+    "to_sign_in": "Sign in",
+    "link_invalid": "This reset link is invalid or has already been used.",
+    "link_expired": "This reset link has expired.",
+    "request_again": "Request a new link"
+  },
+  "reauth": {
+    "title": "Confirm it's you",
+    "description": "This action requires you to verify your identity again.",
+    "method_label": "Verify with",
+    "method": {
+      "password": "Password",
+      "totp": "Verification code",
+      "recovery_code": "Recovery code"
+    },
+    "submit": "Verify and continue"
+  },
+  "security": {
+    "title": "Security",
+    "mfa": {
+      "title": "Two-factor authentication",
+      "description": "When signing in, you'll need a code from your authenticator app in addition to your password.",
+      "status": "Status:",
+      "enabled": "On",
+      "disabled": "Off",
+      "enable": "Turn on two-factor authentication",
+      "disable": "Turn off two-factor authentication",
+      "disable_title": "Turn off two-factor authentication?",
+      "disable_impact": "Signing in will only require your password, and all existing recovery codes will stop working.",
+      "regenerate": "Generate new recovery codes",
+      "regenerate_title": "Generate new recovery codes?",
+      "regenerate_impact": "Your current 10 recovery codes will stop working immediately. The new codes are shown only once."
+    },
+    "enroll": {
+      "step_scan": "Scan the QR code with your authenticator app, or enter the key below manually.",
+      "step_code": "Enter the 6-digit code shown in the app to finish.",
+      "qr_label": "Authenticator QR code",
+      "secret": "Key",
+      "expires": "Finish setup before {{time}}.",
+      "code": "Verification code",
+      "submit": "Turn on"
+    },
+    "codes": {
+      "title": "Save your recovery codes",
+      "warning": "If you can't use your authenticator, sign in with a recovery code. Each code works once. These codes are shown only this once, so copy or download them and keep them somewhere safe.",
+      "list_label": "Recovery codes",
+      "done": "I've saved them"
+    },
+    "password": {
+      "title": "Change password",
+      "description": "After changing it, you'll be signed out on other devices.",
+      "submit": "Change password",
+      "done": "Your password has been changed."
+    }
   }
 }

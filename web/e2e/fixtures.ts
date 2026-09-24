@@ -10,8 +10,10 @@ export const test = base.extend<{ pageErrors: string[] }>({
     async ({ page }, use) => {
       const errors: string[] = [];
       page.on('console', (m) => {
-        // 未登录时 /v1/me 返回 401 属于预期，浏览器会把它记为资源加载错误。
-        if (m.type() === 'error' && !/status of 401/.test(m.text())) errors.push(m.text());
+        // 接口返回 4xx 属于预期（未登录时 /v1/me 的 401、刷新令牌失效的 400、测试中构造的错误），
+        // 浏览器会把它们记为资源加载错误；页面资源的 4xx 仍然计入。
+        const expected = /status of 4\d\d/.test(m.text()) && /\/v1\//.test(m.location().url);
+        if (m.type() === 'error' && !expected) errors.push(m.text());
       });
       page.on('pageerror', (e) => errors.push(String(e)));
       await use(errors);

@@ -3,7 +3,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,11 +18,14 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
 	"github.com/akari-project/panel/server/internal/httpx"
+	"github.com/akari-project/panel/server/internal/secretbox"
 	"github.com/akari-project/panel/server/internal/testdb"
+	"github.com/akari-project/panel/server/internal/testkv"
 	"github.com/akari-project/panel/server/internal/webui"
 )
 
@@ -35,10 +40,29 @@ func testConfig(t *testing.T) config.Config {
 	cfg.Worker.Listen = "127.0.0.1:0"
 	cfg.HTTP.ShutdownTimeout = 5 * time.Second
 	cfg.Gateway.Hosts = []string{"gateway.example.com"}
+	cfg.UI.Portal.PublicURL = "https://portal.example.com/"
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	return cfg
+}
+
+func testTokens(t *testing.T) *token.Keyring {
+	t.Helper()
+	k, err := token.NewKeyring(clock.Real{}, "1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{5}, 32)), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+func testMasterKeys(t *testing.T) *secretbox.Keyring {
+	t.Helper()
+	k, err := secretbox.ParseKeyring("1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32)), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
 }
 
 func testAssets() fstest.MapFS {
@@ -127,7 +151,7 @@ func health(t *testing.T, addr net.Addr, host string) httpx.Health {
 func TestRolesStartSeparatelyAndTogether(t *testing.T) {
 	pool := testdb.New(t)
 	d := Deps{Config: testConfig(t), Log: slog.New(slog.DiscardHandler), Clock: clock.Real{}, Pool: pool,
-		Assets: testAssets(), Version: "test", Commit: testCommit}
+		KV: testkv.New(t), Tokens: testTokens(t), Keys: testMasterKeys(t), Assets: testAssets(), Version: "test", Commit: testCommit}
 
 	for _, mode := range []Mode{ModeAPI, ModeGateway, ModeWorker} {
 		t.Run(string(mode), func(t *testing.T) {

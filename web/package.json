@@ -21,7 +21,7 @@
     "check": "pnpm gen:check && pnpm lint:terms && pnpm lint:root && pnpm typecheck:root && pnpm test:root && pnpm -r lint && pnpm -r typecheck && pnpm -r test && pnpm -r build",
     "e2e": "playwright test",
     "lint:terms": "node scripts/check-terms.mjs",
-    "lint:root": "eslint mock scripts e2e tooling playwright.config.ts eslint.config.js",
+    "lint:root": "eslint mock scripts e2e tooling playwright.config.ts playwright.real.config.ts eslint.config.js",
     "typecheck:root": "tsc -p tsconfig.json",
     "test:root": "node --test 'scripts/*.test.mjs'"
   },

@@ -20,6 +20,7 @@ import (
 
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/testdb"
+	"github.com/akari-project/panel/server/internal/testkv"
 )
 
 // buildBinary 以 noui 构建 panel，测试真实进程的子命令与信号处理。
@@ -34,16 +35,21 @@ func buildBinary(t *testing.T) string {
 	return bin
 }
 
+// valkeyURL 与 configPath 由 TestBinary 设置：api 角色需要 Valkey（spec/10 AUTH-06）与用户中心地址（AUTH-04）。
+var valkeyURL, configPath string
+
 func command(bin, dbURL string, args ...string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(),
-		"PANEL_CONFIG=",
+		"PANEL_CONFIG="+configPath,
 		"PANEL_DATABASE_URL="+dbURL,
 		"PANEL_HTTP_LISTEN=127.0.0.1:0",
 		"PANEL_GATEWAY_LISTEN=127.0.0.1:0",
 		"PANEL_WORKER_LISTEN=127.0.0.1:0",
 		"PANEL_HTTP_SHUTDOWN_TIMEOUT=5s",
 		"PANEL_MASTER_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
+		"PANEL_TOKEN_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+		"PANEL_VALKEY_URL="+valkeyURL,
 	)
 	return cmd
 }
@@ -54,6 +60,11 @@ func TestBinary(t *testing.T) {
 		t.Skip("builds the binary")
 	}
 	pool, dbURL := testdb.NewWithURL(t)
+	_, valkeyURL = testkv.NewWithURL(t)
+	configPath = filepath.Join(t.TempDir(), "panel.yaml")
+	if err := os.WriteFile(configPath, []byte("ui:\n  portal:\n    public_url: https://portal.example.com/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		t.Fatal(err)

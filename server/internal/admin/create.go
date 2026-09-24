@@ -5,10 +5,8 @@ package admin
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/mail"
 	"strings"
 
@@ -16,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/akari-project/panel/server/internal/account"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/password"
@@ -27,10 +26,9 @@ const SuperadminRole = "superadmin"
 
 // 错误。
 var (
-	ErrInvalidEmail      = errors.New("admin: invalid email address")
-	ErrEmailTaken        = errors.New("admin: an account with this email already exists")
-	ErrSuperadminExists  = errors.New("admin: a superadmin already exists; add further staff through invitations (spec/10 AUTH-22)")
-	errReferralCollision = errors.New("admin: could not allocate a unique referral code")
+	ErrInvalidEmail     = errors.New("admin: invalid email address")
+	ErrEmailTaken       = errors.New("admin: an account with this email already exists")
+	ErrSuperadminExists = errors.New("admin: a superadmin already exists; add further staff through invitations (spec/10 AUTH-22)")
 )
 
 // Creator 创建首个超级管理员。
@@ -63,11 +61,6 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 	if err != nil {
 		return Result{}, err
 	}
-	secret := uuid.New().String()
-	secretEnc, err := c.Keys.Seal([]byte(secret), []byte("proxy_credentials.secret_enc"))
-	if err != nil {
-		return Result{}, err
-	}
 
 	var res Result
 	err = pgx.BeginFunc(ctx, c.Pool, func(tx pgx.Tx) error {
@@ -90,7 +83,7 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		if taken {
 			return ErrEmailTaken
 		}
-		code, err := uniqueReferralCode(ctx, q)
+		code, err := account.UniqueReferralCode(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -107,17 +100,9 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		if err := q.GrantRole(ctx, sqlc.GrantRoleParams{AccountID: res.AccountID, Role: SuperadminRole}); err != nil {
 			return err
 		}
-		res.CredentialID, err = q.CreateSharedCredential(ctx, sqlc.CreateSharedCredentialParams{AccountID: res.AccountID, SecretEnc: secretEnc})
+		// 共用凭据与 credential.changed 事件（AUTH-13、CONV-34）。
+		res.CredentialID, err = account.CreateSharedCredential(ctx, q, c.Keys, res.AccountID)
 		if err != nil {
-			return err
-		}
-		payload, _ := json.Marshal(map[string]any{
-			"schema_version": 1,
-			"account_id":     res.AccountID,
-			"credential_id":  res.CredentialID,
-			"change":         "created",
-		})
-		if _, err := q.InsertOutboxEvent(ctx, sqlc.InsertOutboxEventParams{Topic: "credential.changed", Payload: payload, SchemaVersion: 1}); err != nil {
 			return err
 		}
 		// 审计记录不含邮箱明文（CONV-29）。
@@ -140,43 +125,4 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		return Result{}, err
 	}
 	return res, nil
-}
-
-// 邀请码字母表去除易混字符（0/O、1/I/L）。
-const referralAlphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
-
-func uniqueReferralCode(ctx context.Context, q *sqlc.Queries) (string, error) {
-	for range 8 {
-		code := randomCode(8)
-		exists, err := q.ReferralCodeExists(ctx, code)
-		if err != nil {
-			return "", err
-		}
-		if !exists {
-			return code, nil
-		}
-	}
-	return "", errReferralCollision
-}
-
-func randomCode(n int) string {
-	b := make([]byte, n)
-	out := make([]byte, n)
-	for i := 0; i < n; {
-		if _, err := rand.Read(b); err != nil {
-			panic(fmt.Sprintf("admin: crypto/rand: %v", err))
-		}
-		for _, x := range b {
-			// 拒绝采样，避免取模偏差。
-			if int(x) >= 256-256%len(referralAlphabet) {
-				continue
-			}
-			out[i] = referralAlphabet[int(x)%len(referralAlphabet)]
-			i++
-			if i == n {
-				break
-			}
-		}
-	}
-	return string(out)
 }

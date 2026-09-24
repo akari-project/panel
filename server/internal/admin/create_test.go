@@ -66,8 +66,9 @@ func TestCreateFirstSuperadmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := uuid.Parse(string(secret)); err != nil {
-		t.Errorf("credential secret is not a UUID: %v", err)
+	// spec/21 AGT-15：凭据明文为 16 字节原始 UUIDv4。
+	if u, err := uuid.FromBytes(secret); err != nil || u.Version() != 4 {
+		t.Errorf("credential secret is not 16 raw bytes of a UUIDv4: %x", secret)
 	}
 
 	var topic string
@@ -110,19 +111,5 @@ func TestCreateValidation(t *testing.T) {
 	}
 	if _, err := c.Create(ctx, "TAKEN@example.com", "correct horse battery"); !errors.Is(err, ErrEmailTaken) {
 		t.Errorf("taken email = %v", err)
-	}
-}
-
-func TestRandomCode(t *testing.T) {
-	seen := map[string]bool{}
-	for range 1000 {
-		c := randomCode(8)
-		if len(c) != 8 || strings.ContainsAny(c, "01ILO") {
-			t.Fatalf("bad code %q", c)
-		}
-		seen[c] = true
-	}
-	if len(seen) < 990 {
-		t.Errorf("only %d distinct codes out of 1000", len(seen))
 	}
 }

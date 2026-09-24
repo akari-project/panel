@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Config struct {
 	Env      Env      `yaml:"env" env:"PANEL_ENV"`
 	Log      Log      `yaml:"log"`
 	Database Database `yaml:"database"`
+	Valkey   Valkey   `yaml:"valkey"`
 	HTTP     HTTP     `yaml:"http"`
 	Gateway  Gateway  `yaml:"gateway"`
 	Worker   Worker   `yaml:"worker"`
@@ -55,6 +57,12 @@ type Log struct {
 type Database struct {
 	URL      string `yaml:"url" env:"PANEL_DATABASE_URL"`
 	MaxConns int32  `yaml:"max_conns" env:"PANEL_DATABASE_MAX_CONNS"`
+}
+
+// Valkey 是 Valkey 连接配置（spec/41）。api 角色必须配置。
+type Valkey struct {
+	// URL 形如 valkey://localhost:6379/0（也接受 redis://、rediss://）。
+	URL string `yaml:"url" env:"PANEL_VALKEY_URL"`
 }
 
 // HTTP 是 api 角色（以及 all 模式下全部角色共用）的监听配置。
@@ -106,6 +114,20 @@ type App struct {
 	PathPrefix string `yaml:"path_prefix"`
 	// APIBaseURL 注入前端的接口地址；为空时取请求的来源加路径前缀。
 	APIBaseURL string `yaml:"api_base_url"`
+	// PublicURL 是应用的绝对地址（以 / 结尾），用于邮件中的链接（例如找回密码，spec/10 AUTH-04）。
+	// 为空时取 https:// 加唯一的 hosts 与 path_prefix。链接不取自请求的 Host，以免被伪造的 Host 指向他处。
+	PublicURL string `yaml:"public_url"`
+}
+
+// URL 返回应用的绝对地址（以 / 结尾）；无法确定时返回空串。
+func (a App) URL() string {
+	if a.PublicURL != "" {
+		return strings.TrimSuffix(a.PublicURL, "/") + "/"
+	}
+	if len(a.Hosts) == 1 {
+		return "https://" + a.Hosts[0] + a.PathPrefix
+	}
+	return ""
 }
 
 // Crypto 是加密主密钥（CONV-19、CONV-30），只从环境变量读取。
@@ -114,6 +136,11 @@ type Crypto struct {
 	MasterKey string `env:"PANEL_MASTER_KEY"`
 	// PreviousMasterKey 为轮换期间仍需解密的旧主密钥，可为空。
 	PreviousMasterKey string `env:"PANEL_MASTER_KEY_PREVIOUS"`
+	// TokenKey 是访问令牌的 Ed25519 签名密钥（spec/10 AUTH-06、CONV-30），
+	// 格式为 "<key_id>:<base64 的 32 字节种子>"，key_id 为 1–255。api 角色必须配置。
+	TokenKey string `env:"PANEL_TOKEN_KEY"`
+	// PreviousTokenKey 为轮换后仍用于验签的旧密钥，保留 30 分钟后移除，可为空。
+	PreviousTokenKey string `env:"PANEL_TOKEN_KEY_PREVIOUS"`
 }
 
 // Default 返回默认配置。
@@ -255,6 +282,11 @@ func (c *Config) Validate() error {
 	} else if u, err := url.Parse(c.Database.URL); err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
 		add("database.url: must be a postgres:// URL")
 	}
+	if c.Valkey.URL != "" {
+		if u, err := url.Parse(c.Valkey.URL); err != nil || !slices.Contains([]string{"valkey", "valkeys", "redis", "rediss", "unix"}, u.Scheme) {
+			add("valkey.url: must be a valkey://, redis://, rediss:// or unix:// URL")
+		}
+	}
 	if c.Database.MaxConns < 1 {
 		add("database.max_conns: must be at least 1")
 	}
@@ -332,6 +364,11 @@ func (c *Config) validateApp(field string, a *App, errs *[]error) {
 			*errs = append(*errs, fmt.Errorf("%s.hosts[%d]: invalid host %q", field, i, h))
 		}
 		a.Hosts[i] = strings.ToLower(h)
+	}
+	if a.PublicURL != "" {
+		if u, err := url.Parse(a.PublicURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			*errs = append(*errs, fmt.Errorf("%s.public_url: must be an absolute http(s) URL", field))
+		}
 	}
 	if a.APIBaseURL != "" {
 		if u, err := url.Parse(a.APIBaseURL); err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {

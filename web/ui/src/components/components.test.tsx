@@ -3,13 +3,15 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
 import type { ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProblemError, toProblem } from '@panel/sdk';
 import { createI18n } from '../i18n';
 import { ThemeProvider } from '../theme';
 import { TextField } from './Field';
 import { ErrorState } from './States';
 import { AppShell } from './Layout';
+import { ConfirmDialog } from './Dialog';
+import { QrCode } from './QrCode';
 
 function wrap(children: ReactNode, lng: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({ resources: { 'zh-CN': {}, en: {} }, defaultNS: 'common', lng });
@@ -59,5 +61,34 @@ describe('AppShell', () => {
     await user.click(await screen.findByRole('menuitemradio', { name: /深色/ }));
     expect(document.documentElement).toHaveClass('dark');
     expect(localStorage.getItem('panel.theme')).toBe('dark');
+  });
+});
+
+describe('QrCode', () => {
+  it('以带名称的 SVG 绘制，不使用内联样式', () => {
+    render(<QrCode value="otpauth://totp/Akari:alice?secret=JBSWY3DPEHPK3PXP&issuer=Akari" label="二维码" />);
+    const img = screen.getByRole('img', { name: '二维码' });
+    expect(img.tagName.toLowerCase()).toBe('svg');
+    expect(img.querySelector('path')?.getAttribute('d')).toMatch(/^M\d/);
+    expect(img.outerHTML).not.toContain('style=');
+  });
+});
+
+describe('ConfirmDialog', () => {
+  it('显示影响范围，确认后调用 onConfirm，取消时关闭', async () => {
+    const onConfirm = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      wrap(
+        <ConfirmDialog open onOpenChange={onOpenChange} title="停用？" description="将影响 3 台设备" confirmLabel="停用" onConfirm={onConfirm} danger />,
+      ),
+    );
+    const dialog = screen.getByRole('dialog', { name: '停用？' });
+    expect(dialog).toHaveAccessibleDescription('将影响 3 台设备');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '停用' }));
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });

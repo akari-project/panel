@@ -32,3 +32,11 @@ describe('unwrap', () => {
     await expect(unwrap(Promise.reject(new TypeError('fetch failed')))).rejects.toMatchObject({ problem: { code: 'network' } });
   });
 });
+
+describe('retryAfter', () => {
+  it('读取 Retry-After 秒数', () => {
+    const res = new Response(null, { status: 429, headers: { 'Retry-After': '42' } });
+    expect(toProblem({ code: 'rate_limited' }, res).retryAfter).toBe(42);
+    expect(toProblem({ code: 'rate_limited' }, new Response(null, { status: 429 })).retryAfter).toBeUndefined();
+  });
+});
