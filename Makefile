@@ -31,7 +31,7 @@ LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Comm
 
 GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen
 
-.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-spec-version check-generated test test-property e2e conformance lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-spec-version check-generated test test-property e2e e2e-portal conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -105,6 +105,12 @@ test-property:
 e2e:
 	cd $(SERVER) && go test -race -count=1 -timeout 15m ./e2e/...
 
+# 用户中心在真实控制面上的 Playwright 测试（M1-01 验收 4）：testcontainers 启动 PostgreSQL、Valkey、Mailpit，
+# 进程内启动控制面，运行 web/playwright.real.config.ts。已设置 PLAYWRIGHT_BROWSERS_PATH 时不下载浏览器。
+e2e-portal: web-build
+	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
+	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_01_PortalPlaywright ./e2e/portal/
+
 # 协议一致性套件（spec/20 20.6）。对真实 Agent 运行：
 #   make conformance CONFORMANCE_AGENT=exec CONFORMANCE_AGENT_CMD='...'（见 server/e2e/conformance/README.md）
 conformance:
@@ -169,7 +175,7 @@ check-embed:
 
 ## CI -----------------------------------------------------------------
 
-ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed
+ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal
 
 clean:
 	rm -rf $(BIN)

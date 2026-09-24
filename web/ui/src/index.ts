@@ -12,3 +12,6 @@ export { LoadingState, EmptyState, ErrorState, problemOf, useProblemMessage } fr
 export { ThemeMenu, LanguageMenu } from './components/Preferences';
 export { AppShell, AuthLayout, Footer, SkipLink, navLinkClass, type AppShellProps, type SiteInfo } from './components/Layout';
 export { SignInFlow, type SignInFlowProps, type MfaAnswer } from './components/SignInFlow';
+export { Modal, ConfirmDialog, type ModalProps, type ConfirmDialogProps } from './components/Dialog';
+export { QrCode, type QrCodeProps } from './components/QrCode';
+export { ProblemAlert, applyFieldErrors } from './components/ProblemAlert';

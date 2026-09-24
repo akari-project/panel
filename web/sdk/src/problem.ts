@@ -12,6 +12,8 @@ export interface Problem {
   title?: string;
   requestId?: string;
   errors: FieldError[];
+  /** 429、503 等响应的 Retry-After（秒）；没有或无法解析时为 undefined。 */
+  retryAfter?: number;
   /** 原始响应体，供 mfa_required 等携带附加字段的错误使用。 */
   body: Record<string, unknown>;
 }
@@ -45,6 +47,8 @@ export function toProblem(error: unknown, response?: Response): Problem {
         (e): e is FieldError => isRecord(e) && typeof e.field === 'string' && typeof e.code === 'string',
       )
     : [];
+  const retryAfterHeader = response?.headers.get('Retry-After');
+  const retryAfter = retryAfterHeader && /^\d+$/.test(retryAfterHeader.trim()) ? Number(retryAfterHeader) : undefined;
   return {
     status,
     code,
@@ -52,6 +56,7 @@ export function toProblem(error: unknown, response?: Response): Problem {
     requestId:
       typeof body.request_id === 'string' ? body.request_id : (response?.headers.get('X-Request-Id') ?? undefined),
     errors,
+    ...(retryAfter !== undefined ? { retryAfter } : {}),
     body,
   };
 }
