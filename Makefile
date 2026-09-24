@@ -117,12 +117,10 @@ check-spdx:
 	echo "check-spdx: 通过"
 
 # 依赖许可证扫描（spec/42 42.2，AGPL-3.0 仓库的允许清单）。本模块自身不参与判定。
-# panel-spec（Apache-2.0）按 REUSE 布局只有 LICENSES/ 目录、没有根目录 LICENSE 文件，go-licenses 无法识别，
-# 因此忽略；其许可证由 panel-spec 自身的 REUSE lint 保证。
 ALLOWED_LICENSES := MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,MPL-2.0,LGPL-2.1,LGPL-3.0,GPL-3.0,AGPL-3.0
 licenses:
 	cd $(SERVER) && go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION) check ./... \
-	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server --ignore github.com/akari-project/panel-spec
+	  --allowed_licenses=$(ALLOWED_LICENSES) --ignore github.com/akari-project/panel/server
 
 vulncheck:
 	cd $(SERVER) && go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
