@@ -7,7 +7,10 @@
 package secretbox
 
 import (
+	"bytes"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -51,8 +54,9 @@ func ParseKey(s string) (Key, error) {
 
 // Keyring 持有当前主密钥与可选的旧主密钥。
 type Keyring struct {
-	current byte
-	aeads   map[byte]aead
+	current    byte
+	currentRaw []byte
+	aeads      map[byte]aead
 }
 
 type aead interface {
@@ -63,7 +67,7 @@ type aead interface {
 
 // NewKeyring 以 current 为加密密钥；previous 可为 nil。
 func NewKeyring(current Key, previous *Key) (*Keyring, error) {
-	k := &Keyring{current: current.ID, aeads: map[byte]aead{}}
+	k := &Keyring{current: current.ID, currentRaw: bytes.Clone(current.Raw), aeads: map[byte]aead{}}
 	add := func(key Key) error {
 		a, err := chacha20poly1305.NewX(key.Raw)
 		if err != nil {
@@ -132,6 +136,16 @@ func (k *Keyring) Open(ciphertext, ad []byte) ([]byte, error) {
 		return nil, ErrDecrypt
 	}
 	return pt, nil
+}
+
+// Derive 从当前主密钥派生一把用途为 label 的 32 字节子密钥（HKDF-SHA256）。
+// 派生密钥随主密钥轮换而变化，只用于短期数据（例如 24 小时的幂等记录）。
+func (k *Keyring) Derive(label string) []byte {
+	out, err := hkdf.Key(sha256.New, k.currentRaw, nil, "akari-panel/"+label, 32)
+	if err != nil {
+		panic(err) // 只在输出长度超限时出错
+	}
+	return out
 }
 
 // NeedsRotation 报告密文是否不是用当前主密钥加密的（供 `panel keys rotate` 使用）。

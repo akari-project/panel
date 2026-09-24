@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Config struct {
 	Env      Env      `yaml:"env" env:"PANEL_ENV"`
 	Log      Log      `yaml:"log"`
 	Database Database `yaml:"database"`
+	Valkey   Valkey   `yaml:"valkey"`
 	HTTP     HTTP     `yaml:"http"`
 	Gateway  Gateway  `yaml:"gateway"`
 	Worker   Worker   `yaml:"worker"`
@@ -55,6 +57,12 @@ type Log struct {
 type Database struct {
 	URL      string `yaml:"url" env:"PANEL_DATABASE_URL"`
 	MaxConns int32  `yaml:"max_conns" env:"PANEL_DATABASE_MAX_CONNS"`
+}
+
+// Valkey 是 Valkey 连接配置（spec/41）。api 角色必须配置。
+type Valkey struct {
+	// URL 形如 valkey://localhost:6379/0（也接受 redis://、rediss://）。
+	URL string `yaml:"url" env:"PANEL_VALKEY_URL"`
 }
 
 // HTTP 是 api 角色（以及 all 模式下全部角色共用）的监听配置。
@@ -114,6 +122,11 @@ type Crypto struct {
 	MasterKey string `env:"PANEL_MASTER_KEY"`
 	// PreviousMasterKey 为轮换期间仍需解密的旧主密钥，可为空。
 	PreviousMasterKey string `env:"PANEL_MASTER_KEY_PREVIOUS"`
+	// TokenKey 是访问令牌的 Ed25519 签名密钥（spec/10 AUTH-06、CONV-30），
+	// 格式为 "<key_id>:<base64 的 32 字节种子>"，key_id 为 1–255。api 角色必须配置。
+	TokenKey string `env:"PANEL_TOKEN_KEY"`
+	// PreviousTokenKey 为轮换后仍用于验签的旧密钥，保留 30 分钟后移除，可为空。
+	PreviousTokenKey string `env:"PANEL_TOKEN_KEY_PREVIOUS"`
 }
 
 // Default 返回默认配置。
@@ -254,6 +267,11 @@ func (c *Config) Validate() error {
 		add("database.url: required (or set PANEL_DATABASE_URL)")
 	} else if u, err := url.Parse(c.Database.URL); err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
 		add("database.url: must be a postgres:// URL")
+	}
+	if c.Valkey.URL != "" {
+		if u, err := url.Parse(c.Valkey.URL); err != nil || !slices.Contains([]string{"valkey", "valkeys", "redis", "rediss", "unix"}, u.Scheme) {
+			add("valkey.url: must be a valkey://, redis://, rediss:// or unix:// URL")
+		}
 	}
 	if c.Database.MaxConns < 1 {
 		add("database.max_conns: must be at least 1")

@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# OpenAPI Overlay：只改生成的 Go 类型名，不改契约语义。
+overlay: 1.0.0
+info:
+  title: oapi-codegen 类型名修正
+  version: 1.0.0
+actions:
+  # Entitlement.status 的内联枚举与 components.schemas.EntitlementStatus 同名。
+  - target: $.components.schemas.Entitlement.properties.status
+    update:
+      x-go-type-name: EntitlementState

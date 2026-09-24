@@ -17,13 +17,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/valkey-io/valkey-go"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/akari-project/panel/server/internal/auth"
+	"github.com/akari-project/panel/server/internal/auth/token"
+	"github.com/akari-project/panel/server/internal/clientapi"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
 	"github.com/akari-project/panel/server/internal/httpx"
+	"github.com/akari-project/panel/server/internal/idempotency"
 	"github.com/akari-project/panel/server/internal/logging"
+	"github.com/akari-project/panel/server/internal/ratelimit"
+	"github.com/akari-project/panel/server/internal/secretbox"
 	"github.com/akari-project/panel/server/internal/webui"
 )
 
@@ -61,6 +68,11 @@ type Deps struct {
 	Log    *slog.Logger
 	Clock  clock.Clock
 	Pool   *pgxpool.Pool
+	// KV、Tokens、Keys 是 api 角色所需的 Valkey 客户端、访问令牌密钥环与主密钥环；
+	// 只启动 gateway 或 worker 时可为 nil。
+	KV     valkey.Client
+	Tokens *token.Keyring
+	Keys   *secretbox.Keyring
 	// Assets 为嵌入的前端产物；nil 表示 noui 构建（spec/40 DEP-06）。
 	Assets  fs.FS
 	Version string
@@ -182,13 +194,26 @@ func (d Deps) serve(ctx context.Context, log *slog.Logger, role, addr string, h 
 }
 
 // apiHandler 是 api 角色：/healthz、两个前端，以及各自前缀下的客户端接口与管理接口。
-// 接口本身在 M1 实现（spec/30、spec/31），目前一律返回 404 not_found。
+// 管理接口在 M1-02 实现（spec/31），目前返回 404 not_found。
 func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handler, error) {
+	if d.KV == nil || d.Tokens == nil || d.Keys == nil {
+		return nil, errors.New("api: valkey.url, PANEL_TOKEN_KEY and PANEL_MASTER_KEY are required")
+	}
+	client := clientapi.New(clientapi.Deps{
+		Log:            d.Log,
+		Clock:          d.Clock,
+		Pool:           d.Pool,
+		Tokens:         d.Tokens,
+		Revocations:    auth.Revocations{KV: d.KV},
+		Limiter:        ratelimit.Limiter{KV: d.KV},
+		Proxies:        proxies,
+		IdempotencyKey: d.Keys.Derive("idempotency-request-hash"),
+	})
 	ui, err := webui.New(webui.Options{
 		Assets:    d.Assets,
 		Portal:    d.Config.UI.Portal,
 		Admin:     d.Config.UI.Admin,
-		PortalAPI: http.HandlerFunc(httpx.NotFound),
+		PortalAPI: client,
 		AdminAPI:  http.HandlerFunc(httpx.NotFound),
 		SiteName:  d.Config.Site.Name,
 		SourceURL: d.Config.Site.SourceURL,
@@ -221,9 +246,41 @@ func workerHandler(health http.Handler) http.Handler {
 }
 
 // runWorker 是 worker 角色的主循环。周期任务（spec/01 1.1）随各里程碑加入；
-// 多实例下的单执行者选举见 spec/40 DEP-08。
-func runWorker(ctx context.Context, _ Deps, log *slog.Logger) error {
-	log.Info("worker running", "jobs", 0)
-	<-ctx.Done()
-	return nil
+// 多实例下的单执行者选举见 spec/40 DEP-08。目前的任务都可以由多个实例重复执行。
+func runWorker(ctx context.Context, d Deps, log *slog.Logger) error {
+	idem := idempotency.Store{Pool: d.Pool, Clock: d.Clock}
+	jobs := []job{
+		{name: "idempotency-sweep", every: time.Hour, run: func(ctx context.Context) error {
+			n, err := idem.Sweep(ctx)
+			if err == nil && n > 0 {
+				log.Info("idempotency keys swept", "rows", n)
+			}
+			return err
+		}},
+	}
+	log.Info("worker running", "jobs", len(jobs))
+	g, ctx := errgroup.WithContext(ctx)
+	for _, j := range jobs {
+		g.Go(func() error {
+			t := time.NewTicker(j.every)
+			defer t.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-t.C:
+					if err := j.run(ctx); err != nil && ctx.Err() == nil {
+						log.Warn("job failed", "job", j.name, "error", err)
+					}
+				}
+			}
+		})
+	}
+	return g.Wait()
+}
+
+type job struct {
+	name  string
+	every time.Duration
+	run   func(context.Context) error
 }

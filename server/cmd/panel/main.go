@@ -23,14 +23,17 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/valkey-io/valkey-go"
 	"golang.org/x/term"
 
 	"github.com/akari-project/panel/server/internal/admin"
 	"github.com/akari-project/panel/server/internal/app"
+	"github.com/akari-project/panel/server/internal/auth/token"
 	"github.com/akari-project/panel/server/internal/buildinfo"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
 	"github.com/akari-project/panel/server/internal/db"
+	"github.com/akari-project/panel/server/internal/kv"
 	"github.com/akari-project/panel/server/internal/logging"
 	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/secretbox"
@@ -133,11 +136,39 @@ func runRoles(ctx context.Context, mode app.Mode, args []string, stderr io.Write
 		return err
 	}
 	defer pool.Close()
+	// api 角色需要 Valkey 与访问令牌签名密钥；只启动 gateway 或 worker 时不连接。
+	var (
+		kvc    valkey.Client
+		tokens *token.Keyring
+		keys   *secretbox.Keyring
+	)
+	if mode == app.ModeAPI || mode == app.ModeAll {
+		if keys, err = secretbox.ParseKeyring(cfg.Crypto.MasterKey, cfg.Crypto.PreviousMasterKey); err != nil {
+			return err
+		}
+		if cfg.Valkey.URL == "" {
+			return errors.New("valkey.url is required for the api role (or set PANEL_VALKEY_URL)")
+		}
+		if tokens, err = token.NewKeyring(clock.Real{}, cfg.Crypto.TokenKey, cfg.Crypto.PreviousTokenKey); err != nil {
+			return err
+		}
+		if cfg.Crypto.PreviousTokenKey != "" {
+			// 旧密钥只在轮换后的 30 分钟内需要（AUTH-06），提醒运维按时移除。
+			log.Warn("PANEL_TOKEN_KEY_PREVIOUS is set; remove it 30 minutes after rotating PANEL_TOKEN_KEY")
+		}
+		if kvc, err = kv.Open(ctx, cfg.Valkey.URL); err != nil {
+			return err
+		}
+		defer kvc.Close()
+	}
 	return app.Run(ctx, app.Deps{
 		Config:  cfg,
 		Log:     log,
 		Clock:   clock.Real{},
 		Pool:    pool,
+		KV:      kvc,
+		Tokens:  tokens,
+		Keys:    keys,
 		Assets:  assets,
 		Version: buildinfo.Version,
 		Commit:  buildinfo.Commit,

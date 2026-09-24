@@ -20,6 +20,7 @@ import (
 
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/testdb"
+	"github.com/akari-project/panel/server/internal/testkv"
 )
 
 // buildBinary 以 noui 构建 panel，测试真实进程的子命令与信号处理。
@@ -34,6 +35,9 @@ func buildBinary(t *testing.T) string {
 	return bin
 }
 
+// valkeyURL 由 TestBinary 设置：api 角色需要 Valkey（spec/10 AUTH-06）。
+var valkeyURL string
+
 func command(bin, dbURL string, args ...string) *exec.Cmd {
 	cmd := exec.Command(bin, args...)
 	cmd.Env = append(os.Environ(),
@@ -44,6 +48,8 @@ func command(bin, dbURL string, args ...string) *exec.Cmd {
 		"PANEL_WORKER_LISTEN=127.0.0.1:0",
 		"PANEL_HTTP_SHUTDOWN_TIMEOUT=5s",
 		"PANEL_MASTER_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32)),
+		"PANEL_TOKEN_KEY=1:"+base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32)),
+		"PANEL_VALKEY_URL="+valkeyURL,
 	)
 	return cmd
 }
@@ -54,6 +60,7 @@ func TestBinary(t *testing.T) {
 		t.Skip("builds the binary")
 	}
 	pool, dbURL := testdb.NewWithURL(t)
+	_, valkeyURL = testkv.NewWithURL(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		t.Fatal(err)

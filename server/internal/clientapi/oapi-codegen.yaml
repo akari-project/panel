@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# oapi-codegen 配置（make gen）。输入是 tools/oapiprep 改写后的 panel-spec 客户端接口（spec/30），
+# 输出不手改。include-operation-ids 列出已实现的操作，随各任务增加；未列出的路由返回 404 not_found。
+package: gen
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  nullable-type: true
+  overlay:
+    path: internal/clientapi/overlay.yaml
+  include-operation-ids:
+    - getMe
+output: internal/clientapi/gen/api.gen.go

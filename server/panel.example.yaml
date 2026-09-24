@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # panel 配置示例（internal/config）。环境变量优先于本文件，例如 PANEL_DATABASE_URL、PANEL_HTTP_LISTEN。
 # 加密主密钥只从环境变量读取：PANEL_MASTER_KEY="<key_id>:<base64 32 字节>"，轮换期间另设 PANEL_MASTER_KEY_PREVIOUS。
+# 访问令牌签名密钥同样只从环境变量读取（api 角色必需）：PANEL_TOKEN_KEY="<key_id>:<base64 32 字节 Ed25519 种子>"，
+# 轮换时把旧值移到 PANEL_TOKEN_KEY_PREVIOUS，30 分钟后移除（spec/10 AUTH-06）。
 env: prod                      # dev | test | prod
 log:
   level: info                  # debug | info | warn | error
@@ -8,6 +10,8 @@ log:
 database:
   url: postgres://panel:panel@localhost:5432/panel?sslmode=disable
   max_conns: 10
+valkey:
+  url: valkey://localhost:6379/0   # api 角色必需（吊销集合、限流等）
 http:
   listen: ":8080"              # api；all 模式下全部角色共用此端口
   trusted_proxies: []          # 只有来自这些 CIDR 的请求才采信 X-Forwarded-For / -Proto（spec/40 DEP-13）

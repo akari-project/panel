@@ -72,3 +72,16 @@ func TestParseKeyErrors(t *testing.T) {
 		t.Error("same key_id for current and previous accepted")
 	}
 }
+
+func TestDerive(t *testing.T) {
+	a, _ := ParseKeyring(key(1, 1), "")
+	a2, _ := ParseKeyring(key(1, 1), key(2, 9))
+	b, _ := ParseKeyring(key(3, 2), "")
+	x := a.Derive("purpose")
+	if len(x) != 32 || !bytes.Equal(x, a.Derive("purpose")) || !bytes.Equal(x, a2.Derive("purpose")) {
+		t.Fatal("derive not deterministic for the same current key")
+	}
+	if bytes.Equal(x, a.Derive("other")) || bytes.Equal(x, b.Derive("purpose")) {
+		t.Fatal("derive does not depend on label and key")
+	}
+}
