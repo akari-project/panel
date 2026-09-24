@@ -97,9 +97,7 @@ type RuntimeConfig struct {
 	APIBaseURL     string `json:"api_base_url"`
 	SourceURL      string `json:"source_url"`
 	SourceRevision string `json:"source_revision"`
-	// BasePath 是应用的挂载路径，以 / 开头并以 / 结尾。
-	BasePath string `json:"base_path"`
-	CSPNonce string `json:"csp_nonce"`
+	CSPNonce       string `json:"csp_nonce"`
 }
 
 type mount struct {
@@ -284,10 +282,9 @@ func (rt *Router) serveIndex(w http.ResponseWriter, r *http.Request, m *mount, n
 		APIBaseURL:     apiBase,
 		SourceURL:      strings.ReplaceAll(rt.opts.SourceURL, "{commit}", rt.opts.Commit),
 		SourceRevision: rt.opts.Commit,
-		BasePath:       m.cfg.PathPrefix,
 		CSPNonce:       nonce,
 	}
-	body := injectConfig(m.ui.index, cfg)
+	body := injectConfig(m.ui.index, cfg, m.cfg.PathPrefix)
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-cache")
@@ -305,30 +302,23 @@ func newNonce() string {
 }
 
 var (
-	headTag     = regexp.MustCompile(`(?i)<head(\s[^>]*)?>`)
+	headClose   = regexp.MustCompile(`(?i)</head\s*>`)
 	nonceTags   = regexp.MustCompile(`(?i)<(script|style)\b`)
 	relativeRef = regexp.MustCompile(`(?i)\b(src|href)="\./`)
 )
 
-// configPlaceholder 是前端 index.html 中注入运行时配置的位置（web/README.md 的嵌入约定）；
-// 没有占位符时插在 <head> 之后。
-const configPlaceholder = "<!--panel-config-->"
-
-// injectConfig 处理返回给浏览器的 index.html：
-//   - 给 <script> 与 <style> 加上 nonce（DEP-05）；
-//   - 把 src="./ 与 href="./ 改为应用挂载路径：SPA 回退的深层路径下相对路径会解析错位，
-//     而 CSP 的 base-uri 'none' 不允许用 <base>；
-//   - 插入 window.__PANEL_CONFIG__（DEP-04）。JSON 编码会转义 <、>、&，不会提前结束 <script>。
-func injectConfig(index []byte, cfg RuntimeConfig) []byte {
+// injectConfig 处理返回给浏览器的 index.html（嵌入约定见 web/README.md）：
+//   - 给已有的 <script> 与 <style> 加上 nonce（DEP-05）；
+//   - 把 src="./ 与 href="./ 改为应用挂载路径 basePath：SPA 回退的深层路径下相对路径会解析错位，
+//     而 CSP 的 base-uri 'none' 不允许用 <base>。前端由入口脚本地址推出挂载路径；
+//   - 在 </head> 前插入 window.__PANEL_CONFIG__（DEP-04）。JSON 编码会转义 <、>、&，不会提前结束 <script>。
+func injectConfig(index []byte, cfg RuntimeConfig, basePath string) []byte {
 	js, _ := json.Marshal(cfg)
 	out := nonceTags.ReplaceAll(index, []byte(`<$1 nonce="`+cfg.CSPNonce+`"`))
-	out = relativeRef.ReplaceAll(out, []byte(`$1="`+cfg.BasePath))
+	out = relativeRef.ReplaceAll(out, []byte(`$1="`+basePath))
 	script := []byte(`<script nonce="` + cfg.CSPNonce + `">window.__PANEL_CONFIG__=` + string(js) + `;</script>`)
-	if i := bytes.Index(out, []byte(configPlaceholder)); i >= 0 {
-		return bytes.Join([][]byte{out[:i], script, out[i+len(configPlaceholder):]}, nil)
-	}
-	if loc := headTag.FindIndex(out); loc != nil {
-		return bytes.Join([][]byte{out[:loc[1]], script, out[loc[1]:]}, nil)
+	if loc := headClose.FindIndex(out); loc != nil {
+		return bytes.Join([][]byte{out[:loc[0]], script, out[loc[0]:]}, nil)
 	}
 	return append(script, out...)
 }

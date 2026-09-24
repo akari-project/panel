@@ -158,7 +158,7 @@ func TestIndexInjectionAndSecurityHeaders(t *testing.T) {
 	body := w.Body.String()
 	rc, nonce := runtimeConfig(t, body)
 	want := RuntimeConfig{App: "portal", SiteName: "Akari <Test>", APIBaseURL: "http://example.com",
-		SourceURL: "https://example.org/panel/tree/" + commit, SourceRevision: commit, BasePath: "/", CSPNonce: nonce}
+		SourceURL: "https://example.org/panel/tree/" + commit, SourceRevision: commit, CSPNonce: nonce}
 	if rc != want {
 		t.Errorf("config = %+v\nwant %+v", rc, want)
 	}
@@ -168,8 +168,11 @@ func TestIndexInjectionAndSecurityHeaders(t *testing.T) {
 	if n := strings.Count(body, `nonce="`+nonce+`"`); n != 3 { // 注入脚本、模块脚本、内联样式
 		t.Errorf("nonce attributes = %d, want 3: %s", n, body)
 	}
-	if strings.Index(body, "__PANEL_CONFIG__") > strings.Index(body, "index-AbC12_-9.js") {
-		t.Error("config must be injected before the application script")
+	if i := strings.Index(body, "__PANEL_CONFIG__"); i < 0 || i > strings.Index(body, "</head>") {
+		t.Error("config must be injected inside <head>, before </head>")
+	}
+	if strings.Contains(body, "base_path") {
+		t.Error("base_path is not part of __PANEL_CONFIG__ (web/README.md)")
 	}
 
 	h := w.Header()
@@ -206,7 +209,7 @@ func TestIndexInjectionAndSecurityHeaders(t *testing.T) {
 	w = httptest.NewRecorder()
 	rt.ServeHTTP(w, r)
 	rc, _ = runtimeConfig(t, w.Body.String())
-	if rc.App != "admin" || rc.APIBaseURL != "https://api.example.com/console" || rc.BasePath != "/console/" {
+	if rc.App != "admin" || rc.APIBaseURL != "https://api.example.com/console" {
 		t.Errorf("admin config = %+v", rc)
 	}
 	if w.Header().Get("Strict-Transport-Security") != "max-age=31536000" {
@@ -306,23 +309,58 @@ func TestVerify(t *testing.T) {
 	}
 }
 
-// 深层 SPA 路径下，./ 开头的资源引用改为挂载路径；有占位符时配置插在占位符处。
-func TestDeepRouteRewriteAndPlaceholder(t *testing.T) {
+// 深层 SPA 路径下，./ 开头的资源引用改为挂载路径，与注入配置、补 nonce 在同一步完成。
+func TestDeepRouteFallbackRewritesRelativePaths(t *testing.T) {
 	a := testAssets()
-	a["admin/index.html"] = &fstest.MapFile{Data: []byte(`<!doctype html><html><head><meta charset="utf-8"><!--panel-config-->` +
+	a["admin/index.html"] = &fstest.MapFile{Data: []byte(`<!doctype html><html><head><meta charset="utf-8">` +
+		`<script src="./assets/theme-init-0a1b2c3d.js"></script>` +
 		`<script type="module" src="./assets/index-QQQQQQQQ.js"></script><link rel="icon" href="./favicon.ico">` +
-		`<link rel="preconnect" href="https://cdn.example"></head><body></body></html>`)}
+		`<link rel="preconnect" href="https://cdn.example"></head><body><a href="./x">x</a></body></html>`)}
+	a["portal/index.html"] = &fstest.MapFile{Data: []byte(`<html><head><script type="module" src="./assets/index-AbC12_-9.js"></script></head></html>`)}
 	rt := newRouter(t, config.App{PathPrefix: "/"}, config.App{PathPrefix: "/console/"}, a)
-	body := do(rt, "GET", "example.com", "/console/users/123/devices", nil).Body.String()
-	for _, want := range []string{`src="/console/assets/index-QQQQQQQQ.js"`, `href="/console/favicon.ico"`, `href="https://cdn.example"`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("missing %s in %s", want, body)
+
+	for _, tc := range []struct{ path, prefix string }{
+		{"/console/users/123/devices", "/console/"},
+		{"/console/", "/console/"},
+		{"/plans/basic/checkout", "/"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			w := do(rt, "GET", "example.com", tc.path, nil)
+			body := w.Body.String()
+			if w.Code != 200 || strings.Contains(body, `"./`) {
+				t.Fatalf("%d, relative reference left: %s", w.Code, body)
+			}
+			_, nonce := runtimeConfig(t, body)
+			if tc.prefix == "/console/" {
+				for _, want := range []string{
+					`<script nonce="` + nonce + `" src="/console/assets/theme-init-0a1b2c3d.js">`,
+					`<script nonce="` + nonce + `" type="module" src="/console/assets/index-QQQQQQQQ.js">`,
+					`href="/console/favicon.ico"`, `href="/console/x"`, `href="https://cdn.example"`,
+				} {
+					if !strings.Contains(body, want) {
+						t.Errorf("missing %s in %s", want, body)
+					}
+				}
+			} else if !strings.Contains(body, `src="/assets/index-AbC12_-9.js"`) {
+				t.Errorf("portal not rewritten: %s", body)
+			}
+		})
+	}
+}
+
+// 带哈希的资源名可以含 - 与 _（base64url）。
+func TestHashedAssetPattern(t *testing.T) {
+	for name, want := range map[string]bool{
+		"assets/index-AbC12_-9.js":            true,
+		"assets/rolldown-runtime-CbXtAM7H.js": true,
+		"assets/theme-init-0a1b2c3d.js":       true,
+		"assets/fonts/inter-Q_q-1234.woff2":   true,
+		"assets/logo.svg":                     false,
+		"favicon-AbCdEf12.ico":                false,
+		"assets/apple-touch-icon.png":         false,
+	} {
+		if got := hashedAsset.MatchString(name); got != want {
+			t.Errorf("%s: hashed = %v, want %v", name, got, want)
 		}
-	}
-	if strings.Contains(body, "<!--panel-config-->") || strings.Index(body, "__PANEL_CONFIG__") > strings.Index(body, "index-QQQQQQQQ.js") {
-		t.Errorf("placeholder not replaced in place: %s", body)
-	}
-	if strings.Contains(body, `"./`) {
-		t.Errorf("relative reference left: %s", body)
 	}
 }
