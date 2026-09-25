@@ -6,7 +6,11 @@
 //   - 保存键、路由、请求体摘要（HMAC-SHA256，见 Store.HashKey）与最终响应，保存 24 小时；
 //   - 相同的键与请求体返回相同结果；键相同而请求体或路由不同返回 422 idempotency_key_reused；
 //   - 首个请求仍在处理时返回 409 conflict 并带 Retry-After；
-//   - 只缓存 2xx 与 4xx，5xx 删除记录，允许用同一键重试；
+//   - 缓存 2xx 与 4xx；5xx、401、429 删除记录，允许用同一键重试。401 与 429 反映调用方当时的认证状态
+//     或配额（如处理器返回的 mfa_required、AUTH-09 的限流），重新验证或等待 Retry-After 后原键重试必须成功；
+//     鉴权与通用限流先于本中间件执行，这里覆盖的是处理器内部产生的 401 与 429。
+//     因此处理器返回 401 或 429 之前不得提交任何副作用（写库、outbox、通知队列）：要么在副作用之前检查，
+//     要么在同一事务中返回错误使其回滚，否则同键重试会重复执行。限流计数本身不算副作用；
 //   - 过期记录由 worker 每小时清理（Sweep）。
 //
 // 响应中含秘密值的接口不接受此请求头（CONV-12），由契约决定哪些操作使用本中间件。
@@ -142,7 +146,7 @@ func (s Store) run(w http.ResponseWriter, r *http.Request, id uuid.UUID, next ht
 		if completed {
 			return
 		}
-		// 处理器 panic 或写出 5xx：删除记录，允许重试。
+		// 处理器 panic 或写出 5xx、401、429：删除记录，允许重试。
 		_ = q.DeleteIdempotencyKey(ctx, id)
 	}()
 	next.ServeHTTP(rec, r)
@@ -150,7 +154,7 @@ func (s Store) run(w http.ResponseWriter, r *http.Request, id uuid.UUID, next ht
 	if status == 0 {
 		status = http.StatusOK
 	}
-	if status >= 500 {
+	if !cacheable(status) {
 		return
 	}
 	hdr := map[string][]string{}
@@ -172,6 +176,11 @@ func (s Store) run(w http.ResponseWriter, r *http.Request, id uuid.UUID, next ht
 		return
 	}
 	completed = true
+}
+
+// cacheable 判断响应是否保存为幂等记录（CONV-12）。
+func cacheable(status int) bool {
+	return status < 500 && status != http.StatusUnauthorized && status != http.StatusTooManyRequests
 }
 
 func replay(w http.ResponseWriter, row sqlc.GetIdempotencyKeyRow) {

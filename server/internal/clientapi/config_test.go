@@ -3,15 +3,19 @@
 package clientapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/akari-project/panel/server/internal/clientconfig"
+	"github.com/akari-project/panel/server/internal/db/sqlc"
 )
 
 type signedConfig struct {
@@ -92,14 +96,174 @@ func TestGetConfig(t *testing.T) {
 		t.Fatalf("document changed without input change: %v", p["issued_at"])
 	}
 
-	// 输入变化：新文档、新 ETag；未知平台与格式错误的版本不下发。
+	// 输入变化：新文档、新 ETag；未知平台与格式错误的版本不下发。features 下发有效值：本二进制未实现的模块
+	// 即使存储为 true 也为 false（OPS-08，M1 阶段五个模块都未实现），未知键忽略。
 	e.setSetting(t, "min_version", `{"ios":"1.4.0","web":"1.0.0","android":"01.0.0"}`)
 	e.setSetting(t, "features", `{"support":true,"unknown":true}`)
 	e.setSetting(t, "registration_policy", `"invite_only"`)
 	_, h, _, p = e.getConfig(t, "", etag)
 	if h.Get("ETag") == etag || mustJSON(p["min_version"]) != `{"ios":"1.4.0"}` || p["registration_policy"] != "invite_only" ||
-		mustJSON(p["features"]) != `{"announcements":false,"articles":false,"diagnostics":false,"referrals":false,"support":true}` {
+		mustJSON(p["features"]) != allOff {
 		t.Fatalf("after settings change: %v %v", h.Get("ETag"), p)
+	}
+}
+
+const allOff = `{"announcements":false,"articles":false,"diagnostics":false,"referrals":false,"support":false}`
+
+// spec/03 3.6：读取 features 永不失败。值不是对象、某键不是 true 时视为关闭；warn 日志只记键名（CONV-24），
+// 同一份原始值每个进程只告警一次。
+func TestConfigFeaturesTolerant(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	for _, tc := range []struct {
+		value string
+		keys  string
+	}{
+		{`null`, `["features"]`},
+		{`[true]`, `["features"]`},
+		{`"support"`, `["features"]`},
+		{`1`, `["features"]`},
+		{`{"support":"secret-value","articles":1,"referrals":null,"announcements":false,"unknown":"x"}`,
+			`["features.articles","features.support","features.referrals"]`},
+		{`{"support":true,"diagnostics":true}`, ``}, // 已存 true 但本二进制未实现：屏蔽，不告警
+	} {
+		logs.Reset()
+		e.setSetting(t, "features", tc.value)
+		code, _, _, p := e.getConfig(t, "", "")
+		if code != 200 || mustJSON(p["features"]) != allOff {
+			t.Errorf("%s: %d %v", tc.value, code, p["features"])
+		}
+		if tc.keys == "" {
+			if logs.Len() != 0 {
+				t.Errorf("%s: unexpected log %s", tc.value, logs.String())
+			}
+			continue
+		}
+		var rec struct {
+			Level string
+			Keys  json.RawMessage
+		}
+		if err := json.Unmarshal(logs.Bytes(), &rec); err != nil || rec.Level != "WARN" || string(rec.Keys) != tc.keys {
+			t.Errorf("%s: log %s", tc.value, logs.String())
+		}
+		if strings.Contains(logs.String(), "secret-value") {
+			t.Errorf("log contains value: %s", logs.String())
+		}
+		// 同一份原始值再次读取不重复告警。
+		logs.Reset()
+		if code, _, _, _ := e.getConfig(t, "", ""); code != 200 || logs.Len() != 0 {
+			t.Errorf("%s: repeated warn %d %s", tc.value, code, logs.String())
+		}
+	}
+
+	// 值恢复合法后清除告警记录：同一份异常值再次出现时重新告警。
+	e.setSetting(t, "features", `null`)
+	e.getConfig(t, "", "")
+	e.setSetting(t, "features", `{"support":false}`)
+	e.getConfig(t, "", "")
+	logs.Reset()
+	e.setSetting(t, "features", `null`)
+	if e.getConfig(t, "", ""); !strings.Contains(logs.String(), `"keys":["features"]`) {
+		t.Errorf("no warn after value recovered and broke again: %s", logs.String())
+	}
+}
+
+// API-11：config_issued_at 严格递增，写入 max(当前时刻, 上一次的值 + 1 秒)，秒精度 RFC 3339 UTC。
+func TestConfigIssuedAtStrictlyIncreasing(t *testing.T) {
+	e := newEnv(t)
+	q := sqlc.New(e.pool)
+	ctx := context.Background()
+	bump := func(now time.Time, want time.Time) {
+		t.Helper()
+		got, err := q.BumpConfigIssuedAt(ctx, now)
+		if err != nil || got != want.UTC().Format(time.RFC3339) {
+			t.Fatalf("bump(%v) = %q, %v; want %v", now, got, err, want.UTC().Format(time.RFC3339))
+		}
+	}
+
+	// 惰性初始化（兜底）写入 t0；同一秒内的两次修改得到 t0+1s、t0+2s。
+	_, h, _, p := e.getConfig(t, "", "")
+	etag := h.Get("ETag")
+	if p["issued_at"] != t0.UTC().Format(time.RFC3339) {
+		t.Fatalf("issued_at = %v", p["issued_at"])
+	}
+	bump(t0, t0.Add(time.Second))
+	bump(t0.Add(500*time.Millisecond), t0.Add(2*time.Second))
+	// 时钟回拨（副本间偏差）：仍为上一次的值 + 1 秒。
+	bump(t0.Add(-time.Hour), t0.Add(3*time.Second))
+	// 时钟前进：取当前时刻，截断到秒并换算为 UTC。
+	shanghai := time.FixedZone("CST", 8*3600)
+	later := t0.Add(time.Hour + 900*time.Millisecond).In(shanghai)
+	bump(later, t0.Add(time.Hour))
+
+	_, h, _, p = e.getConfig(t, "", etag)
+	if h.Get("ETag") == etag || p["issued_at"] != t0.Add(time.Hour).UTC().Format(time.RFC3339) {
+		t.Fatalf("after bump: %v %v", h.Get("ETag"), p["issued_at"])
+	}
+}
+
+// 键缺失时写入当前时刻；并发的两次修改锁行串行，得到不同的值。
+func TestConfigIssuedAtConcurrent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err != nil || got != t0.UTC().Format(time.RFC3339) {
+		t.Fatalf("initial bump = %q, %v", got, err)
+	}
+	tx1, err := e.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx1.Rollback(ctx) }()
+	first, err := sqlc.New(tx1).BumpConfigIssuedAt(ctx, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		// 第二个事务等待 tx1 释放行锁后读到它写入的值。
+		v, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0)
+		if err != nil {
+			v = err.Error()
+		}
+		done <- v
+	}()
+	select {
+	case v := <-done:
+		t.Fatalf("second bump did not wait for the row lock: %q", v)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := tx1.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if second := <-done; first != t0.Add(time.Second).UTC().Format(time.RFC3339) || second != t0.Add(2*time.Second).UTC().Format(time.RFC3339) {
+		t.Fatalf("first %q, second %q", first, second)
+	}
+}
+
+// 已存的 config_issued_at 不是 YYYY-MM-DDTHH:MM:SSZ 字符串时修改失败（fail-closed），值保持不变。
+// timestamptz 能解析的特殊值、不带时区的字符串与 JSON null 同样拒绝。
+func TestConfigIssuedAtCorrupt(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	for _, v := range []string{
+		`"not-a-time"`, `null`, `"now"`, `"epoch"`, `"infinity"`, `"2026-10-01T10:00:00"`, `"2026-10-01 10:00:00Z"`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `1790000000`, `{}`,
+	} {
+		e.setSetting(t, "config_issued_at", v)
+		if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err == nil {
+			t.Errorf("bump over %s succeeded: %q", v, got)
+		}
+		var stored string
+		if err := e.pool.QueryRow(ctx, `SELECT value::text FROM settings WHERE key = 'config_issued_at'`).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		var want, have any
+		_ = json.Unmarshal([]byte(v), &want)
+		_ = json.Unmarshal([]byte(stored), &have)
+		if mustJSON(want) != mustJSON(have) {
+			t.Errorf("%s changed to %s", v, stored)
+		}
 	}
 }
 

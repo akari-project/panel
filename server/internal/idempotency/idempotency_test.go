@@ -158,24 +158,69 @@ func TestInProgress(t *testing.T) {
 	}
 }
 
-// 5xx 不缓存，允许用同一键重试；4xx 缓存。
-func TestServerErrorsNotCached(t *testing.T) {
+// 5xx、401、429 不缓存，允许用同一键重试；其余 4xx 缓存（CONV-12）。
+func TestUncachedStatuses(t *testing.T) {
 	f := newFixture(t)
 	acct := uuid.New()
-	key := uuid.NewString()
-	f.status.Store(503)
-	f.do(key, `{}`, &acct)
-	f.status.Store(201)
-	if w := f.do(key, `{}`, &acct); w.Code != 201 || f.calls.Load() != 2 {
-		t.Fatalf("retry after 5xx: %d, calls %d", w.Code, f.calls.Load())
+	for _, st := range []int32{500, 503, 401, 429} {
+		key := uuid.NewString()
+		f.calls.Store(0)
+		f.status.Store(st)
+		if w := f.do(key, `{}`, &acct); w.Code != int(st) {
+			t.Fatalf("%d: first %d", st, w.Code)
+		}
+		f.status.Store(201)
+		if w := f.do(key, `{}`, &acct); w.Code != 201 || f.calls.Load() != 2 {
+			t.Fatalf("retry after %d: %d, calls %d", st, w.Code, f.calls.Load())
+		}
+		// 成功后的结果按常规缓存。
+		if w := f.do(key, `{}`, &acct); w.Code != 201 || f.calls.Load() != 2 {
+			t.Fatalf("replay after %d: %d, calls %d", st, w.Code, f.calls.Load())
+		}
 	}
 
-	key = uuid.NewString()
-	f.status.Store(409)
-	f.do(key, `{}`, &acct)
-	f.status.Store(201)
-	if w := f.do(key, `{}`, &acct); w.Code != 409 || f.calls.Load() != 3 {
-		t.Fatalf("4xx not replayed: %d, calls %d", w.Code, f.calls.Load())
+	for _, st := range []int32{400, 403, 404, 409, 422} {
+		key := uuid.NewString()
+		f.calls.Store(0)
+		f.status.Store(st)
+		f.do(key, `{}`, &acct)
+		f.status.Store(201)
+		if w := f.do(key, `{}`, &acct); w.Code != int(st) || f.calls.Load() != 1 {
+			t.Fatalf("%d not replayed: %d, calls %d", st, w.Code, f.calls.Load())
+		}
+	}
+}
+
+// 处理器返回 401 mfa_required（AUTH-23）后，客户端重新验证并用原键重试原请求，得到成功结果（UI-09）。
+func TestRetryAfterStepUp(t *testing.T) {
+	f := newFixture(t)
+	acct := uuid.New()
+	var reauthenticated atomic.Bool
+	calls := 0
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if !reauthenticated.Load() {
+			apierr.Write(nil, w, r, apierr.New(http.StatusUnauthorized, "mfa_required").With("methods", []string{"totp"}))
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+	})
+	serve := func(key string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("POST", "/v1/me/device-authorizations", strings.NewReader(`{"user_code":"ABCD-EFGH"}`))
+		r.Header.Set(Header, key)
+		w := httptest.NewRecorder()
+		f.store.Serve(w, r, "POST /v1/me/device-authorizations", &acct, h, func(w http.ResponseWriter, r *http.Request, err error) {
+			apierr.Write(nil, w, r, err)
+		})
+		return w
+	}
+	key := uuid.NewString()
+	if w := serve(key); w.Code != 401 || code(t, w) != "mfa_required" {
+		t.Fatalf("first: %d %s", w.Code, w.Body)
+	}
+	reauthenticated.Store(true)
+	if w := serve(key); w.Code != 201 || calls != 2 {
+		t.Fatalf("retry after step-up: %d, calls %d", w.Code, calls)
 	}
 }
 

@@ -11,7 +11,8 @@
 //     可选认证的操作持有无效令牌时按未认证处理；无需认证的操作（登录、刷新等）不读取令牌，
 //     否则浏览器中残留的已吊销或已过期 Cookie 会让用户无法重新登录；
 //  4. 限流（API-04）：无需认证的操作按 IP，已认证的写操作按账号；
-//  5. Idempotency-Key（CONV-12），只用于契约声明接受该请求头的操作；
+//  5. Idempotency-Key（CONV-12），只用于契约声明接受该请求头的操作。处理器返回的 401 与 429 不缓存、允许同键重试，
+//     因此这类操作的处理器在返回 401 或 429 之前不得提交副作用（见 internal/idempotency）；
 //  6. 处理器。错误一律写成 problem+json（CONV-16）。
 package clientapi
 
@@ -81,6 +82,8 @@ type Server struct {
 	d      Deps
 	ua     *clientconfig.UserAgent
 	config configCache
+
+	featuresWarn featuresWarn
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)

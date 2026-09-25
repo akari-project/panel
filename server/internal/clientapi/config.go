@@ -4,6 +4,7 @@ package clientapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,15 +34,19 @@ type ConfigDeps struct {
 // UpgradeRequired 是自研客户端低于最低版本时的 426（API-03）。
 var UpgradeRequired = apierr.New(http.StatusUpgradeRequired, "upgrade_required")
 
-// modules 为 features 的键名（spec/13 OPS-08）。可关闭的模块默认关闭。
-var modules = []string{"announcements", "articles", "support", "referrals", "diagnostics"}
-
 // configCache 保存最近一次签名的文档：输入不变时不重复签名（API-11）。
 type configCache struct {
 	mu      sync.Mutex
 	payload string
 	doc     []byte
 	etag    string
+}
+
+// featuresWarn 记录最近一次告警的 settings 键 features 原始值的摘要：同一份异常值每个进程只告警一次，
+// 不保存原文（spec/03 3.6、CONV-24）。值恢复合法后清零，之后再次出现同一份异常值时重新告警。
+type featuresWarn struct {
+	mu   sync.Mutex
+	last [sha256.Size]byte
 }
 
 // GetConfig 返回已签名的客户端启动配置（spec/30 API-11）。签名确定，ETag 为文档字节的 SHA-256，
@@ -109,13 +114,15 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	if policy != "open" && policy != "invite_only" && policy != "closed" {
 		policy = "open" // 不签发契约之外的取值；服务端注册时另行校验（AUTH-02）
 	}
-	stored := map[string]bool{}
-	if err := setting(ctx, q, "features", &stored); err != nil {
+	raw, err := q.GetSetting(ctx, "features")
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
+	effective, invalid := clientconfig.Features(raw, clientconfig.ImplementedModules())
+	s.warnFeatures(ctx, raw, invalid)
 	features := map[string]any{}
-	for _, m := range modules {
-		features[m] = stored[m]
+	for m, on := range effective {
+		features[m] = on
 	}
 	minVersion, err := minVersions(ctx, q)
 	if err != nil {
@@ -143,8 +150,30 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
-// issuedAt 返回 settings 键 config_issued_at。修改 features、registration_policy、min_version 的事务同时写入它；
-// 站点尚未写入时由第一次请求用注入的时钟初始化（CONV-04、CONV-27），并发时先写入者生效，各副本读到同一值。
+// warnFeatures 记录 settings 键 features 中被当作关闭的异常值，只记键名（spec/03 3.6、CONV-24）；
+// invalid 为空（值合法）时清除告警记录。
+func (s *Server) warnFeatures(ctx context.Context, raw []byte, invalid []string) {
+	w := &s.featuresWarn
+	if invalid == nil {
+		w.mu.Lock()
+		w.last = [sha256.Size]byte{}
+		w.mu.Unlock()
+		return
+	}
+	sum := sha256.Sum256(raw)
+	w.mu.Lock()
+	seen := w.last == sum
+	w.last = sum
+	w.mu.Unlock()
+	if !seen {
+		s.d.Log.WarnContext(ctx, "settings features: invalid values treated as disabled", "keys", invalid)
+	}
+}
+
+// issuedAt 返回 settings 键 config_issued_at。正常情况由站点初始化写入；features、registration_policy、
+// min_version 的有效值变化时，在同一事务中以 sqlc BumpConfigIssuedAt 严格递增地更新（API-11）。这两条写入
+// 路径分别属于站点初始化与设置管理接口（M1-09），尚未实现。键缺失时由第一次请求用注入的时钟惰性初始化，
+// 这只是兜底（CONV-04、CONV-27），并发时先写入者生效，各副本读到同一值。
 func (s *Server) issuedAt(ctx context.Context, q *sqlc.Queries) (string, error) {
 	var v string
 	err := setting(ctx, q, "config_issued_at", &v)

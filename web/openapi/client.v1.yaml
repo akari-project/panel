@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: Client API
-  version: 0.5.0
+  version: 0.6.0
   summary: 用户中心与自研客户端共用的接口
   description: |
     面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
@@ -32,7 +32,8 @@ info:
     ## 幂等（CONV-12）
     产生副作用的 `POST` 接受 `Idempotency-Key`（UUID）。作用域：已认证请求为“账号 + 键”，未认证请求为“路由 + 键”；
     记录保存 24 小时。同键同体返回相同结果；同键不同体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回
-    409 `conflict` 并带 `Retry-After`；5xx 不缓存。响应中含令牌、密钥、恢复码或导入链接的接口
+    409 `conflict` 并带 `Retry-After`。5xx、401、429 不缓存，可用同一键重试：例如收到 401 `mfa_required` 并完成重新验证
+    （AUTH-23）后，或按 `Retry-After` 等待后，用原键重试原请求。响应中含令牌、密钥、恢复码或导入链接的接口
     （`POST /v1/sessions`、`/v1/oauth/*`、`POST /v1/device-links`、`POST /v1/me/reauthentications`、
     TOTP 与恢复码、导入链接重置）不接受该请求头，避免在幂等记录中保存秘密。
 
@@ -860,7 +861,7 @@ paths:
       tags: [auth]
       operationId: approveDeviceAuthorization
       summary: 用户中心提交 user_code 批准设备授权
-      description: AUTH-24。`user_code` 无效返回 400 `invalid_code`，过期返回 `expired`。
+      description: AUTH-24。需要重新验证（AUTH-23）。`user_code` 无效返回 400 `invalid_code`，过期返回 `expired`。
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -897,7 +898,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: '#/components/responses/Unauthenticated'
+          $ref: '#/components/responses/MfaRequired'
         '409':
           $ref: '#/components/responses/Conflict'
         '422':
@@ -993,7 +994,7 @@ paths:
       operationId: approveDeviceLink
       summary: 带校验数字批准扫码登录
       description: |
-        `check_digits` 与新设备不一致时返回 400（`errors[].code` 为 `invalid_code`），多次失败后请求作废
+        需要重新验证（AUTH-23）。`check_digits` 与新设备不一致时返回 400（`errors[].code` 为 `invalid_code`），多次失败后请求作废
         （`exhausted`）。非 web 批准方用本设备私钥签名，签名对象见 `device_signature`（AUTH-24）。
         请求已批准、已过期时返回 409 `invalid_state`。
       parameters:
@@ -1022,7 +1023,7 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
-          $ref: '#/components/responses/Unauthenticated'
+          $ref: '#/components/responses/MfaRequired'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -3905,7 +3906,9 @@ components:
                 以服务端校验为准。不下发邮箱域名名单。修改后重新生成签名与 ETag（spec/30）。
             features:
               type: object
-              description: 运营模块开关（OPS-08）。键名由 spec/13 OPS-08 规定，是 CONV-10 布尔字段须以 `is_`/`has_` 开头的例外。
+              description: |
+                运营模块开关（OPS-08）。键名由 spec/13 OPS-08 规定，是 CONV-10 布尔字段须以 `is_`/`has_` 开头的例外。
+                值为有效值：运营者已开启且本版本控制面已实现该模块才为 `true`，缺省全部为 `false`；为 `false` 的模块，其客户端接口返回 404 `not_found`，前端隐藏入口。
               required: [announcements, articles, support, referrals, diagnostics]
               properties:
                 announcements:
@@ -3930,8 +3933,9 @@ components:
               type: string
               format: date-time
               description: |
-                签发时刻：取 `features`、`registration_policy`、`min_version` 最后一次修改的时刻（站点初始化时写入），公告模块实现后
-                取它与公告版本对应时刻中的较大值。客户端只接受不早于上次已接受值的文档（防回滚，API-11）。
+                签发时刻（秒精度）：站点初始化时写入；`features`、`registration_policy`、`min_version` 的有效值实际变化时更新，
+                严格递增（取 `max(当前时刻, 上一次的值 + 1 秒)`，API-11）。公告模块实现后取它与公告版本对应时刻中的较大值。
+                客户端只接受不早于上次已接受值的文档（防回滚）；同一文档重复获取时 `issued_at` 相等，必须接受。
         signature:
           type: string
           contentEncoding: base64
