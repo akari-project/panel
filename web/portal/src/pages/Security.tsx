@@ -4,12 +4,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
 import { useRouteContext } from '@tanstack/react-router';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { isProblemError, unwrap, type Problem } from '@panel/sdk';
-import { Button, ConfirmDialog, ProblemAlert, QrCode, TextField, applyFieldErrors, formatDateTime } from '@panel/ui';
+import {
+  Button,
+  ConfirmDialog,
+  ProblemAlert,
+  QrCode,
+  RecoveryCodes,
+  TextField,
+  applyFieldErrors,
+  formatDateTime,
+} from '@panel/ui';
 import { newPassword, PASSWORD_MAX, PASSWORD_MIN, totpCode } from '../forms';
 import { meQuery } from '../queries';
 
@@ -112,7 +121,7 @@ function TwoFactorSection() {
   if (view.step === 'codes') {
     return (
       <Section title={t('security.mfa.title')}>
-        <RecoveryCodes codes={view.codes} onDone={() => setView({ step: 'status' })} />
+        <RecoveryCodes headingLevel="h3" codes={view.codes} onDone={() => setView({ step: 'status' })} />
       </Section>
     );
   }
@@ -237,62 +246,6 @@ function EnrollTotp({
           </Button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const text = codes.join('\n') + '\n';
-  // 进入此视图时把焦点移到标题，屏幕阅读器读出“请保存恢复码”。
-  useEffect(() => headingRef.current?.focus(), []);
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'recovery-codes.txt';
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <h3 ref={headingRef} tabIndex={-1} className="font-semibold">
-        {t('security.codes.title')}
-      </h3>
-      <p className="text-sm">{t('security.codes.warning')}</p>
-      <ol aria-label={t('security.codes.list_label')} className="grid grid-cols-2 gap-2 font-mono text-base select-all">
-        {codes.map((c) => (
-          <li key={c} className="rounded border border-border bg-bg px-2 py-1 text-center">
-            {c}
-          </li>
-        ))}
-      </ol>
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" onClick={() => void copy()}>
-          {t('copy')}
-        </Button>
-        <Button variant="secondary" onClick={download}>
-          {t('download')}
-        </Button>
-        <Button onClick={onDone}>{t('security.codes.done')}</Button>
-      </div>
-      <p aria-live="polite" className="text-sm text-muted">
-        {copied ? t('copied') : ''}
-      </p>
     </div>
   );
 }

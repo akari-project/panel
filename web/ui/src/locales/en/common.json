@@ -80,13 +80,20 @@
     "use_totp": "Use a verification code instead",
     "verify": "Verify",
     "back": "Back",
-    "enroll_hint": "First sign-in requires setting up an authenticator. Add the key below to your authenticator app, then enter the code it generates.",
+    "enroll_hint": "First sign-in requires setting up an authenticator. Scan the QR code or add the key below to your authenticator app, then enter the code it generates.",
     "enroll_secret": "Key",
-    "failed": "Incorrect email, password or verification code."
+    "failed": "Incorrect email, password or verification code.",
+    "enroll_qr": "QR code for setting up your authenticator"
   },
   "validation": {
     "required": "Required",
     "email": "Enter a valid email address",
     "totp": "Enter 6 digits"
+  },
+  "recovery_codes": {
+    "title": "Save your recovery codes",
+    "warning": "If you can't use your authenticator, sign in with a recovery code. Each code works once. These codes are shown only this once, so copy or download them and keep them somewhere safe.",
+    "list_label": "Recovery codes",
+    "done": "I've saved them"
   }
 }

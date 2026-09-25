@@ -15,3 +15,4 @@ export { SignInFlow, type SignInFlowProps, type MfaAnswer } from './components/S
 export { Modal, ConfirmDialog, type ModalProps, type ConfirmDialogProps } from './components/Dialog';
 export { QrCode, type QrCodeProps } from './components/QrCode';
 export { ProblemAlert, applyFieldErrors } from './components/ProblemAlert';
+export { RecoveryCodes, type RecoveryCodesProps } from './components/RecoveryCodes';

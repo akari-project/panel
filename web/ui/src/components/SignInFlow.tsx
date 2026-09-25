@@ -2,6 +2,7 @@
 // 两步登录（spec/10 AUTH-20、AUTH-21）的共用表单。
 // 第一步提交邮箱与密码；接口返回 401 mfa_required 时，从 problem 中取 challenge_id、methods
 // （管理后台首次登录另有 totp_enrollment），进入第二步提交验证码或恢复码。
+// 首次登录同时完成 TOTP 绑定时，接口返回恢复码，先展示恢复码，确认保存后才算登录完成（AUTH-21）。
 // 具体的接口调用由应用传入：两份 OpenAPI 的登录接口路径相同、请求体不同。
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -11,6 +12,8 @@ import { z } from 'zod';
 import { isProblemError, type Problem } from '@panel/sdk';
 import { Button } from './Button';
 import { TextField } from './Field';
+import { QrCode } from './QrCode';
+import { RecoveryCodes } from './RecoveryCodes';
 import { useProblemMessage } from './States';
 
 export type MfaAnswer = { method: 'totp'; code: string } | { method: 'recovery_code'; code: string };
@@ -18,7 +21,8 @@ export type MfaAnswer = { method: 'totp'; code: string } | { method: 'recovery_c
 export interface SignInFlowProps {
   title: ReactNode;
   onPassword: (email: string, password: string) => Promise<void>;
-  onMfa: (challengeId: string, answer: MfaAnswer) => Promise<void>;
+  /** 第二步。返回恢复码（首次绑定 TOTP 时）则先展示恢复码。 */
+  onMfa: (challengeId: string, answer: MfaAnswer) => Promise<void | { recoveryCodes?: string[] }>;
   onSignedIn: () => void;
 }
 
@@ -26,16 +30,18 @@ interface Challenge {
   id: string;
   methods: string[];
   enrollmentSecret?: string;
+  enrollmentUri?: string;
 }
 
 function challengeOf(p: Problem): Challenge | null {
   if (p.code !== 'mfa_required' || typeof p.body.challenge_id !== 'string') return null;
   const methods = Array.isArray(p.body.methods) ? p.body.methods.filter((m): m is string => typeof m === 'string') : [];
-  const enrollment = p.body.totp_enrollment as { secret?: unknown } | undefined;
+  const enrollment = p.body.totp_enrollment as { secret?: unknown; otpauth_uri?: unknown } | undefined;
   return {
     id: p.body.challenge_id,
     methods,
     ...(typeof enrollment?.secret === 'string' ? { enrollmentSecret: enrollment.secret } : {}),
+    ...(typeof enrollment?.otpauth_uri === 'string' ? { enrollmentUri: enrollment.otpauth_uri } : {}),
   };
 }
 
@@ -141,8 +147,9 @@ function MfaStep({
     <form noValidate onSubmit={submit} className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">{t('sign_in.mfa_title')}</h2>
       {challenge.enrollmentSecret ? (
-        <div className="flex flex-col gap-1 text-sm">
+        <div className="flex flex-col gap-2 text-sm">
           <p>{t('sign_in.enroll_hint')}</p>
+          {challenge.enrollmentUri && <QrCode value={challenge.enrollmentUri} label={t('sign_in.enroll_qr')} />}
           <p>
             {t('sign_in.enroll_secret')}: <code className="font-mono break-all select-all">{challenge.enrollmentSecret}</code>
           </p>
@@ -189,13 +196,15 @@ function MfaStep({
 
 export function SignInFlow({ title, onPassword, onMfa, onSignedIn }: SignInFlowProps) {
   const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
 
   // 返回 null 表示已处理（成功或进入下一步）；返回 Problem 由表单显示。
-  const run = async (fn: () => Promise<void>): Promise<Problem | null> => {
+  const run = async (fn: () => Promise<void | { recoveryCodes?: string[] }>): Promise<Problem | null> => {
     try {
-      await fn();
-      onSignedIn();
+      const r = await fn();
+      if (r?.recoveryCodes?.length) setRecoveryCodes(r.recoveryCodes);
+      else onSignedIn();
       return null;
     } catch (e) {
       if (!isProblemError(e)) throw e;
@@ -213,7 +222,9 @@ export function SignInFlow({ title, onPassword, onMfa, onSignedIn }: SignInFlowP
       <h1 ref={heading} tabIndex={-1} className="text-xl font-semibold">
         {title}
       </h1>
-      {challenge ? (
+      {recoveryCodes ? (
+        <RecoveryCodes codes={recoveryCodes} onDone={onSignedIn} />
+      ) : challenge ? (
         <MfaStep
           challenge={challenge}
           onSubmit={(a) => run(() => onMfa(challenge.id, a))}

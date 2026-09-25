@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // 管理员登录必须完成二次验证（AUTH-21）：提交密码后接口总是返回 mfa_required，由 SignInFlow 进入第二步。
+// 首次登录同时绑定 TOTP，成功响应带恢复码，由 SignInFlow 展示后再进入后台。
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouteContext, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { unwrap } from '@panel/sdk';
 import { AuthLayout, SignInFlow, type MfaAnswer } from '@panel/ui';
+import { staffMeQuery } from '../queries';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -18,10 +20,11 @@ export function LoginPage() {
   };
   const onMfa = async (challenge_id: string, a: MfaAnswer) => {
     const body = a.method === 'totp' ? { challenge_id, totp_code: a.code } : { challenge_id, recovery_code: a.code };
-    await unwrap(api.POST('/v1/sessions', { body }));
+    const session = await unwrap(api.POST('/v1/sessions', { body }));
+    queryClient.setQueryData(staffMeQuery(api).queryKey, session.staff);
+    return { recoveryCodes: session.recovery_codes };
   };
   const onSignedIn = () => {
-    void queryClient.invalidateQueries({ queryKey: ['staff', 'me'] });
     void navigate({ href: search.redirect ?? '/', replace: true });
   };
 
