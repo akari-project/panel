@@ -132,46 +132,74 @@ func (s *Service) Activate(ctx context.Context, account, sid uuid.UUID, code str
 			return nil, apierr.InvalidState
 		}
 	}
-	step, ok := Match(secret, code, s.Clock.Now(), nil)
-	if !ok {
-		return nil, apierr.Invalid(apierr.Field("totp_code", "incorrect"))
-	}
-	codes, hashes, err := newRecoveryCodes()
-	if err != nil {
-		return nil, err
-	}
-	enc, err := s.Keys.Seal(secret, secretAD(account))
-	if err != nil {
-		return nil, err
-	}
+	var codes []string
 	var revoked []uuid.UUID
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
-		q := sqlc.New(tx)
-		if _, err := q.GetTotp(ctx, account); err == nil {
-			return apierr.InvalidState
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return err
-		}
-		now := s.Clock.Now()
-		if err := q.InsertTotp(ctx, sqlc.InsertTotpParams{
-			AccountID: account, SecretEnc: enc, RecoveryHashes: hashes, LastUsedStep: &step, EnabledAt: &now,
-		}); err != nil {
-			return err
-		}
-		if revoked, err = q.RevokeConsoleSessions(ctx, sqlc.RevokeConsoleSessionsParams{AccountID: account, Now: &now}); err != nil {
-			return err
-		}
-		return s.notify(ctx, q, account, notify.TemplateMFAEnabled, nil)
+		var err error
+		codes, revoked, err = s.Enable(ctx, sqlc.New(tx), account, secret, code)
+		return err
 	})
-	var pg *pgconn.PgError
-	if errors.As(err, &pg) && pg.Code == "23505" {
-		return nil, apierr.InvalidState // 并发的另一次确认已启用
-	}
 	if err != nil {
 		return nil, err
 	}
 	_ = s.kvDo(ctx, s.KV.B().Del().Key(enrollmentKey(account)).Build())
 	return codes, s.afterRevoke(ctx, revoked)
+}
+
+// ErrIncorrect 表示验证码不正确（Enable）。
+var ErrIncorrect = apierr.Invalid(apierr.Field("totp_code", "incorrect"))
+
+// Enable 在调用方的事务中用一次验证码确认密钥并启用 TOTP，生成恢复码（AUTH-11）：
+// 同时吊销该账号的管理会话（AUTH-21）并写入安全通知（OPS-04），返回恢复码明文与被吊销的会话。
+// 调用方提交后把会话写入吊销集合。验证码不正确返回 ErrIncorrect；已启用返回 409 invalid_state。
+// 用于确认绑定（Activate）与管理员首次登录时的绑定（AUTH-21）。
+func (s *Service) Enable(ctx context.Context, q *sqlc.Queries, account uuid.UUID, secret []byte, code string) ([]string, []uuid.UUID, error) {
+	step, ok := Match(secret, code, s.Clock.Now(), nil)
+	if !ok {
+		return nil, nil, ErrIncorrect
+	}
+	codes, hashes, err := newRecoveryCodes()
+	if err != nil {
+		return nil, nil, err
+	}
+	enc, err := s.Keys.Seal(secret, secretAD(account))
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := q.GetTotp(ctx, account); err == nil {
+		return nil, nil, apierr.InvalidState
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, err
+	}
+	now := s.Clock.Now()
+	if err := q.InsertTotp(ctx, sqlc.InsertTotpParams{
+		AccountID: account, SecretEnc: enc, RecoveryHashes: hashes, LastUsedStep: &step, EnabledAt: &now,
+	}); err != nil {
+		var pg *pgconn.PgError
+		if errors.As(err, &pg) && pg.Code == "23505" {
+			return nil, nil, apierr.InvalidState // 并发的另一次确认已启用
+		}
+		return nil, nil, err
+	}
+	revoked, err := q.RevokeConsoleSessions(ctx, sqlc.RevokeConsoleSessionsParams{AccountID: account, Now: &now})
+	if err != nil {
+		return nil, nil, err
+	}
+	return codes, revoked, s.notify(ctx, q, account, notify.TemplateMFAEnabled, nil)
+}
+
+// NewSecret 生成 TOTP 密钥，返回原始密钥与验证器应用使用的 Base32 与 otpauth URI。
+func (s *Service) NewSecret(email string) (secret []byte, encoded, uri string, err error) {
+	secret = make([]byte, SecretSize)
+	if _, err := rand.Read(secret); err != nil {
+		return nil, "", "", err
+	}
+	return secret, EncodeSecret(secret), URI(s.Issuer, email, secret), nil
+}
+
+// CancelEnrollment 作废进行中的绑定（待确认的密钥，AUTH-11）。
+func (s *Service) CancelEnrollment(ctx context.Context, account uuid.UUID) error {
+	return s.kvDo(ctx, s.KV.B().Del().Key(enrollmentKey(account)).Build())
 }
 
 // Disable 停用 TOTP（调用方已检查重新验证，AUTH-23）。管理员不能停用（AUTH-12）。
