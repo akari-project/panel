@@ -6,7 +6,7 @@
 // 产生副作用的 POST 在一次确认内使用同一个 Idempotency-Key，请求层重试时原样携带（CONV-12）。
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouteContext } from '@tanstack/react-router';
-import { forwardRef, useState, type ReactNode } from 'react';
+import { forwardRef, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -23,6 +23,19 @@ export const reasonSchema = z
 
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
+}
+
+/**
+ * 按请求体取幂等键：请求体与上次相同时沿用上次的键（重复提交与重试得到同一结果），
+ * 不同时换新键——服务端缓存 4xx 响应，改了内容还用旧键会得到 422 idempotency_key_reused（CONV-12）。
+ */
+export function useIdempotencyKey() {
+  const last = useRef<{ body: string; key: string } | null>(null);
+  return (body: unknown): string => {
+    const text = JSON.stringify(body);
+    if (last.current?.body !== text) last.current = { body: text, key: newIdempotencyKey() };
+    return last.current.key;
+  };
 }
 
 /** DELETE 请求的原因请求头（CON-03）。 */

@@ -27,7 +27,7 @@ import {
   SensitiveConfirm,
   auditReasonHeader,
   handleSensitiveError,
-  newIdempotencyKey,
+  useIdempotencyKey,
   reasonSchema,
   useSensitive,
 } from '../sensitive';
@@ -178,7 +178,7 @@ function RoleForm({ role, onClose }: { role?: Role | undefined; onClose: () => v
   const labels = useLabels();
   const sensitive = useSensitive();
   const [problem, setProblem] = useState<Problem | null>(null);
-  const [idempotencyKey] = useState(newIdempotencyKey);
+  const idempotencyKey = useIdempotencyKey();
   // 翻译键可能来自 admin（roles.name_format）或 common（validation.*、field_errors.*）命名空间。
   const msg = (k: string | undefined) => (k ? (k.startsWith('roles.') ? t(k) : tc(k)) : undefined);
   const { register, control, handleSubmit, setError, formState } = useForm<RoleValues>({
@@ -208,10 +208,11 @@ function RoleForm({ role, onClose }: { role?: Role | undefined; onClose: () => v
             }),
           );
         } else {
+          const body = { name: v.name, description, permissions, reason: v.reason.trim() };
           await unwrap(
             api.POST('/v1/roles', {
-              params: { header: { 'Mfa-Assertion': assertion, 'Idempotency-Key': idempotencyKey } },
-              body: { name: v.name, description, permissions, reason: v.reason.trim() },
+              params: { header: { 'Mfa-Assertion': assertion, 'Idempotency-Key': idempotencyKey(body) } },
+              body,
             }),
           );
         }

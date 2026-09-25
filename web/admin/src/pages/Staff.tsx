@@ -18,7 +18,7 @@ import {
   SensitiveConfirm,
   auditReasonHeader,
   handleSensitiveError,
-  newIdempotencyKey,
+  useIdempotencyKey,
   reasonSchema,
   useSensitive,
 } from '../sensitive';
@@ -208,8 +208,8 @@ function InviteForm({ onClose, onInvited }: { onClose: () => void; onInvited: (e
   const queryClient = useQueryClient();
   const sensitive = useSensitive();
   const [problem, setProblem] = useState<Problem | null>(null);
-  // 同一次邀请的重试（包括重新验证后的自动重试）使用同一个幂等键（CONV-12）。
-  const [idempotencyKey] = useState(newIdempotencyKey);
+  // 同一内容的重复提交使用同一个幂等键；请求层在重新验证后的自动重试也沿用它（CONV-12）。
+  const idempotencyKey = useIdempotencyKey();
   const { register, control, handleSubmit, setError, formState } = useForm<InviteValues>({
     resolver: zodResolver(inviteSchema),
     defaultValues: { email: '', roles: [], reason: '' },
@@ -217,11 +217,12 @@ function InviteForm({ onClose, onInvited }: { onClose: () => void; onInvited: (e
   const submit = handleSubmit(async (v) => {
     setProblem(null);
     try {
+      const body = { email: v.email, roles: v.roles, reason: v.reason.trim() };
       await sensitive((assertion) =>
         unwrap(
           api.POST('/v1/staff-invitations', {
-            params: { header: { 'Mfa-Assertion': assertion, 'Idempotency-Key': idempotencyKey } },
-            body: { email: v.email, roles: v.roles, reason: v.reason.trim() },
+            params: { header: { 'Mfa-Assertion': assertion, 'Idempotency-Key': idempotencyKey(body) } },
+            body,
           }),
         ),
       );

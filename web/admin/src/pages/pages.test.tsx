@@ -260,6 +260,8 @@ describe('接受邀请（AUTH-22）', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('已加入管理后台');
     const posts = server.called('POST', '/v1/staff-invitations/acceptance');
     expect(posts.map((p) => p.body)).toEqual([{ token: 'inv_abc' }, { token: 'inv_abc', password: 'correct-horse-battery' }]);
+    // 请求体不同，幂等键也不同：服务端缓存了第一次的 400（CONV-12）。
+    expect(posts[1]!.headers.get('Idempotency-Key')).not.toBe(posts[0]!.headers.get('Idempotency-Key'));
   });
 
   it('令牌过期与状态不允许使用专门文案', async () => {

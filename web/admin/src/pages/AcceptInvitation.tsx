@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { isProblemError, unwrap, type Problem } from '@panel/sdk';
 import { AuthLayout, Button, ProblemAlert, TextField, applyFieldErrors } from '@panel/ui';
-import { newIdempotencyKey } from '../sensitive';
+import { useIdempotencyKey } from '../sensitive';
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
@@ -76,7 +76,7 @@ function AcceptForm({ token, onAccepted }: { token: string; onAccepted: () => vo
   const { api } = useRouteContext({ from: '__root__' });
   const [problem, setProblem] = useState<Problem | null>(null);
   const [needsPassword, setNeedsPassword] = useState(false);
-  const [idempotencyKey] = useState(newIdempotencyKey);
+  const idempotencyKey = useIdempotencyKey();
   const { register, handleSubmit, setError, formState } = useForm<{ password: string }>({
     resolver: zodResolver(schema),
     defaultValues: { password: '' },
@@ -85,10 +85,11 @@ function AcceptForm({ token, onAccepted }: { token: string; onAccepted: () => vo
   const submit = handleSubmit(async ({ password }) => {
     setProblem(null);
     try {
+      const body = { token, ...(password ? { password } : {}) };
       await unwrap(
         api.POST('/v1/staff-invitations/acceptance', {
-          params: { header: { 'Idempotency-Key': idempotencyKey } },
-          body: { token, ...(password ? { password } : {}) },
+          params: { header: { 'Idempotency-Key': idempotencyKey(body) } },
+          body,
         }),
       );
     } catch (e) {
