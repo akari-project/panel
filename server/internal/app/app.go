@@ -27,6 +27,7 @@ import (
 	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/config"
+	"github.com/akari-project/panel/server/internal/consoleapi"
 	"github.com/akari-project/panel/server/internal/db"
 	"github.com/akari-project/panel/server/internal/httpx"
 	"github.com/akari-project/panel/server/internal/idempotency"
@@ -202,7 +203,6 @@ func (d Deps) serve(ctx context.Context, log *slog.Logger, role, addr string, h 
 }
 
 // apiHandler 是 api 角色：/healthz、两个前端，以及各自前缀下的客户端接口与管理接口。
-// 管理接口在 M1-02 实现（spec/31），目前返回 404 not_found。
 func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handler, error) {
 	if d.KV == nil || d.Tokens == nil || d.Keys == nil {
 		return nil, errors.New("api: valkey.url, PANEL_TOKEN_KEY and PANEL_MASTER_KEY are required")
@@ -216,7 +216,7 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	outbox := notify.Outbox{Keys: d.Keys, Clock: d.Clock}
 	sessions := &session.Service{
 		Pool: d.Pool, KV: d.KV, Clock: d.Clock, Keys: d.Keys, Tokens: d.Tokens, Revocations: revocations, Limiter: limiter,
-		Outbox: outbox,
+		Outbox: outbox, Log: d.Log,
 	}
 	sessions.MFA = &mfa.Service{
 		Pool: d.Pool, KV: d.KV, Clock: d.Clock, Keys: d.Keys, Outbox: outbox, Issuer: d.Config.Site.Name,
@@ -245,12 +245,31 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 			APIEndpoints: apiEndpoints(d.Config),
 		},
 	})
+	adminURL := d.Config.UI.Admin.URL()
+	if adminURL == "" {
+		d.Log.Warn("ui.admin.public_url is not set and ui.admin.hosts is not a single host: staff invitations are unavailable (spec/10 AUTH-22)")
+	}
+	console := consoleapi.New(consoleapi.Deps{
+		Log:            d.Log,
+		Clock:          d.Clock,
+		Pool:           d.Pool,
+		Keys:           d.Keys,
+		Tokens:         d.Tokens,
+		Revocations:    revocations,
+		Limiter:        limiter,
+		Proxies:        proxies,
+		IdempotencyKey: d.Keys.Derive("idempotency-request-hash"),
+		Sessions:       sessions,
+		Outbox:         outbox,
+		Password:       password.DefaultParams,
+		AdminURL:       adminURL,
+	})
 	ui, err := webui.New(webui.Options{
 		Assets:    d.Assets,
 		Portal:    d.Config.UI.Portal,
 		Admin:     d.Config.UI.Admin,
 		PortalAPI: client,
-		AdminAPI:  http.HandlerFunc(httpx.NotFound),
+		AdminAPI:  console,
 		SiteName:  d.Config.Site.Name,
 		SourceURL: d.Config.Site.SourceURL,
 		Commit:    d.Commit,

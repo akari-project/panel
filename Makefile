@@ -29,9 +29,9 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 PKG_BUILDINFO := github.com/akari-project/panel/server/internal/buildinfo
 LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Commit=$(COMMIT)
 
-GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen
+GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen $(SERVER)/internal/consoleapi/gen
 
-.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi check-spec-version check-generated test test-property e2e e2e-portal conformance lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi gen-consoleapi check-spec-version check-generated test test-property e2e e2e-portal e2e-admin conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -58,7 +58,7 @@ embed: web-build
 
 ## 生成 ---------------------------------------------------------------
 
-gen: gen-sqlc gen-clientapi
+gen: gen-sqlc gen-clientapi gen-consoleapi
 
 # sqlc：SQL 在 server/internal/db/queries，生成代码在 server/internal/db/sqlc（spec/41）。
 gen-sqlc:
@@ -74,6 +74,16 @@ gen-clientapi:
 	$(OAPI_CODEGEN) -config internal/clientapi/oapi-codegen.yaml "$$tmp/client.yaml" && \
 	{ printf '// SPDX-License-Identifier: AGPL-3.0-or-later\n'; cat internal/clientapi/gen/api.gen.go; } > "$$tmp/api.gen.go" && \
 	mv "$$tmp/api.gen.go" internal/clientapi/gen/api.gen.go
+
+# 管理接口（spec/31）：与客户端接口相同的流程，输出在 server/internal/consoleapi/gen。
+gen-consoleapi:
+	cd $(SERVER) && go mod download github.com/akari-project/panel-spec && \
+	spec="$$(go list -m -f '{{.Dir}}' github.com/akari-project/panel-spec)/openapi/console/v1.yaml" && \
+	tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT && \
+	go run ./tools/oapiprep -spec "$$spec" -out "$$tmp/console.yaml" -meta internal/consoleapi/gen/opmeta.gen.go && \
+	$(OAPI_CODEGEN) -config internal/consoleapi/oapi-codegen.yaml "$$tmp/console.yaml" && \
+	{ printf '// SPDX-License-Identifier: AGPL-3.0-or-later\n'; cat internal/consoleapi/gen/api.gen.go; } > "$$tmp/api.gen.go" && \
+	mv "$$tmp/api.gen.go" internal/consoleapi/gen/api.gen.go
 
 # 后端（server/go.mod）与前端（web/openapi/lock.json）必须使用同一版本的 panel-spec 契约。
 check-spec-version:
@@ -110,6 +120,12 @@ e2e:
 e2e-portal: web-build
 	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
 	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_01_PortalPlaywright ./e2e/portal/
+
+# 管理后台在真实控制面上的 Playwright 测试（M1-02）：与 e2e-portal 相同的环境，另以 panel admin create --password-stdin
+# 创建首个超级管理员，运行 web/e2e/real 中的 m1-02 测试（环境变量见 server/e2e/admin）。
+e2e-admin: web-build
+	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
+	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_02_AdminPlaywright ./e2e/admin/
 
 # 协议一致性套件（spec/20 20.6）。对真实 Agent 运行：
 #   make conformance CONFORMANCE_AGENT=exec CONFORMANCE_AGENT_CMD='...'（见 server/e2e/conformance/README.md）
@@ -175,7 +191,7 @@ check-embed:
 
 ## CI -----------------------------------------------------------------
 
-ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal
+ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal e2e-admin
 
 clean:
 	rm -rf $(BIN)

@@ -25,12 +25,3 @@ RETURNING id;
 -- name: InsertOutboxEvent :one
 INSERT INTO outbox (topic, payload, schema_version) VALUES (sqlc.arg(topic), sqlc.arg(payload), sqlc.arg(schema_version))
 RETURNING id;
-
--- name: InsertReasonText :one
-INSERT INTO reason_texts (account_id, body) VALUES (sqlc.narg(account_id), sqlc.arg(body))
-RETURNING id;
-
--- name: InsertAuditLog :exec
-INSERT INTO audit_logs (actor_id, action, target_type, target_id, diff, request_id, reason_id)
-VALUES (sqlc.narg(actor_id), sqlc.arg(action), sqlc.arg(target_type), sqlc.narg(target_id), sqlc.narg(diff),
-        sqlc.narg(request_id), sqlc.narg(reason_id));

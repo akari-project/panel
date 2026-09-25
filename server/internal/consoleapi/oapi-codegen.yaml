@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# oapi-codegen 配置（make gen）。输入是 tools/oapiprep 改写后的 panel-spec 管理接口（spec/31），
+# 输出不手改。include-operation-ids 列出已实现的操作，随各任务增加；未列出的操作在权限校验之后返回 404 not_found。
+package: gen
+generate:
+  std-http-server: true
+  strict-server: true
+  models: true
+compatibility:
+  always-prefix-enum-values: true
+output-options:
+  nullable-type: true
+  overlay:
+    path: internal/consoleapi/overlay.yaml
+  include-operation-ids:
+    # 认证（M1-02）
+    - createSession
+    - deleteCurrentSession
+    - refreshToken
+    - getCurrentStaff
+    - createStepUp
+    - acceptStaffInvitation
+    # 管理员、邀请、角色（M1-02）
+    - listStaff
+    - getStaff
+    - updateStaff
+    - removeStaff
+    - listStaffInvitations
+    - createStaffInvitation
+    - getStaffInvitation
+    - revokeStaffInvitation
+    - listRoles
+    - createRole
+    - getRole
+    - updateRole
+    - deleteRole
+    # 审计日志（M1-02；导出见 M1-02b）
+    - listAuditLogs
+    - getAuditLog
+output: internal/consoleapi/gen/api.gen.go

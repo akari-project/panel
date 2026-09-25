@@ -5,7 +5,6 @@ package admin
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/mail"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/akari-project/panel/server/internal/account"
+	"github.com/akari-project/panel/server/internal/audit"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/password"
@@ -105,20 +105,12 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		if err != nil {
 			return err
 		}
-		// 审计记录不含邮箱明文（CONV-29）。
-		diff, _ := json.Marshal(map[string]any{"roles": []string{SuperadminRole}})
-		target := res.AccountID.String()
-		// 原因文本放在可变表 reason_texts，审计日志只引用其 ID（CONV-29）。
-		reasonID, err := q.InsertReasonText(ctx, sqlc.InsertReasonTextParams{AccountID: &res.AccountID, Body: "panel admin create"})
-		if err != nil {
-			return err
-		}
-		return q.InsertAuditLog(ctx, sqlc.InsertAuditLogParams{
-			Action:     "staff.create",
-			TargetType: "account",
-			TargetID:   &target,
-			Diff:       diff,
-			ReasonID:   &reasonID,
+		// 审计记录不含邮箱明文；原因写入 reason_texts，审计日志只引用其 ID（CONV-29）。
+		// 没有请求，request_id 为生成的 UUIDv7，操作者为空（AUTH-18）。
+		return audit.Record(ctx, q, audit.Entry{
+			Action: "staff.create", TargetType: "account", TargetID: res.AccountID.String(),
+			Diff:   audit.Values(map[string]any{"roles": []string{SuperadminRole}}),
+			Reason: "panel admin create", ReasonAccount: &res.AccountID,
 		})
 	})
 	if err != nil {

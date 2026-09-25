@@ -362,6 +362,7 @@ type NotificationOutbox struct {
 	LastError          *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+	StaffInvitationID  *uuid.UUID
 }
 
 type NotificationPreference struct {
@@ -576,6 +577,7 @@ type Role struct {
 	IsBuiltin   bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Description *string
 }
 
 type Session struct {
@@ -604,9 +606,10 @@ type Setting struct {
 }
 
 type StaffInvitation struct {
-	ID         uuid.UUID
-	Email      string
-	Role       string
+	ID    uuid.UUID
+	Email string
+	// 废弃：由 staff_invitation_roles 取代，应用不再读写（spec/03 3.6）
+	Role       *string
 	TokenHash  string
 	InviterID  uuid.UUID
 	ExpiresAt  time.Time
@@ -615,6 +618,12 @@ type StaffInvitation struct {
 	RevokedAt  *time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+type StaffInvitationRole struct {
+	StaffInvitationID uuid.UUID
+	Role              string
+	CreatedAt         time.Time
 }
 
 type SupportAttachment struct {

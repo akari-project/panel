@@ -12,6 +12,7 @@ import { ErrorState } from './States';
 import { AppShell } from './Layout';
 import { ConfirmDialog } from './Dialog';
 import { QrCode } from './QrCode';
+import { SignInFlow } from './SignInFlow';
 
 function wrap(children: ReactNode, lng: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({ resources: { 'zh-CN': {}, en: {} }, defaultNS: 'common', lng });
@@ -90,5 +91,54 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('SignInFlow', () => {
+  it('首次登录绑定 TOTP：显示二维码与密钥，成功后先展示恢复码，确认后才完成登录（AUTH-21）', async () => {
+    const onSignedIn = vi.fn();
+    const enrollment = new ProblemError(
+      toProblem(
+        {
+          code: 'mfa_required',
+          challenge_id: 'c1',
+          methods: ['totp'],
+          totp_enrollment: { secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/A:ops?secret=JBSWY3DPEHPK3PXP' },
+        },
+        new Response(null, { status: 401 }),
+      ),
+    );
+    const onMfa = vi.fn(async () => ({ recoveryCodes: ['aaaa-bbbb', 'cccc-dddd'] }));
+    render(
+      wrap(
+        <SignInFlow
+          title="登录"
+          onPassword={async () => {
+            throw enrollment;
+          }}
+          onMfa={onMfa}
+          onSignedIn={onSignedIn}
+        />,
+      ),
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('邮箱'), 'ops@example.com');
+    await user.type(screen.getByLabelText('密码'), 'correct-horse-battery');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+
+    expect(await screen.findByRole('img', { name: '绑定身份验证器的二维码' })).toBeInTheDocument();
+    expect(screen.getByText('JBSWY3DPEHPK3PXP')).toBeInTheDocument();
+    // 绑定时只接受 TOTP，不提供恢复码入口。
+    expect(screen.queryByRole('button', { name: '改用恢复码' })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('验证码'), '492871');
+    await user.click(screen.getByRole('button', { name: '验证' }));
+    expect(onMfa).toHaveBeenCalledWith('c1', { method: 'totp', code: '492871' });
+    expect(await screen.findByRole('heading', { name: '请保存恢复码' })).toBeInTheDocument();
+    expect(screen.getByText('cccc-dddd')).toBeInTheDocument();
+    expect(onSignedIn).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '我已保存' }));
+    expect(onSignedIn).toHaveBeenCalledTimes(1);
   });
 });

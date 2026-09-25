@@ -76,13 +76,18 @@ func TestCreateFirstSuperadmin(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT topic, payload FROM outbox`).Scan(&topic, &payload); err != nil || topic != "credential.changed" {
 		t.Errorf("outbox = %q, %v", topic, err)
 	}
-	var diff, reason string
-	if err := pool.QueryRow(ctx, `SELECT a.diff::text, r.body FROM audit_logs a JOIN reason_texts r ON r.id = a.reason_id
-		WHERE a.target_id = $1 AND r.account_id = $2`, res.AccountID.String(), res.AccountID).Scan(&diff, &reason); err != nil {
+	var diff, reason, action, requestID string
+	var actor *uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT a.diff::text, r.body, a.action, a.request_id, a.actor_id FROM audit_logs a JOIN reason_texts r ON r.id = a.reason_id
+		WHERE a.target_id = $1 AND r.account_id = $2`, res.AccountID.String(), res.AccountID).Scan(&diff, &reason, &action, &requestID, &actor); err != nil {
 		t.Fatal(err)
 	}
-	if reason != "panel admin create" {
-		t.Errorf("reason = %q", reason)
+	if reason != "panel admin create" || action != "staff.create" || actor != nil {
+		t.Errorf("reason = %q, action = %q, actor = %v", reason, action, actor)
+	}
+	// 命令行没有请求：request_id 为生成的 UUIDv7（AUTH-18）。
+	if id, err := uuid.Parse(requestID); err != nil || id.Version() != 7 {
+		t.Errorf("request_id = %q, want a UUIDv7", requestID)
 	}
 	if strings.Contains(diff+string(payload), "example.com") {
 		t.Error("audit log or outbox contains the email address (CONV-29)")

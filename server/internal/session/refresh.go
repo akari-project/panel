@@ -40,12 +40,13 @@ func RetryCacheKey(refresh string) string { return retryKey(refreshHash(refresh)
 
 // cachedPair 与 Tokens 字段相同，只多了 JSON 标签。
 type cachedPair struct {
-	Access         string    `json:"a"`
-	Refresh        string    `json:"r"`
-	AccessExpires  time.Time `json:"e"`
-	RefreshExpires time.Time `json:"x"`
-	SessionID      uuid.UUID `json:"s"`
-	DeviceID       uuid.UUID `json:"d"`
+	Access          string    `json:"a"`
+	Refresh         string    `json:"r"`
+	AccessExpires   time.Time `json:"e"`
+	RefreshExpires  time.Time `json:"x"`
+	AbsoluteExpires time.Time `json:"b"`
+	SessionID       uuid.UUID `json:"s"`
+	DeviceID        uuid.UUID `json:"d"`
 }
 
 // Refresh 轮换刷新令牌（AUTH-07）：
@@ -55,6 +56,17 @@ type cachedPair struct {
 //   - 其余情况下再次出现已使用的令牌视为泄露，吊销整条会话链；
 //   - 已吊销、已过期、账号不在正常状态或设备已吊销：invalid_grant。
 func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (Tokens, error) {
+	return s.refresh(ctx, token.AudienceClient, refresh, ipPrefix, ua)
+}
+
+// ConsoleRefresh 轮换管理会话的刷新令牌（AUTH-21）：规则与 Refresh 相同，空闲 30 分钟失效，
+// 绝对失效时间继承自登录时的 12 小时。客户端会话的刷新令牌在这里无效，反之亦然。
+// 管理会话只能由完成二次验证的登录建立，因此轮换后的访问令牌同样带 amr（pwd、otp）。
+func (s *Service) ConsoleRefresh(ctx context.Context, refresh, ipPrefix, ua string) (Tokens, error) {
+	return s.refresh(ctx, token.AudienceConsole, refresh, ipPrefix, ua)
+}
+
+func (s *Service) refresh(ctx context.Context, aud token.Audience, refresh, ipPrefix, ua string) (Tokens, error) {
 	if refresh == "" {
 		return Tokens{}, &OAuthError{Code: "invalid_request"}
 	}
@@ -78,6 +90,11 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 		if sess.RevokedAt != nil {
 			return ErrInvalidGrant
 		}
+		// 两种会话的刷新令牌只能在各自的接口使用（AUTH-21）：先于重试窗口与泄露判定检查，
+		// 另一接口上出现的令牌既不能取得缓存的令牌对，也不能触发对方会话链的吊销。
+		if sess.Audience != string(aud) {
+			return ErrInvalidGrant
+		}
 		if sess.UsedAt != nil {
 			if now.Sub(*sess.UsedAt) < RetryWindow {
 				child, err := q.ChildSession(ctx, &sess.ID)
@@ -93,24 +110,26 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 			revoked, err = revokeChain(ctx, q, sess.ID, now)
 			return err
 		}
-		if sess.Audience != string(token.AudienceClient) {
-			return ErrInvalidGrant // 管理会话的刷新令牌只能在管理接口使用（AUTH-21）
-		}
 		absolute := sess.ExpiresAt
 		if sess.AbsoluteExpiresAt != nil {
 			absolute = *sess.AbsoluteExpiresAt
 		}
-		if !now.Before(sess.ExpiresAt) || !now.Before(absolute) || sess.AccountStatus != "active" ||
-			sess.DeviceRevokedAt != nil || sess.DeviceID == nil {
+		if !now.Before(sess.ExpiresAt) || !now.Before(absolute) || sess.AccountStatus != "active" || sess.DeviceRevokedAt != nil {
 			return ErrInvalidGrant
+		}
+		idle, device, amr := ClientIdle, uuid.Nil, []string(nil)
+		if aud == token.AudienceConsole {
+			idle, amr = ConsoleIdle, ConsoleAMR
+		} else if sess.DeviceID == nil {
+			return ErrInvalidGrant
+		} else {
+			device = *sess.DeviceID
 		}
 		if err := q.MarkSessionUsed(ctx, sqlc.MarkSessionUsedParams{ID: sess.ID, Now: &now}); err != nil {
 			return err
 		}
 		parent = sess.ID
-		idle := ClientIdle
-		out, err = s.newSession(ctx, q, sess.AccountID, *sess.DeviceID, token.Audience(sess.Audience), &sess.ID,
-			ua, ipPrefix, idle, absolute, nil)
+		out, err = s.newSession(ctx, q, sess.AccountID, device, aud, &sess.ID, ua, ipPrefix, idle, absolute, amr)
 		if err != nil {
 			return err
 		}
@@ -134,7 +153,9 @@ func (s *Service) Refresh(ctx context.Context, refresh, ipPrefix, ua string) (To
 	case out.Access == "":
 		return Tokens{}, ErrInvalidGrant
 	}
-	s.carryReauth(ctx, parent, out.SessionID)
+	if aud == token.AudienceClient {
+		s.carryReauth(ctx, parent, out.SessionID)
+	}
 	return out, nil
 }
 
