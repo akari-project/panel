@@ -318,3 +318,5 @@ func (e *env) role(t *testing.T, name string, perms ...string) string {
 	}
 	return roleETag(updated)
 }
+
+var jsonUnmarshal = json.Unmarshal
