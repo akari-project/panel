@@ -248,7 +248,7 @@ func TestConfigIssuedAtCorrupt(t *testing.T) {
 	ctx := context.Background()
 	for _, v := range []string{
 		`"not-a-time"`, `null`, `"now"`, `"epoch"`, `"infinity"`, `"2026-10-01T10:00:00"`, `"2026-10-01 10:00:00Z"`,
-		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `1790000000`, `{}`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `"2026-02-30T10:00:00Z"`, `1790000000`, `{}`,
 	} {
 		e.setSetting(t, "config_issued_at", v)
 		if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err == nil {
@@ -267,13 +267,15 @@ func TestConfigIssuedAtCorrupt(t *testing.T) {
 	}
 }
 
-// spec/03 3.6：config_issued_at 的存储值异常时 GET /v1/config 按缺键处理：用当前时刻覆盖并下发合法的
+// spec/03 3.6：config_issued_at 的存储值异常（不是 UTC 的 YYYY-MM-DDTHH:MM:SSZ 字符串，含带偏移的时刻，或格式
+// 匹配但不是真实的日期时间）时 GET /v1/config 按缺键处理：用当前时刻覆盖并下发合法的
 // issued_at，不返回 500；warn 日志只记键名。
 func TestConfigIssuedAtInvalidStored(t *testing.T) {
 	e := newEnv(t)
 	var logs bytes.Buffer
 	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
-	for i, v := range []string{`null`, `"now"`, `1790000000`, `"secret-marker"`, `"2026-10-01T10:00:00"`, `"2026-13-01T10:00:00Z"`, `{}`} {
+	for i, v := range []string{`null`, `"now"`, `1790000000`, `"secret-marker"`, `"2026-10-01T10:00:00"`, `"2026-13-01T10:00:00Z"`, `{}`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00+00:00"`, `"2026-13-45T10:00:00Z"`, `"2026-02-30T10:00:00Z"`, `"2026-10-01T25:00:00Z"`} {
 		logs.Reset()
 		e.clk.Advance(time.Hour)
 		want := t0.Add(time.Duration(i+1) * time.Hour).UTC().Format(time.RFC3339)
