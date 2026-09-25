@@ -4,7 +4,6 @@ package clientapi
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,19 +41,16 @@ type configCache struct {
 	etag    string
 }
 
-// featuresWarn 记录最近一次告警的 settings 键 features 原始值的摘要：同一份异常值每个进程只告警一次，
-// 不保存原文（spec/03 3.6、CONV-24）。值恢复合法后清零，之后再次出现同一份异常值时重新告警。
-type featuresWarn struct {
-	mu   sync.Mutex
-	last [sha256.Size]byte
-}
-
 // GetConfig 返回已签名的客户端启动配置（spec/30 API-11）。签名确定，ETag 为文档字节的 SHA-256，
 // 各副本一致，不需要共享缓存；响应带 Cache-Control: no-cache，由 If-None-Match 返回 304（CONV-13）。
 func (s *Server) GetConfig(ctx context.Context, req gen.GetConfigRequestObject) (gen.GetConfigResponseObject, error) {
 	if s.d.Config.Signer == nil {
 		// cmd/panel 在 api 角色缺少 PANEL_CONFIG_KEY 时拒绝启动，这里只防御测试等直接构造的情形。
 		return nil, errors.New("clientapi: PANEL_CONFIG_KEY not configured")
+	}
+	if s.d.Accounts == nil {
+		// 有效注册策略由注册服务计算（AUTH-02）；app 总是注入，这里只防御直接构造的情形。
+		return nil, errors.New("clientapi: account service not configured")
 	}
 	payload, err := s.configPayload(ctx)
 	if err != nil {
@@ -104,27 +100,26 @@ func (s *Server) signConfig(payload map[string]any) ([]byte, string, error) {
 	return d.Bytes, d.ETag, nil
 }
 
-// configPayload 读取 payload 的输入（API-11）。
+// configPayload 读取 payload 的输入（API-11）。各项都在同一个 q 上读取；settings 值异常时按 spec/03 3.6
+// 取有效值，永不因此失败。
 func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	q := sqlc.New(s.d.Pool)
-	policy := "open"
-	if err := setting(ctx, q, "registration_policy", &policy); err != nil {
+	// 有效注册策略与注册的服务端校验一致（AUTH-02）：任一注册控制键值异常时为 closed，告警由注册服务记录。
+	rc, err := s.d.Accounts.RegistrationControl(ctx, q)
+	if err != nil {
 		return nil, err
-	}
-	if policy != "open" && policy != "invite_only" && policy != "closed" {
-		policy = "open" // 不签发契约之外的取值；服务端注册时另行校验（AUTH-02）
 	}
 	raw, err := q.GetSetting(ctx, "features")
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 	effective, invalid := clientconfig.Features(raw, clientconfig.ImplementedModules())
-	s.warnFeatures(ctx, raw, invalid)
+	s.warnSetting(ctx, "features", raw, invalid)
 	features := map[string]any{}
 	for m, on := range effective {
 		features[m] = on
 	}
-	minVersion, err := minVersions(ctx, q)
+	minVersion, err := s.minVersions(ctx, q)
 	if err != nil {
 		return nil, err
 	}
@@ -143,30 +138,18 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	return map[string]any{
 		"min_version":          mv,
 		"announcement_version": int64(0), // 公告模块实现前为 0（API-11）
-		"registration_policy":  policy,
+		"registration_policy":  rc.Policy,
 		"features":             features,
 		"api_endpoints":        endpoints,
 		"issued_at":            issued,
 	}, nil
 }
 
-// warnFeatures 记录 settings 键 features 中被当作关闭的异常值，只记键名（spec/03 3.6、CONV-24）；
-// invalid 为空（值合法）时清除告警记录。
-func (s *Server) warnFeatures(ctx context.Context, raw []byte, invalid []string) {
-	w := &s.featuresWarn
-	if invalid == nil {
-		w.mu.Lock()
-		w.last = [sha256.Size]byte{}
-		w.mu.Unlock()
-		return
-	}
-	sum := sha256.Sum256(raw)
-	w.mu.Lock()
-	seen := w.last == sum
-	w.last = sum
-	w.mu.Unlock()
-	if !seen {
-		s.d.Log.WarnContext(ctx, "settings features: invalid values treated as disabled", "keys", invalid)
+// warnSetting 记录 settings 键 key 中按 spec/03 3.6 取有效值的异常，只记键名（CONV-24）；同一份异常值
+// 每个进程只告警一次，invalid 为空（值合法）时清除该键的告警记录。
+func (s *Server) warnSetting(ctx context.Context, key string, raw []byte, invalid []string) {
+	if s.settingsWarn.Changed(key, raw, invalid != nil) {
+		s.d.Log.WarnContext(ctx, "settings: invalid values ignored", "keys", invalid)
 	}
 }
 
@@ -193,19 +176,16 @@ func (s *Server) issuedAt(ctx context.Context, q *sqlc.Queries) (string, error) 
 	return v, nil
 }
 
-// minVersions 读取 settings 键 min_version，忽略未知平台与格式错误的版本（保存时已校验，spec/03 3.6）。
-func minVersions(ctx context.Context, q *sqlc.Queries) (map[string]string, error) {
-	stored := map[string]string{}
-	if err := setting(ctx, q, "min_version", &stored); err != nil {
+// minVersions 返回 settings 键 min_version 的有效值（spec/03 3.6、API-11），GET /v1/config 与 426 判断
+// （API-03）共用：值不是对象时视为 {}，格式错误的版本与未知平台忽略。
+func (s *Server) minVersions(ctx context.Context, q *sqlc.Queries) (map[string]string, error) {
+	raw, err := q.GetSetting(ctx, "min_version")
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	out := map[string]string{}
-	for _, p := range clientconfig.Platforms {
-		if v, ok := stored[p]; ok && clientconfig.ValidVersion(v) {
-			out[p] = v
-		}
-	}
-	return out, nil
+	versions, invalid := clientconfig.MinVersion(raw)
+	s.warnSetting(ctx, "min_version", raw, invalid)
+	return versions, nil
 }
 
 // setting 把设置项解码到 dst；不存在时 dst 保持默认值。
@@ -243,7 +223,7 @@ func (s *Server) checkVersion(ctx context.Context, r *http.Request) error {
 	if !ok || c.Platform == "" {
 		return nil
 	}
-	min, err := minVersions(ctx, sqlc.New(s.d.Pool))
+	min, err := s.minVersions(ctx, sqlc.New(s.d.Pool))
 	if err != nil {
 		return err
 	}

@@ -9,9 +9,9 @@ package account
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"regexp"
 	"slices"
@@ -25,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/akari-project/panel/server/internal/apierr"
+	"github.com/akari-project/panel/server/internal/clientconfig"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/notify"
@@ -94,6 +95,10 @@ type Service struct {
 	Revoke func(ctx context.Context, tx pgx.Tx, account uuid.UUID) ([]uuid.UUID, error)
 	// AfterRevoke 在事务提交后把会话写入吊销集合。
 	AfterRevoke func(ctx context.Context, sids []uuid.UUID) error
+	// Log 记录 settings 值异常的告警（spec/03 3.6）；为 nil 时不记录。
+	Log *slog.Logger
+
+	warn clientconfig.SettingsWarner
 }
 
 // Registration 是注册请求。
@@ -133,56 +138,35 @@ var localeRE = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$`)
 // ValidLocale 报告 l 是否是合法的 BCP 47 语言标签（宽松校验）。
 func ValidLocale(l string) bool { return len(l) <= 35 && localeRE.MatchString(l) }
 
-func (s *Service) settingString(ctx context.Context, q *sqlc.Queries, key, def string) (string, error) {
-	raw, err := q.GetSetting(ctx, key)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return def, nil
+// RegistrationControl 返回有效的注册控制（spec/10 AUTH-02、spec/03 3.6）：缺键按 open 与空名单；
+// 三个注册控制键中任一值异常时策略为 closed，并记 warn 日志，只记键名（CONV-24），同一份异常值每个进程
+// 只告警一次。q 由调用方提供，使 GET /v1/config 与其他设置在同一个 q 上读取。
+func (s *Service) RegistrationControl(ctx context.Context, q *sqlc.Queries) (clientconfig.RegistrationControl, error) {
+	keys := [3]string{"registration_policy", "email_domain_allowlist", "email_domain_denylist"}
+	var raw [3][]byte
+	for i, k := range keys {
+		v, err := q.GetSetting(ctx, k)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return clientconfig.RegistrationControl{}, err
+		}
+		raw[i] = v
 	}
-	if err != nil {
-		return "", err
+	rc, invalid := clientconfig.Registration(raw[0], raw[1], raw[2])
+	for i, k := range keys {
+		if s.warn.Changed(k, raw[i], slices.Contains(invalid, k)) && s.Log != nil {
+			s.Log.WarnContext(ctx, "settings: invalid value, registration closed", "key", k)
+		}
 	}
-	var v string
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return "", fmt.Errorf("settings %s: %w", key, err)
-	}
-	return v, nil
-}
-
-func (s *Service) settingList(ctx context.Context, q *sqlc.Queries, key string) ([]string, error) {
-	raw, err := q.GetSetting(ctx, key)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var v []string
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil, fmt.Errorf("settings %s: %w", key, err)
-	}
-	return v, nil
-}
-
-// RegistrationPolicy 返回注册策略（spec/03 3.6，默认 open）。
-func (s *Service) RegistrationPolicy(ctx context.Context) (string, error) {
-	return s.settingString(ctx, sqlc.New(s.Pool), "registration_policy", "open")
+	return rc, nil
 }
 
 // checkDomain 按黑白名单检查邮箱域名（AUTH-02）：在黑名单中即拒绝；白名单非空时必须在白名单中。
-func (s *Service) checkDomain(ctx context.Context, q *sqlc.Queries, email string) error {
+func checkDomain(rc clientconfig.RegistrationControl, email string) error {
 	domain := email[strings.LastIndex(email, "@")+1:]
-	deny, err := s.settingList(ctx, q, "email_domain_denylist")
-	if err != nil {
-		return err
-	}
-	allow, err := s.settingList(ctx, q, "email_domain_allowlist")
-	if err != nil {
-		return err
-	}
 	in := func(list []string) bool {
 		return slices.ContainsFunc(list, func(d string) bool { return strings.EqualFold(strings.TrimSpace(d), domain) })
 	}
-	if in(deny) || (len(allow) > 0 && !in(allow)) {
+	if in(rc.Deny) || (len(rc.Allow) > 0 && !in(rc.Allow)) {
 		return apierr.Invalid(apierr.Field("email", "not_allowed"))
 	}
 	return nil
@@ -238,15 +222,15 @@ func (s *Service) Register(ctx context.Context, in Registration) error {
 		return err
 	}
 	q := sqlc.New(s.Pool)
-	policy, err := s.settingString(ctx, q, "registration_policy", "open")
+	rc, err := s.RegistrationControl(ctx, q)
 	if err != nil {
 		return err
 	}
 	hasInvite := in.InviteCode != nil && strings.TrimSpace(*in.InviteCode) != ""
-	if policy == "closed" || (policy == "invite_only" && !hasInvite) {
+	if rc.Policy == "closed" || (rc.Policy == "invite_only" && !hasInvite) {
 		return apierr.New(403, "registration_closed")
 	}
-	if err := s.checkDomain(ctx, q, email); err != nil {
+	if err := checkDomain(rc, email); err != nil {
 		return err
 	}
 	var referrer *uuid.UUID
