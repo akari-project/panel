@@ -83,7 +83,7 @@ type Server struct {
 	ua     *clientconfig.UserAgent
 	config configCache
 
-	featuresWarn featuresWarn
+	settingsWarn clientconfig.SettingsWarner
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)

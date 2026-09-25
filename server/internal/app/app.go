@@ -225,7 +225,7 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	accounts := &account.Service{
 		Pool: d.Pool, Clock: d.Clock, Keys: d.Keys, Outbox: outbox, Limiter: limiter,
 		Password: password.DefaultParams, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{},
-		PortalURL: portalURL, Revoke: sessions.RevokeAccount, AfterRevoke: sessions.AfterRevoke,
+		PortalURL: portalURL, Revoke: sessions.RevokeAccount, AfterRevoke: sessions.AfterRevoke, Log: d.Log,
 	}
 	client := clientapi.New(clientapi.Deps{
 		Log:            d.Log,

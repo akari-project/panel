@@ -3,12 +3,14 @@
 package clientapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -696,5 +698,76 @@ func TestIdempotencyHandlerRateLimitNotCached(t *testing.T) {
 	// 成功结果按常规缓存：同键再次请求重放 202，不再计入限流。
 	if w := resend(key); w.Code != 202 {
 		t.Fatalf("replay: %d %s", w.Code, w.Body)
+	}
+}
+
+// spec/03 3.6、AUTH-02、API-11：三个注册控制键中任一值异常时，注册返回 403 registration_closed，/v1/config
+// 下发 closed；即使策略为 invite_only 且邀请码有效也一样。缺键按 open 与空名单。warn 日志只记键名（CONV-24）。
+func TestRegistrationSettingsInvalid(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	var logs bytes.Buffer
+	e.accounts.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	e.register(t, "referrer-invalid@example.com", "correct horse battery")
+	var code string
+	if err := e.pool.QueryRow(ctx, `SELECT referral_code FROM accounts WHERE email = 'referrer-invalid@example.com'`).Scan(&code); err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{"registration_policy", "email_domain_allowlist", "email_domain_denylist"}
+	reset := func() {
+		if _, err := e.pool.Exec(ctx, `DELETE FROM settings WHERE key = ANY($1)`, keys); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := 0
+	register := func(invite *string) *httptest.ResponseRecorder {
+		n++
+		m := map[string]any{"email": fmt.Sprintf("invalid-%d@corp.example", n), "password": "correct horse battery"}
+		if invite != nil {
+			m["invite_code"] = *invite
+		}
+		return e.do(post("/v1/accounts", jsonBody(m)))
+	}
+
+	// 缺键：开放注册，空名单。
+	reset()
+	if _, _, _, p := e.getConfig(t, "", ""); p["registration_policy"] != "open" {
+		t.Fatalf("missing keys: %v", p["registration_policy"])
+	}
+	if w := register(nil); w.Code != 202 {
+		t.Fatalf("missing keys: %d %s", w.Code, w.Body)
+	}
+
+	for _, tc := range []struct{ key, value string }{
+		{"registration_policy", `"secret-marker"`},
+		{"registration_policy", `{"secret-marker":1}`},
+		{"registration_policy", `null`},
+		{"email_domain_allowlist", `"secret-marker.example"`},
+		{"email_domain_allowlist", `null`},
+		{"email_domain_allowlist", `["corp.example",1]`},
+		{"email_domain_denylist", `{"secret-marker":true}`},
+		{"email_domain_denylist", `null`},
+		{"email_domain_denylist", `["secret-marker.example",null]`},
+	} {
+		reset()
+		logs.Reset()
+		e.setSetting(t, "registration_policy", `"invite_only"`)
+		e.setSetting(t, tc.key, tc.value)
+		if w := register(&code); w.Code != 403 || problemCode(t, w) != "registration_closed" {
+			t.Errorf("%s=%s: register %d %s", tc.key, tc.value, w.Code, w.Body)
+		}
+		if _, _, _, p := e.getConfig(t, "", ""); p["registration_policy"] != "closed" {
+			t.Errorf("%s=%s: config %v", tc.key, tc.value, p["registration_policy"])
+		}
+		// 注册与 /v1/config 共用告警记录：同一份异常值只告警一次，只记键名。
+		if c := strings.Count(logs.String(), `"key":"`+tc.key+`"`); c != 1 || strings.Contains(logs.String(), "secret-marker") {
+			t.Errorf("%s=%s: logs %s", tc.key, tc.value, logs.String())
+		}
+	}
+
+	// 恢复合法后重新开放。
+	reset()
+	if w := register(nil); w.Code != 202 {
+		t.Fatalf("after recovery: %d %s", w.Code, w.Body)
 	}
 }

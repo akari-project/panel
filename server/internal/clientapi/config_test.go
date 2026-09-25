@@ -248,7 +248,7 @@ func TestConfigIssuedAtCorrupt(t *testing.T) {
 	ctx := context.Background()
 	for _, v := range []string{
 		`"not-a-time"`, `null`, `"now"`, `"epoch"`, `"infinity"`, `"2026-10-01T10:00:00"`, `"2026-10-01 10:00:00Z"`,
-		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `1790000000`, `{}`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `"2026-02-30T10:00:00Z"`, `1790000000`, `{}`,
 	} {
 		e.setSetting(t, "config_issued_at", v)
 		if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err == nil {
@@ -267,12 +267,97 @@ func TestConfigIssuedAtCorrupt(t *testing.T) {
 	}
 }
 
-// settings 中出现契约之外的注册策略时按 open 签发，不下发非法取值。
-func TestConfigRegistrationPolicyFallback(t *testing.T) {
+// spec/03 3.6：config_issued_at 的存储值异常（不是 UTC 的 YYYY-MM-DDTHH:MM:SSZ 字符串，含带偏移的时刻，或格式
+// 匹配但不是真实的日期时间）时 GET /v1/config 按缺键处理：用当前时刻覆盖并下发合法的
+// issued_at，不返回 500；warn 日志只记键名。
+func TestConfigIssuedAtInvalidStored(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	for i, v := range []string{`null`, `"now"`, `1790000000`, `"secret-marker"`, `"2026-10-01T10:00:00"`, `"2026-13-01T10:00:00Z"`, `{}`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00+00:00"`, `"2026-13-45T10:00:00Z"`, `"2026-02-30T10:00:00Z"`, `"2026-10-01T25:00:00Z"`} {
+		logs.Reset()
+		e.clk.Advance(time.Hour)
+		want := t0.Add(time.Duration(i+1) * time.Hour).UTC().Format(time.RFC3339)
+		e.setSetting(t, "config_issued_at", v)
+		code, _, _, p := e.getConfig(t, "", "")
+		if code != 200 || p["issued_at"] != want {
+			t.Errorf("%s: %d issued_at %v, want %s", v, code, p["issued_at"], want)
+		}
+		if !strings.Contains(logs.String(), `"keys":["config_issued_at"]`) || strings.Contains(logs.String(), "secret-marker") {
+			t.Errorf("%s: logs %s", v, logs.String())
+		}
+		// 已纠正：再次请求读到同一值，不再告警。
+		logs.Reset()
+		e.clk.Advance(time.Minute)
+		if _, _, _, p := e.getConfig(t, "", ""); p["issued_at"] != want || logs.Len() != 0 {
+			t.Errorf("%s: second read %v %s", v, p["issued_at"], logs.String())
+		}
+		e.clk.Advance(-time.Minute)
+	}
+}
+
+// 纠正只在存储值仍为读到的异常值时生效，不覆盖并发写入的新值。
+func TestReplaceSettingIfConditional(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	q := sqlc.New(e.pool)
+	e.setSetting(t, "config_issued_at", `"2026-10-01T12:00:00Z"`)
+	n, err := q.ReplaceSettingIf(ctx, sqlc.ReplaceSettingIfParams{Key: "config_issued_at", Value: []byte(`"2026-10-01T10:00:00Z"`), Old: []byte(`null`)})
+	if err != nil || n != 0 {
+		t.Fatalf("replaced a value that changed: %d %v", n, err)
+	}
+	if _, _, _, p := e.getConfig(t, "", ""); p["issued_at"] != "2026-10-01T12:00:00Z" {
+		t.Fatalf("issued_at = %v", p["issued_at"])
+	}
+}
+
+// spec/03 3.6、API-11：registration_policy 为契约之外的取值时有效策略为 closed，与注册的服务端校验一致。
+func TestConfigRegistrationPolicyInvalid(t *testing.T) {
 	e := newEnv(t)
 	e.setSetting(t, "registration_policy", `"members_only"`)
-	if _, _, _, p := e.getConfig(t, "", ""); p["registration_policy"] != "open" {
+	if _, _, _, p := e.getConfig(t, "", ""); p["registration_policy"] != "closed" {
 		t.Fatalf("registration_policy = %v", p["registration_policy"])
+	}
+}
+
+// spec/03 3.6、API-03、API-11：min_version 不是对象时视为 {}；/v1/config 与带自研客户端 User-Agent 的登录
+// 都不因此失败，426 判断使用同一有效值；warn 日志只记键名。
+func TestMinVersionInvalid(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	e.register(t, "mv@example.com", "correct horse battery")
+	login := jsonBody(map[string]any{"email": "mv@example.com", "password": "correct horse battery", "device": webDevice})
+	for _, v := range []string{`"9.9.9-secret-marker"`, `["9.9.9"]`, `null`, `99`} {
+		logs.Reset()
+		e.setSetting(t, "min_version", v)
+		if w := e.do(req{method: "POST", path: "/v1/sessions", body: login, ua: "Akari/0.0.1 (iOS 19.1)"}); w.Code != 201 {
+			t.Errorf("%s: login %d %s", v, w.Code, w.Body)
+		}
+		if w := e.do(req{method: "POST", path: "/v1/sessions/nonces", ua: "Akari/0.0.1 (iOS 19.1)"}); w.Code >= 300 {
+			t.Errorf("%s: nonce %d %s", v, w.Code, w.Body)
+		}
+		if code, _, _, p := e.getConfig(t, "", ""); code != 200 || mustJSON(p["min_version"]) != `{}` {
+			t.Errorf("%s: config %d %v", v, code, p["min_version"])
+		}
+		// 同一份异常值只告警一次（登录与 /v1/config 共用有效值与告警记录）。
+		if n := strings.Count(logs.String(), `"keys":["min_version"]`); n != 1 || strings.Contains(logs.String(), "secret-marker") {
+			t.Errorf("%s: logs %s", v, logs.String())
+		}
+	}
+
+	// 某平台的版本非法时只忽略该平台，其余平台照常检查；日志记 min_version.<平台>。
+	logs.Reset()
+	e.setSetting(t, "min_version", `{"ios":"1.4.0","android":"secret-marker"}`)
+	if w := e.do(req{method: "POST", path: "/v1/sessions", body: login, ua: "Akari/1.3.9 (iOS 19.1)"}); w.Code != 426 {
+		t.Errorf("ios below minimum: %d", w.Code)
+	}
+	if w := e.do(req{method: "POST", path: "/v1/sessions", body: login, ua: "Akari/0.0.1 (Android 16)"}); w.Code != 201 {
+		t.Errorf("android with invalid minimum: %d %s", w.Code, w.Body)
+	}
+	if !strings.Contains(logs.String(), `"keys":["min_version.android"]`) || strings.Contains(logs.String(), "secret-marker") {
+		t.Errorf("logs %s", logs.String())
 	}
 }
 
