@@ -122,3 +122,12 @@ WITH RECURSIVE chain AS (
   SELECT s.id, s.parent_id, chain.depth + 1 FROM sessions s JOIN chain ON s.id = chain.parent_id WHERE chain.depth < 32
 )
 SELECT (count(*) > 0)::bool AS descends FROM chain WHERE chain.id = sqlc.arg(ancestor)::uuid;
+
+-- name: SessionChainRoot :one
+-- 会话所在轮换链的根（AUTH-07）。Mfa-Assertion 绑定会话链，以根会话标识（AUTH-19）。
+WITH RECURSIVE up AS (
+  SELECT id, parent_id FROM sessions WHERE sessions.id = sqlc.arg(id)
+  UNION
+  SELECT s.id, s.parent_id FROM sessions s JOIN up ON s.id = up.parent_id
+)
+SELECT id FROM up WHERE parent_id IS NULL;

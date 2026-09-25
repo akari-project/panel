@@ -85,8 +85,13 @@ func (d *Deliverer) RunOnce(ctx context.Context) (int, error) {
 
 // deliver 投递一条消息并记录结果。只有数据库错误返回 error；投递失败记录在行中。
 func (d *Deliverer) deliver(ctx context.Context, q *sqlc.Queries, row sqlc.ClaimDueNotificationsRow) error {
-	sendErr := d.send(ctx, q, row)
 	now := d.Clock.Now()
+	if row.InvitationClosed {
+		// 邀请已被接受、撤销或已过期：不再投递，按最终失败处理并清除秘密变量（AUTH-22、CONV-31）。
+		class := "invitation_closed"
+		return q.MarkNotificationFailed(ctx, sqlc.MarkNotificationFailedParams{ID: row.ID, Now: &now, LastError: &class})
+	}
+	sendErr := d.send(ctx, q, row)
 	if sendErr == nil {
 		return q.MarkNotificationSent(ctx, sqlc.MarkNotificationSentParams{ID: row.ID, Now: &now})
 	}

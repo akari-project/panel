@@ -486,6 +486,23 @@ func (q *Queries) SessionByRefreshHash(ctx context.Context, refreshTokenHash str
 	return i, err
 }
 
+const sessionChainRoot = `-- name: SessionChainRoot :one
+WITH RECURSIVE up AS (
+  SELECT id, parent_id FROM sessions WHERE sessions.id = $1
+  UNION
+  SELECT s.id, s.parent_id FROM sessions s JOIN up ON s.id = up.parent_id
+)
+SELECT id FROM up WHERE parent_id IS NULL
+`
+
+// 会话所在轮换链的根（AUTH-07）。Mfa-Assertion 绑定会话链，以根会话标识（AUTH-19）。
+func (q *Queries) SessionChainRoot(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, sessionChainRoot, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const sessionDescendsFrom = `-- name: SessionDescendsFrom :one
 WITH RECURSIVE chain AS (
   SELECT id, parent_id, 0 AS depth FROM sessions WHERE sessions.id = $2

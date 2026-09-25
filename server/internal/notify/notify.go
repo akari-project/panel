@@ -32,9 +32,13 @@ var secretAD = []byte("notification_outbox.secret_variables_enc")
 
 // Message 是一条待投递的消息。
 type Message struct {
+	// AccountID 是收件账号；与 StaffInvitationID 二者恰有其一。
 	AccountID uuid.UUID
-	Template  string
-	Locale    string
+	// StaffInvitationID 指定邀请邮件的收件人（收件人可能还没有账号）：投递时从 staff_invitations.email 读取地址，
+	// outbox 不保存邮箱（CONV-29，spec/03 3.6）。
+	StaffInvitationID *uuid.UUID
+	Template          string
+	Locale            string
 	// Vars 为普通变量，明文保存。
 	Vars map[string]string
 	// Secrets 为含令牌、验证码或链接的变量，加密保存（CONV-31）。
@@ -87,10 +91,18 @@ func (o Outbox) Enqueue(ctx context.Context, q *sqlc.Queries, m Message) error {
 	if retry <= 0 || retry > MaxRetry {
 		retry = MaxRetry
 	}
+	if (m.AccountID == uuid.Nil) == (m.StaffInvitationID == nil) {
+		return fmt.Errorf("notify: %s: want exactly one of AccountID and StaffInvitationID", m.Template)
+	}
 	now := o.Clock.Now()
-	id := m.AccountID
+	var account *uuid.UUID
+	if m.AccountID != uuid.Nil {
+		id := m.AccountID
+		account = &id
+	}
 	return q.EnqueueNotification(ctx, sqlc.EnqueueNotificationParams{
-		AccountID:          &id,
+		AccountID:          account,
+		StaffInvitationID:  m.StaffInvitationID,
 		Channel:            "email",
 		Template:           m.Template,
 		Locale:             normalizeLocale(m.Locale),

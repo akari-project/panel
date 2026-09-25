@@ -14,10 +14,14 @@ import (
 
 const claimDueNotifications = `-- name: ClaimDueNotifications :many
 SELECT n.id, n.channel, n.template, n.locale, n.variables, n.secret_variables_enc, n.attempts, n.retry_until,
-       a.email
+       COALESCE(a.email, i.email)::text AS email,
+       (i.id IS NOT NULL AND (i.accepted_at IS NOT NULL OR i.revoked_at IS NOT NULL OR i.expires_at <= $1))::boolean
+         AS invitation_closed
 FROM notification_outbox n
-JOIN accounts a ON a.id = n.account_id
+LEFT JOIN accounts a ON a.id = n.account_id
+LEFT JOIN staff_invitations i ON i.id = n.staff_invitation_id
 WHERE n.sent_at IS NULL AND n.failed_at IS NULL AND n.next_attempt_at <= $1
+  AND (a.id IS NOT NULL OR i.id IS NOT NULL)
 ORDER BY n.next_attempt_at
 LIMIT $2
 FOR UPDATE OF n SKIP LOCKED
@@ -38,9 +42,12 @@ type ClaimDueNotificationsRow struct {
 	Attempts           int32
 	RetryUntil         time.Time
 	Email              string
+	InvitationClosed   bool
 }
 
-// 取出到期的消息并锁定；多个 worker 并行时各取不同的行。收件地址在投递时从账号读取（CONV-29）。
+// 取出到期的消息并锁定；多个 worker 并行时各取不同的行。收件地址在投递时读取，outbox 不保存邮箱（CONV-29）：
+// 账号消息取 accounts.email，邀请邮件取 staff_invitations.email（spec/03 3.6）。
+// invitation_closed：邀请已不是 pending（已接受、已撤销或已过期），不再投递（AUTH-22）。
 func (q *Queries) ClaimDueNotifications(ctx context.Context, arg ClaimDueNotificationsParams) ([]ClaimDueNotificationsRow, error) {
 	rows, err := q.db.Query(ctx, claimDueNotifications, arg.Now, arg.MaxRows)
 	if err != nil {
@@ -60,6 +67,7 @@ func (q *Queries) ClaimDueNotifications(ctx context.Context, arg ClaimDueNotific
 			&i.Attempts,
 			&i.RetryUntil,
 			&i.Email,
+			&i.InvitationClosed,
 		); err != nil {
 			return nil, err
 		}
@@ -73,13 +81,14 @@ func (q *Queries) ClaimDueNotifications(ctx context.Context, arg ClaimDueNotific
 
 const enqueueNotification = `-- name: EnqueueNotification :exec
 
-INSERT INTO notification_outbox (account_id, channel, template, locale, variables, secret_variables_enc, next_attempt_at, retry_until)
-VALUES ($1, $2, $3, $4, $5,
-        $6, $7, $8)
+INSERT INTO notification_outbox (account_id, staff_invitation_id, channel, template, locale, variables, secret_variables_enc, next_attempt_at, retry_until)
+VALUES ($1, $2, $3, $4, $5, $6,
+        $7, $8, $9)
 `
 
 type EnqueueNotificationParams struct {
 	AccountID          *uuid.UUID
+	StaffInvitationID  *uuid.UUID
 	Channel            string
 	Template           string
 	Locale             string
@@ -94,6 +103,7 @@ type EnqueueNotificationParams struct {
 func (q *Queries) EnqueueNotification(ctx context.Context, arg EnqueueNotificationParams) error {
 	_, err := q.db.Exec(ctx, enqueueNotification,
 		arg.AccountID,
+		arg.StaffInvitationID,
 		arg.Channel,
 		arg.Template,
 		arg.Locale,
