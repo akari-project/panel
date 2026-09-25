@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/akari-project/panel/server/internal/clientconfig"
+	"github.com/akari-project/panel/server/internal/db/sqlc"
 )
 
 type signedConfig struct {
@@ -154,6 +155,87 @@ func TestConfigFeaturesTolerant(t *testing.T) {
 		if code, _, _, _ := e.getConfig(t, "", ""); code != 200 || logs.Len() != 0 {
 			t.Errorf("%s: repeated warn %d %s", tc.value, code, logs.String())
 		}
+	}
+}
+
+// API-11：config_issued_at 严格递增，写入 max(当前时刻, 上一次的值 + 1 秒)，秒精度 RFC 3339 UTC。
+func TestConfigIssuedAtStrictlyIncreasing(t *testing.T) {
+	e := newEnv(t)
+	q := sqlc.New(e.pool)
+	ctx := context.Background()
+	bump := func(now time.Time, want time.Time) {
+		t.Helper()
+		got, err := q.BumpConfigIssuedAt(ctx, now)
+		if err != nil || got != want.UTC().Format(time.RFC3339) {
+			t.Fatalf("bump(%v) = %q, %v; want %v", now, got, err, want.UTC().Format(time.RFC3339))
+		}
+	}
+
+	// 惰性初始化（兜底）写入 t0；同一秒内的两次修改得到 t0+1s、t0+2s。
+	_, h, _, p := e.getConfig(t, "", "")
+	etag := h.Get("ETag")
+	if p["issued_at"] != t0.UTC().Format(time.RFC3339) {
+		t.Fatalf("issued_at = %v", p["issued_at"])
+	}
+	bump(t0, t0.Add(time.Second))
+	bump(t0.Add(500*time.Millisecond), t0.Add(2*time.Second))
+	// 时钟回拨（副本间偏差）：仍为上一次的值 + 1 秒。
+	bump(t0.Add(-time.Hour), t0.Add(3*time.Second))
+	// 时钟前进：取当前时刻，截断到秒并换算为 UTC。
+	shanghai := time.FixedZone("CST", 8*3600)
+	later := t0.Add(time.Hour + 900*time.Millisecond).In(shanghai)
+	bump(later, t0.Add(time.Hour))
+
+	_, h, _, p = e.getConfig(t, "", etag)
+	if h.Get("ETag") == etag || p["issued_at"] != t0.Add(time.Hour).UTC().Format(time.RFC3339) {
+		t.Fatalf("after bump: %v %v", h.Get("ETag"), p["issued_at"])
+	}
+}
+
+// 键缺失时写入当前时刻；并发的两次修改锁行串行，得到不同的值。
+func TestConfigIssuedAtConcurrent(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err != nil || got != t0.UTC().Format(time.RFC3339) {
+		t.Fatalf("initial bump = %q, %v", got, err)
+	}
+	tx1, err := e.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx1.Rollback(ctx) }()
+	first, err := sqlc.New(tx1).BumpConfigIssuedAt(ctx, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan string, 1)
+	go func() {
+		// 第二个事务等待 tx1 释放行锁后读到它写入的值。
+		v, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0)
+		if err != nil {
+			v = err.Error()
+		}
+		done <- v
+	}()
+	select {
+	case v := <-done:
+		t.Fatalf("second bump did not wait for the row lock: %q", v)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := tx1.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if second := <-done; first != t0.Add(time.Second).UTC().Format(time.RFC3339) || second != t0.Add(2*time.Second).UTC().Format(time.RFC3339) {
+		t.Fatalf("first %q, second %q", first, second)
+	}
+}
+
+// 已存的 config_issued_at 不是合法时间时修改失败（fail-closed），不写入。
+func TestConfigIssuedAtCorrupt(t *testing.T) {
+	e := newEnv(t)
+	e.setSetting(t, "config_issued_at", `"not-a-time"`)
+	if _, err := sqlc.New(e.pool).BumpConfigIssuedAt(context.Background(), t0); err == nil {
+		t.Fatal("bump over corrupt value succeeded")
 	}
 }
 

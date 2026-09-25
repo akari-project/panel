@@ -165,8 +165,10 @@ func (s *Server) warnFeatures(ctx context.Context, raw []byte, invalid []string)
 	}
 }
 
-// issuedAt 返回 settings 键 config_issued_at。修改 features、registration_policy、min_version 的事务同时写入它；
-// 站点尚未写入时由第一次请求用注入的时钟初始化（CONV-04、CONV-27），并发时先写入者生效，各副本读到同一值。
+// issuedAt 返回 settings 键 config_issued_at。正常情况由站点初始化写入；features、registration_policy、
+// min_version 的有效值变化时，在同一事务中以 sqlc BumpConfigIssuedAt 严格递增地更新（API-11）。这两条写入
+// 路径分别属于站点初始化与设置管理接口（M1-09），尚未实现。键缺失时由第一次请求用注入的时钟惰性初始化，
+// 这只是兜底（CONV-04、CONV-27），并发时先写入者生效，各副本读到同一值。
 func (s *Server) issuedAt(ctx context.Context, q *sqlc.Queries) (string, error) {
 	var v string
 	err := setting(ctx, q, "config_issued_at", &v)
