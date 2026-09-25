@@ -3,11 +3,14 @@
 package clientapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,14 +95,65 @@ func TestGetConfig(t *testing.T) {
 		t.Fatalf("document changed without input change: %v", p["issued_at"])
 	}
 
-	// 输入变化：新文档、新 ETag；未知平台与格式错误的版本不下发。
+	// 输入变化：新文档、新 ETag；未知平台与格式错误的版本不下发。features 下发有效值：本二进制未实现的模块
+	// 即使存储为 true 也为 false（OPS-08，M1 阶段五个模块都未实现），未知键忽略。
 	e.setSetting(t, "min_version", `{"ios":"1.4.0","web":"1.0.0","android":"01.0.0"}`)
 	e.setSetting(t, "features", `{"support":true,"unknown":true}`)
 	e.setSetting(t, "registration_policy", `"invite_only"`)
 	_, h, _, p = e.getConfig(t, "", etag)
 	if h.Get("ETag") == etag || mustJSON(p["min_version"]) != `{"ios":"1.4.0"}` || p["registration_policy"] != "invite_only" ||
-		mustJSON(p["features"]) != `{"announcements":false,"articles":false,"diagnostics":false,"referrals":false,"support":true}` {
+		mustJSON(p["features"]) != allOff {
 		t.Fatalf("after settings change: %v %v", h.Get("ETag"), p)
+	}
+}
+
+const allOff = `{"announcements":false,"articles":false,"diagnostics":false,"referrals":false,"support":false}`
+
+// spec/03 3.6：读取 features 永不失败。值不是对象、某键不是 true 时视为关闭；warn 日志只记键名（CONV-24），
+// 同一份原始值每个进程只告警一次。
+func TestConfigFeaturesTolerant(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	for _, tc := range []struct {
+		value string
+		keys  string
+	}{
+		{`null`, `["features"]`},
+		{`[true]`, `["features"]`},
+		{`"support"`, `["features"]`},
+		{`1`, `["features"]`},
+		{`{"support":"secret-value","articles":1,"referrals":null,"announcements":false,"unknown":"x"}`,
+			`["features.articles","features.support","features.referrals"]`},
+		{`{"support":true,"diagnostics":true}`, ``}, // 已存 true 但本二进制未实现：屏蔽，不告警
+	} {
+		logs.Reset()
+		e.setSetting(t, "features", tc.value)
+		code, _, _, p := e.getConfig(t, "", "")
+		if code != 200 || mustJSON(p["features"]) != allOff {
+			t.Errorf("%s: %d %v", tc.value, code, p["features"])
+		}
+		if tc.keys == "" {
+			if logs.Len() != 0 {
+				t.Errorf("%s: unexpected log %s", tc.value, logs.String())
+			}
+			continue
+		}
+		var rec struct {
+			Level string
+			Keys  json.RawMessage
+		}
+		if err := json.Unmarshal(logs.Bytes(), &rec); err != nil || rec.Level != "WARN" || string(rec.Keys) != tc.keys {
+			t.Errorf("%s: log %s", tc.value, logs.String())
+		}
+		if strings.Contains(logs.String(), "secret-value") {
+			t.Errorf("log contains value: %s", logs.String())
+		}
+		// 同一份原始值再次读取不重复告警。
+		logs.Reset()
+		if code, _, _, _ := e.getConfig(t, "", ""); code != 200 || logs.Len() != 0 {
+			t.Errorf("%s: repeated warn %d %s", tc.value, code, logs.String())
+		}
 	}
 }
 

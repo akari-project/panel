@@ -4,6 +4,7 @@ package clientapi
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,15 +34,19 @@ type ConfigDeps struct {
 // UpgradeRequired 是自研客户端低于最低版本时的 426（API-03）。
 var UpgradeRequired = apierr.New(http.StatusUpgradeRequired, "upgrade_required")
 
-// modules 为 features 的键名（spec/13 OPS-08）。可关闭的模块默认关闭。
-var modules = []string{"announcements", "articles", "support", "referrals", "diagnostics"}
-
 // configCache 保存最近一次签名的文档：输入不变时不重复签名（API-11）。
 type configCache struct {
 	mu      sync.Mutex
 	payload string
 	doc     []byte
 	etag    string
+}
+
+// featuresWarn 记录最近一次告警的 settings 键 features 原始值的摘要：同一份异常值每个进程只告警一次，
+// 不保存原文（spec/03 3.6、CONV-24）。
+type featuresWarn struct {
+	mu   sync.Mutex
+	last [sha256.Size]byte
 }
 
 // GetConfig 返回已签名的客户端启动配置（spec/30 API-11）。签名确定，ETag 为文档字节的 SHA-256，
@@ -109,13 +114,17 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	if policy != "open" && policy != "invite_only" && policy != "closed" {
 		policy = "open" // 不签发契约之外的取值；服务端注册时另行校验（AUTH-02）
 	}
-	stored := map[string]bool{}
-	if err := setting(ctx, q, "features", &stored); err != nil {
+	raw, err := q.GetSetting(ctx, "features")
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
+	effective, invalid := clientconfig.Features(raw, clientconfig.Implemented)
+	if invalid != nil {
+		s.warnFeatures(ctx, raw, invalid)
+	}
 	features := map[string]any{}
-	for _, m := range modules {
-		features[m] = stored[m]
+	for m, on := range effective {
+		features[m] = on
 	}
 	minVersion, err := minVersions(ctx, q)
 	if err != nil {
@@ -141,6 +150,19 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 		"api_endpoints":        endpoints,
 		"issued_at":            issued,
 	}, nil
+}
+
+// warnFeatures 记录 settings 键 features 中被当作关闭的异常值，只记键名（spec/03 3.6、CONV-24）。
+func (s *Server) warnFeatures(ctx context.Context, raw []byte, invalid []string) {
+	sum := sha256.Sum256(raw)
+	w := &s.featuresWarn
+	w.mu.Lock()
+	seen := w.last == sum
+	w.last = sum
+	w.mu.Unlock()
+	if !seen {
+		s.d.Log.WarnContext(ctx, "settings features: invalid values treated as disabled", "keys", invalid)
+	}
 }
 
 // issuedAt 返回 settings 键 config_issued_at。修改 features、registration_policy、min_version 的事务同时写入它；
