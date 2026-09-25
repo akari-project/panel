@@ -31,7 +31,7 @@ func TestCreateRole(t *testing.T) {
 	}{
 		"star":      {map[string]any{"name": "r1", "permissions": []string{"*"}, "reason": "x"}, "permissions", "not_allowed"},
 		"staff":     {map[string]any{"name": "r2", "permissions": []string{"orders.read", "staff.*"}, "reason": "x"}, "permissions", "not_allowed"},
-		"unknown":   {map[string]any{"name": "r3", "permissions": []string{"nodes.write"}, "reason": "x"}, "", ""},
+		"unknown":   {map[string]any{"name": "r3", "permissions": []string{"nodes.write"}, "reason": "x"}, "permissions", "not_allowed"},
 		"bad name":  {map[string]any{"name": "Bad_Name", "permissions": []string{"orders.read"}, "reason": "x"}, "name", "invalid_format"},
 		"duplicate": {map[string]any{"name": "billing", "permissions": []string{"orders.read"}, "reason": "x"}, "name", "taken"},
 		"builtin":   {map[string]any{"name": "support", "permissions": []string{"orders.read"}, "reason": "x"}, "name", "taken"},

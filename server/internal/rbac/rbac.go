@@ -97,7 +97,8 @@ func Grants(g, required string) bool {
 	return false
 }
 
-// CheckCustomPermissions 校验自定义角色的权限（AUTH-22）：必须来自权限目录，且不能包含 * 与 staff.*。
+// CheckCustomPermissions 校验自定义角色的权限（AUTH-22）：必须来自权限目录，且不能包含 * 与 staff.*，
+// 否则为 not_allowed（生成的类型不校验枚举，目录之外的值在这里拒绝）；重复为 invalid_format。
 // 返回的字段错误的 field 为 permissions。
 func CheckCustomPermissions(perms, catalog []string) *apierr.Error {
 	if len(perms) == 0 {
@@ -106,9 +107,7 @@ func CheckCustomPermissions(perms, catalog []string) *apierr.Error {
 	seen := map[string]bool{}
 	for _, p := range perms {
 		switch {
-		case !slices.Contains(catalog, p):
-			return apierr.Invalid(apierr.Field("permissions", "invalid_format"))
-		case p == All || p == ReservedStaff:
+		case !slices.Contains(catalog, p), p == All, p == ReservedStaff:
 			return apierr.Invalid(apierr.Field("permissions", "not_allowed"))
 		case seen[p]:
 			return apierr.Invalid(apierr.Field("permissions", "invalid_format"))

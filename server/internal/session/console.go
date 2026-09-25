@@ -45,10 +45,13 @@ var StepUpMethods = []string{"totp"}
 
 // consoleChallenge 是管理员登录的二次验证挑战（AUTH-20、AUTH-21）。与客户端的挑战分开存放，互不通用。
 // 尚未绑定 TOTP 的管理员，挑战中带待确认的密钥（以账号与挑战 ID 为附加数据加密，CONV-19）。
+// 挑战记录第一步的来源 IP 前缀与 User-Agent，第二步必须来自同一来源（AUTH-20）。
 type consoleChallenge struct {
-	Account uuid.UUID `json:"a"`
-	Email   string    `json:"e"`
-	Enroll  []byte    `json:"s,omitempty"`
+	Account   uuid.UUID `json:"a"`
+	Email     string    `json:"e"`
+	Enroll    []byte    `json:"s,omitempty"`
+	IPPrefix  string    `json:"p"`
+	UserAgent string    `json:"u"`
 }
 
 func consoleChallengeKey(id uuid.UUID) string { return "mfa:console-challenge:" + id.String() }
@@ -146,7 +149,7 @@ func (s *Service) ConsolePasswordLogin(ctx context.Context, in ConsoleLogin) err
 	if len(roles) == 0 {
 		return apierr.Forbidden
 	}
-	c := consoleChallenge{Account: acct.ID, Email: email}
+	c := consoleChallenge{Account: acct.ID, Email: email, IPPrefix: in.IPPrefix, UserAgent: in.UserAgent}
 	id := uuid.New()
 	enabled, _, err := mfa.Enabled(ctx, q, acct.ID)
 	if err != nil {
@@ -181,7 +184,7 @@ func (s *Service) ConsolePasswordLogin(ctx context.Context, in ConsoleLogin) err
 
 // ConsoleCompleteLogin 是管理员登录第二步（AUTH-20、AUTH-21）：challenge_id 与 TOTP 码或恢复码之一。
 // 首次绑定时只接受 TOTP 码，成功后启用 TOTP 并返回恢复码。每次尝试预占 AUTH-09 的账号失败名额，成功后清除；
-// 每个挑战最多尝试 5 次。挑战不存在、已过期或码不正确一律返回 401 unauthenticated。
+// 每个挑战最多尝试 5 次。挑战不存在、已过期、来源（IP 前缀与 User-Agent）与第一步不同或码不正确，一律返回 401 unauthenticated。
 // 成功时签发受众为 console 的会话（不注册设备），并写审计 session.create。
 func (s *Service) ConsoleCompleteLogin(ctx context.Context, in ConsoleMFALogin) (ConsoleResult, error) {
 	if (in.TOTPCode == "") == (in.RecoveryCode == "") {
@@ -203,6 +206,9 @@ func (s *Service) ConsoleCompleteLogin(ctx context.Context, in ConsoleMFALogin) 
 	}
 	if err := s.reserveAttempt(ctx, in.IP, c.Email); err != nil {
 		return ConsoleResult{}, err
+	}
+	if in.IPPrefix != c.IPPrefix || in.UserAgent != c.UserAgent {
+		return ConsoleResult{}, apierr.Unauthenticated // 与第一步来源不同，计为一次失败（AUTH-09）
 	}
 	n, err := s.kv(ctx,
 		s.KV.B().Incr().Key(consoleAttemptsKey(in.ChallengeID)).Build(),

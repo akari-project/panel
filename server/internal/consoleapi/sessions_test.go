@@ -315,3 +315,22 @@ func TestRefreshAudienceIsolationInRetryWindow(t *testing.T) {
 		t.Fatalf("client chain revoked by the cross-audience replay: %v", err)
 	}
 }
+
+// 第二步必须来自第一步的来源（IP 前缀与 User-Agent，AUTH-20）。
+func TestConsoleLoginChallengeBoundToSource(t *testing.T) {
+	e := newEnv(t)
+	a := e.account(t, true, "operator")
+	w := e.do(req{method: "POST", path: "/v1/sessions", header: map[string]string{"User-Agent": "browser-a"},
+		body: map[string]string{"email": a.email, "password": a.password}})
+	challenge := problem(t, w)["challenge_id"].(string)
+	w = e.do(req{method: "POST", path: "/v1/sessions", header: map[string]string{"User-Agent": "browser-b"},
+		body: map[string]string{"challenge_id": challenge, "totp_code": e.code(a)}})
+	if w.Code != 401 || problemCode(t, w) != "unauthenticated" {
+		t.Fatalf("other user agent: %d %s", w.Code, w.Body)
+	}
+	w = e.do(req{method: "POST", path: "/v1/sessions", header: map[string]string{"User-Agent": "browser-a"},
+		body: map[string]string{"challenge_id": challenge, "totp_code": e.code(a)}})
+	if w.Code != 201 {
+		t.Fatalf("same source: %d %s", w.Code, w.Body)
+	}
+}

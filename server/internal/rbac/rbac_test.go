@@ -48,7 +48,7 @@ func TestCheckCustomPermissions(t *testing.T) {
 	}{
 		{[]string{"accounts.read", "orders.read"}, ""},
 		{nil, "required"},
-		{[]string{"nodes.write"}, "invalid_format"},
+		{[]string{"nodes.write"}, "not_allowed"},
 		{[]string{"accounts.read", "accounts.read"}, "invalid_format"},
 		{[]string{"*"}, "not_allowed"},
 		{[]string{"accounts.read", "staff.*"}, "not_allowed"},
