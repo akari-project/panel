@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.6.0'
+  version: '0.7.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -15,11 +15,13 @@ info:
 
     - 每个操作以 `x-permission` 声明执行所需的一个权限，取值只能来自 spec/10 AUTH-17 的权限目录，由 CI 校验，中间件统一校验；`资源.*` 覆盖该资源的全部操作（包括只读操作）。缺少权限返回 403 `forbidden`。
     - `none`：认证类接口，不需要权限（登录、刷新、登出、step-up 等）。
-    - `superadmin`：只有 superadmin 角色可以执行，任何角色都不能被授予（手动标记支付，AUTH-22、ORD-12）。
+    - `superadmin`：只有 superadmin 角色可以执行，任何角色都不能被授予：手动标记支付（ORD-12），以及管理员、邀请、角色的全部操作（包括只读操作，AUTH-22）。`staff.*` 保留在权限目录中，但与 `*` 一样不可授予自定义角色。
 
     ## 敏感操作（`x-sensitive: true`）
 
     spec/10 AUTH-19 列出的敏感操作要求：请求体带 `reason`（不带请求体的 DELETE 改用请求头 `Audit-Reason`）；请求头带 `Mfa-Assertion`（5 分钟内由 `POST /v1/staff/me/step-up` 完成 TOTP 或 Passkey 验证后取得），缺少或过期返回 401 `mfa_required`；界面二次确认（spec/32 UI-03）。执行者还必须拥有 `x-permission` 所列权限。
+
+    `Mfa-Assertion` 在 5 分钟有效期内可以复用于多个敏感操作，只在签发它的账号与会话链中有效，会话链被吊销（登出、角色或二次验证变化）后立即失效。缺少、过期、签名无效或会话链不符一律返回 401 `mfa_required`（响应 `MfaRequired`）：`methods` 只列出 step-up 可用的方式（目前为 `totp`），不含 `recovery_code`，不附 `challenge_id`；完成 step-up 后重试原请求。校验顺序：认证、权限（403）、参数与原因（400）及 `If-Match` 是否存在（428）、`Mfa-Assertion`（401）、业务处理（含 ETag 不一致的 409 `conflict`），返回 401 之前不产生副作用（AUTH-19）。
 
     ## 通用约定
 
@@ -86,7 +88,7 @@ paths:
       description: |-
         两步登录，逻辑同客户端接口的 AUTH-20，但本次登录必须完成二次验证（AUTH-21）：
 
-        1. 提交邮箱与密码。密码正确时一律返回 401 `mfa_required`，附 `challenge_id` 与 `methods`；管理员尚未绑定 TOTP（首次登录）时另附 `totp_enrollment`（AUTH-22）。非管理员账号返回 403 `forbidden`。
+        1. 提交邮箱与密码。密码正确时一律返回 401 `mfa_required`，附 `challenge_id` 与 `methods`；管理员尚未绑定 TOTP（首次登录）时另附 `totp_enrollment`（AUTH-21）。非管理员账号返回 403 `forbidden`。
         2. 提交 `challenge_id` 与 `totp_code`、`recovery_code`、`webauthn_assertion` 三者之一，不再提交密码。首次绑定时只接受 `totp_code`，成功后响应附 10 个恢复码。
 
         成功时签发受众为 `console` 的访问令牌。令牌不出现在响应体中：访问令牌与刷新令牌分别以 `__Host-console_access_token`、`__Host-console_refresh_token` Cookie（HttpOnly、Secure、SameSite=Strict，Path=/）下发；刷新令牌 12 小时绝对失效、空闲 30 分钟失效（AUTH-21）。每个 challenge 最多尝试 5 次，失败次数计入 AUTH-09 的登录限流。
@@ -137,6 +139,7 @@ paths:
                   - kernels.write
                   - 'coupons.*'
                   - 'content.*'
+                  - settings.read
                   is_superadmin: false
                   has_totp: true
                   has_passkey: false
@@ -313,6 +316,7 @@ paths:
                 - kernels.write
                 - 'coupons.*'
                 - 'content.*'
+                - settings.read
                 is_superadmin: false
                 has_totp: true
                 has_passkey: false
@@ -324,7 +328,7 @@ paths:
       - auth
       operationId: createStepUp
       summary: '重新验证，取得 Mfa-Assertion'
-      description: '完成一次 TOTP 或 Passkey 验证，返回 5 分钟有效的短期令牌，放入敏感操作的 `Mfa-Assertion` 请求头（AUTH-19）。失败次数计入 AUTH-09 的账号失败次数。'
+      description: '完成一次 TOTP 验证（M4 起另有 Passkey；恢复码不可用），返回 5 分钟有效的短期令牌，放入敏感操作的 `Mfa-Assertion` 请求头（AUTH-19）。令牌在有效期内可以复用，只在当前账号与当前会话链中有效，会话链被吊销后失效；受众与访问令牌不同，不能互相替代。成功写审计 `step_up.create`；失败不写审计，失败次数计入 AUTH-09 的账号失败次数（AUTH-18）。'
       x-permission: none
       requestBody:
         required: true
@@ -372,7 +376,15 @@ paths:
       - auth
       operationId: acceptStaffInvitation
       summary: '接受管理员邀请'
-      description: '被邀请人打开邀请链接后调用。邮箱尚无账号时用 `password` 创建账号；之后通过 `POST /v1/sessions` 登录，首次登录时强制绑定 TOTP（AUTH-22）。令牌无效或过期返回 400，`errors[].code` 为 `invalid_code` 或 `expired`。'
+      description: |-
+        被邀请人打开邀请链接（`accept-invitation#token=<令牌>`）后调用，令牌只能使用一次（AUTH-22）。按被邀请邮箱的账号状态处理：
+
+        1. 没有账号：`password` 必填（缺少返回 400，`errors[]` 为 `{field: password, code: required}`），创建账号，邮箱视为已验证；注册策略与邮箱域名名单（AUTH-02）不适用。
+        2. 账号存在且邮箱已验证：忽略 `password`，沿用原密码。
+        3. 账号存在但邮箱未验证：`password` 必填；在同一事务中重置该账号的全部凭据：替换密码，删除二次验证，吊销全部会话、设备与代理凭据，轮换共用凭据（`credential.changed`），吊销导出令牌，作废尚未使用的验证码与找回密码令牌；邮箱标记为已验证。
+        4. 账号已暂停、正在注销，或已经是管理员：返回 409 `invalid_state`。
+
+        令牌不存在、已被接受或已撤销返回 400，`errors[]` 为 `{field: token, code: invalid_code}`；已过期为 `{field: token, code: expired}`。成功后向该账号发送安全通知 `staff_roles_changed`（OPS-04），之后通过 `POST /v1/sessions` 登录，首次登录时强制绑定 TOTP（AUTH-21）。写审计 `staff.create`（CON-09）：`actor_id` 为接受邀请的账号，`diff` 含 `inviter_id`，第 3 项另含 `has_credentials_reset: true`。
       security: []
       x-permission: none
       parameters:
@@ -384,7 +396,7 @@ paths:
             schema:
               $ref: '#/components/schemas/InvitationAcceptance'
             example:
-              token: inv_8fJ2kQ0zX4vN6pL1
+              token: 'q4Zr1mX8fJ2kQ0zX4vN6pL1bT7yWc3HdE5sA9uGiK0o'
               password: correct-horse-battery
       responses:
         '200':
@@ -402,6 +414,64 @@ paths:
                 has_passkey: false
                 last_login_at: null
                 created_at: '2026-09-23T10:15:00+08:00'
+        '400':
+          description: '令牌无效、过期，或缺少密码'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                invalid_code:
+                  summary: '令牌无效'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: token
+                      code: invalid_code
+                expired:
+                  summary: '邀请已过期'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: token
+                      code: expired
+                password_required:
+                  summary: '需要设置密码'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: password
+                      code: required
+        '409':
+          description: '账号状态不允许'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                invalid_state:
+                  summary: '账号已暂停或已是管理员'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '该账号已是管理员'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+        '429':
+          $ref: '#/components/responses/RateLimited'
         default:
           $ref: '#/components/responses/Problem'
   /v1/accounts:
@@ -735,6 +805,8 @@ paths:
                 expires_at: '2026-10-23T10:15:00+08:00'
                 created_at: '2026-03-02T09:12:44+08:00'
                 last_seen_at: '2026-09-23T09:58:12+08:00'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '不能注销'
           content:
@@ -788,7 +860,7 @@ paths:
       - accounts
       operationId: suspendAccount
       summary: '暂停账号'
-      description: '吊销全部会话与代理凭据，登录返回 403 `account_suspended`，写入 `account.status_changed` 事件；权益照常计时（AUTH-25）。已暂停时重复调用返回当前状态。'
+      description: '吊销全部会话与代理凭据，登录返回 403 `account_suspended`，写入 `account.status_changed` 事件；权益照常计时（AUTH-25）。已暂停时重复调用返回当前状态。目标账号持有任何管理员角色时只允许 superadmin，否则返回 403 `forbidden`（AUTH-22）。暂停最后一个 superadmin 返回 409 `invalid_state`。'
       x-permission: accounts.adjust
       parameters:
       - name: id
@@ -910,7 +982,7 @@ paths:
       - accounts
       operationId: revokeAccountSessions
       summary: '强制下线（吊销全部会话）'
-      description: '吊销该账号的全部会话，1 秒内生效（AUTH-06）；设备与代理凭据保留。'
+      description: '吊销该账号的全部会话，1 秒内生效（AUTH-06）；设备与代理凭据保留。目标账号持有任何管理员角色时只允许 superadmin，否则返回 403 `forbidden`（AUTH-22）。'
       x-permission: accounts.adjust
       parameters:
       - name: id
@@ -946,6 +1018,7 @@ paths:
       - accounts
       operationId: revokeAccountSession
       summary: '吊销单个会话'
+      description: '目标账号持有任何管理员角色时只允许 superadmin，否则返回 403 `forbidden`（AUTH-22）。'
       x-permission: accounts.adjust
       parameters:
       - name: id
@@ -1082,7 +1155,7 @@ paths:
       operationId: resetAccountPassword
       summary: '重置用户密码'
       description: |-
-        向用户邮箱发送一次性重置链接（30 分钟有效，AUTH-04），并立即吊销该账号的全部会话。管理员看不到链接与新密码。
+        向用户邮箱发送一次性重置链接（30 分钟有效，AUTH-04），并立即吊销该账号的全部会话。管理员看不到链接与新密码。目标账号持有任何管理员角色时只允许 superadmin，否则返回 403 `forbidden`（AUTH-22）。
 
         敏感操作（spec/10 AUTH-19）：请求体必须带 `reason`，请求头必须带 `Mfa-Assertion`；`Mfa-Assertion` 缺少或过期返回 401 `mfa_required`。
       x-permission: accounts.adjust
@@ -1116,6 +1189,8 @@ paths:
                 account_id: '01927c3e-8a41-7001-9d3e-5f6a7b8c0001'
                 expires_at: '2026-09-23T10:45:00+08:00'
                 revoked_session_count: 3
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/accounts/{id}/data-exports':
@@ -1217,6 +1292,8 @@ paths:
                 reason: '用户依法申请获取个人数据副本，工单 TCK-20260921-P3LX8C'
                 created_at: '2026-09-23T10:15:00+08:00'
                 completed_at: null
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/accounts/{id}/data-exports/{export_id}':
@@ -1967,6 +2044,8 @@ paths:
                   account_id: '01927c3e-8a41-7001-9d3e-5f6a7b8c0001'
                   balance_minor: 2250
                   currency: CNY
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   /v1/plans:
@@ -2494,6 +2573,8 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '版本冲突'
           content:
@@ -2893,6 +2974,8 @@ paths:
                 reason: '标准版流量由 150 GiB 提升到 200 GiB，同步给现有用户'
                 created_at: '2026-09-23T10:15:00+08:00'
                 completed_at: null
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/plans/{id}/rollouts/{rollout_id}':
@@ -4096,6 +4179,8 @@ paths:
                 status: pending_enroll
                 revoked_at: '2026-09-23T10:15:00+08:00'
                 closed_session_count: 1
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/hosts/{id}/inbounds':
@@ -4964,6 +5049,8 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '冲突'
           content:
@@ -5447,6 +5534,8 @@ paths:
                 failure_message: null
                 created_at: '2026-09-23T10:15:00+08:00'
                 completed_at: null
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -5574,6 +5663,8 @@ paths:
                 fulfilled_at: null
                 created_at: '2026-09-23T10:15:00+08:00'
                 updated_at: '2026-09-23T10:15:00+08:00'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -5723,6 +5814,8 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '冲突'
           content:
@@ -8110,7 +8203,7 @@ paths:
       operationId: listStaff
       summary: '管理员列表'
       description: '新管理员只能通过邀请加入（`POST /v1/staff-invitations`）。'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       parameters:
       - name: role
         in: query
@@ -8165,7 +8258,7 @@ paths:
       - staff
       operationId: getStaff
       summary: '管理员详情'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       parameters:
       - name: id
         in: path
@@ -8198,10 +8291,10 @@ paths:
       operationId: updateStaff
       summary: '修改管理员角色'
       description: |-
-        只有 superadmin 能分配角色，且不能授予超出自身的权限（AUTH-22）；移除最后一个 superadmin 返回 409 `invalid_state`。变更后吊销该管理员的全部管理会话（AUTH-21）。
+        只有 superadmin 能分配角色（AUTH-22）；移除最后一个 superadmin 返回 409 `invalid_state`。变更后吊销该管理员的全部管理会话（AUTH-21），并向该账号发送安全通知（`staff_roles_changed`，OPS-04）。该管理员因此失去 `superadmin` 时，同一事务中撤销其发出的全部 `pending` 邀请（每条写审计 `staff_invitation.revoke`）。写审计 `staff.update`（CON-09）。
 
         敏感操作（spec/10 AUTH-19）：请求体必须带 `reason`，请求头必须带 `Mfa-Assertion`；`Mfa-Assertion` 缺少或过期返回 401 `mfa_required`。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - name: id
@@ -8240,6 +8333,8 @@ paths:
                 has_passkey: false
                 last_login_at: '2026-09-23T09:00:00+08:00'
                 created_at: '2026-03-01T10:00:00+08:00'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -8264,10 +8359,10 @@ paths:
       operationId: removeStaff
       summary: '移除管理员'
       description: |-
-        移除该账号的全部角色并吊销其管理会话；账号本身保留。移除最后一个 superadmin 返回 409 `invalid_state`。
+        移除该账号的全部角色并吊销其管理会话；账号本身保留。移除最后一个 superadmin 返回 409 `invalid_state`。向该账号发送安全通知（`staff_roles_changed`）；被移除的是 superadmin 时，同一事务中撤销其发出的全部 `pending` 邀请。写审计 `staff.delete`（CON-09）。
 
         敏感操作（spec/10 AUTH-19）：DELETE 不带请求体，原因放在请求头 `Audit-Reason` 中（缺少返回 400 `invalid_request`）；请求头必须带 `Mfa-Assertion`，缺少或过期返回 401 `mfa_required`。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - name: id
@@ -8282,6 +8377,8 @@ paths:
       responses:
         '204':
           description: '已完成'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -8306,7 +8403,7 @@ paths:
       - staff
       operationId: listStaffInvitations
       summary: '管理员邀请'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       parameters:
       - name: status
         in: query
@@ -8358,10 +8455,12 @@ paths:
       operationId: createStaffInvitation
       summary: '邀请管理员'
       description: |-
-        发送一次性邀请邮件，72 小时有效（AUTH-22）；只有 superadmin 能邀请，且不能授予超出自身的权限。
+        发送一次性邀请邮件，72 小时有效（AUTH-22）；只有 superadmin 能邀请。链接为管理后台公开地址（部署配置 `ui.admin.public_url`）加 `accept-invitation#token=<令牌>`；令牌与链接只通过邮件送达，不出现在响应中。
+
+        邮箱已是管理员，或同一邮箱已有 `pending` 邀请时，返回 400 `invalid_request`，`errors[]` 为 `{field: email, code: taken}`；需要重发时先撤销旧邀请。角色不存在时 `errors[].code` 为 `invalid_format`（`field` 为 `roles`）。写审计 `staff_invitation.create`（CON-09）。
 
         敏感操作（spec/10 AUTH-19）：请求体必须带 `reason`，请求头必须带 `Mfa-Assertion`；`Mfa-Assertion` 缺少或过期返回 401 `mfa_required`。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - $ref: '#/components/parameters/MfaAssertion'
@@ -8393,6 +8492,26 @@ paths:
                 invited_by: '01927c3e-8a41-7003-9d3e-5f6a7b8c0003'
                 expires_at: '2026-09-26T10:15:00+08:00'
                 created_at: '2026-09-23T10:15:00+08:00'
+        '400':
+          description: '参数错误'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                taken:
+                  summary: '邮箱已是管理员或已有待接受的邀请'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: email
+                      code: taken
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/staff-invitations/{id}':
@@ -8401,7 +8520,7 @@ paths:
       - staff
       operationId: getStaffInvitation
       summary: '邀请详情'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       parameters:
       - name: id
         in: path
@@ -8437,7 +8556,7 @@ paths:
         只能撤销 `pending` 的邀请，否则返回 409 `invalid_state`。
 
         敏感操作（spec/10 AUTH-19）：DELETE 不带请求体，原因放在请求头 `Audit-Reason` 中（缺少返回 400 `invalid_request`）；请求头必须带 `Mfa-Assertion`，缺少或过期返回 401 `mfa_required`。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - name: id
@@ -8452,6 +8571,8 @@ paths:
       responses:
         '204':
           description: '已完成'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -8477,7 +8598,7 @@ paths:
       operationId: listRoles
       summary: '角色列表'
       description: '不分页：角色总数上限 100（含 3 个内置角色），超过时创建返回 409 `invalid_state`。'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       responses:
         '200':
           description: OK
@@ -8506,6 +8627,7 @@ paths:
                   - kernels.write
                   - 'coupons.*'
                   - 'content.*'
+                  - settings.read
                   is_builtin: true
                   staff_count: 2
                   created_at: '2026-03-01T10:00:00+08:00'
@@ -8527,10 +8649,10 @@ paths:
       operationId: createRole
       summary: '创建自定义角色'
       description: |-
-        权限必须是 AUTH-17 权限目录的子集，且不超出操作者自身权限；不能包含 `*`，也不能包含手动标记支付（AUTH-22）。
+        权限必须是 AUTH-17 权限目录的子集；不能包含 `*` 与 `staff.*`，否则返回 400 `invalid_request`（`errors[].code` 为 `not_allowed`）。手动标记支付不在权限目录中，任何角色都不能被授予（AUTH-22）。
 
         敏感操作（spec/10 AUTH-19）：请求体必须带 `reason`，请求头必须带 `Mfa-Assertion`；`Mfa-Assertion` 缺少或过期返回 401 `mfa_required`。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - $ref: '#/components/parameters/MfaAssertion'
@@ -8568,6 +8690,8 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/roles/{id}':
@@ -8576,7 +8700,7 @@ paths:
       - staff
       operationId: getRole
       summary: '角色详情'
-      x-permission: 'staff.*'
+      x-permission: superadmin
       parameters:
       - name: id
         in: path
@@ -8621,7 +8745,7 @@ paths:
         敏感操作（spec/10 AUTH-19）：请求体必须带 `reason`，请求头必须带 `Mfa-Assertion`；`Mfa-Assertion` 缺少或过期返回 401 `mfa_required`。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - name: id
@@ -8666,6 +8790,8 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -8701,12 +8827,12 @@ paths:
       operationId: deleteRole
       summary: '删除自定义角色'
       description: |-
-        内置角色，或仍有管理员持有的角色，返回 409 `invalid_state`。
+        内置角色、仍有管理员持有的角色、仍被 `pending` 邀请引用的角色，返回 409 `invalid_state`（AUTH-22）。
 
         敏感操作（spec/10 AUTH-19）：DELETE 不带请求体，原因放在请求头 `Audit-Reason` 中（缺少返回 400 `invalid_request`）；请求头必须带 `Mfa-Assertion`，缺少或过期返回 401 `mfa_required`。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
-      x-permission: 'staff.*'
+      x-permission: superadmin
       x-sensitive: true
       parameters:
       - name: id
@@ -8722,6 +8848,8 @@ paths:
       responses:
         '204':
           description: '已完成'
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         '409':
           description: '状态不允许'
           content:
@@ -8981,6 +9109,8 @@ paths:
                 actor_id: '01927c3e-8a41-7003-9d3e-5f6a7b8c0003'
                 created_at: '2026-09-23T10:15:00+08:00'
                 completed_at: null
+        '401':
+          $ref: '#/components/responses/MfaRequired'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/audit-logs/exports/{id}':
@@ -9137,7 +9267,7 @@ components:
       name: Mfa-Assertion
       in: header
       required: false
-      description: '敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。'
+      description: '敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。'
       schema:
         type: string
     AuditReason:
@@ -9177,6 +9307,31 @@ components:
             errors:
             - field: amount_minor
               code: out_of_range
+    MfaRequired:
+      description: '敏感操作缺少有效的 `Mfa-Assertion`（`mfa_required`，AUTH-19），或未登录（`unauthenticated`）。`mfa_required` 时 `methods` 只列出 step-up 可用的方式，不附 `challenge_id`；调用 `POST /v1/staff/me/step-up` 后重试原请求。'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          examples:
+            mfa_required:
+              summary: '需要 step-up'
+              value:
+                type: 'https://docs.example.invalid/problems/mfa_required'
+                title: '需要二次验证'
+                status: 401
+                code: mfa_required
+                request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                methods:
+                - totp
+            unauthenticated:
+              summary: '令牌失效'
+              value:
+                type: 'https://docs.example.invalid/problems/unauthenticated'
+                title: '未登录或令牌失效'
+                status: 401
+                code: unauthenticated
+                request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
     NotModified:
       description: '未修改（If-None-Match 命中）'
       headers:
@@ -9241,7 +9396,7 @@ components:
         challenge_id:
           type: string
           format: uuid
-          description: '`mfa_required` 时附带：二次验证挑战 ID（5 分钟有效，AUTH-20）'
+          description: '只在登录流程（`POST /v1/sessions` 第一步）的 `mfa_required` 中附带：二次验证挑战 ID（5 分钟有效，AUTH-20）；敏感操作的 `mfa_required`（AUTH-19）不附带'
         methods:
           type: array
           items:
@@ -9250,10 +9405,10 @@ components:
             - totp
             - passkey
             - recovery_code
-          description: '`mfa_required` 时附带：可用的二次验证方式'
+          description: '`mfa_required` 时附带：可用的二次验证方式。登录流程（AUTH-20）可含 `recovery_code`；敏感操作（AUTH-19）只列出 step-up 可用的方式，不含 `recovery_code`'
         totp_enrollment:
           $ref: '#/components/schemas/TotpEnrollment'
-          description: '管理员尚未绑定 TOTP 时附带：本次登录需先完成绑定（AUTH-21、AUTH-22）'
+          description: '管理员尚未绑定 TOTP 时附带：本次登录需先完成绑定（AUTH-21）'
         incompatible_inbounds:
           type: array
           items:
@@ -9347,7 +9502,7 @@ components:
       - 'staff.*'
       - audit.read
       - '*'
-      description: '权限目录（spec/10 AUTH-17）；`*` 只出现在内置角色 superadmin 上'
+      description: '权限目录（spec/10 AUTH-17）；`*` 只出现在内置角色 superadmin 上；`staff.*` 为保留项，不可授予自定义角色（AUTH-22）'
     LocalizedText:
       type: object
       description: '按语言区分的文本，键为 BCP 47 语言标签'
@@ -9505,12 +9660,12 @@ components:
       properties:
         token:
           type: string
-          description: '邀请邮件链接中的一次性令牌（72 小时有效）'
+          description: '邀请邮件链接片段中的一次性令牌（32 字节随机值，base64url，72 小时有效）'
         password:
           type: string
           minLength: 8
           maxLength: 128
-          description: '被邀请邮箱尚无账号时必填，用于创建账号'
+          description: '被邀请邮箱没有账号，或已有账号但邮箱未验证时必填（AUTH-22）；邮箱已验证的已有账号忽略此字段'
     AccountSummary:
       type: object
       required:
@@ -13510,7 +13665,7 @@ components:
             $ref: '#/components/schemas/Permission'
           minItems: 1
           uniqueItems: true
-          description: '必须是权限目录的子集，且不超出操作者自身权限；不能包含 `*`'
+          description: '必须是权限目录的子集；不能包含 `*` 与 `staff.*`（`not_allowed`，AUTH-22）'
         reason:
           type: string
           minLength: 1
@@ -13531,6 +13686,7 @@ components:
             $ref: '#/components/schemas/Permission'
           minItems: 1
           uniqueItems: true
+          description: '整体替换；规则同 `RoleCreate.permissions`：不能包含 `*` 与 `staff.*`（`not_allowed`，AUTH-22）'
         reason:
           type: string
           minLength: 1
