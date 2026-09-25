@@ -68,3 +68,20 @@ UPDATE staff_invitations SET accepted_at = sqlc.arg(now), account_id = sqlc.arg(
 -- name: LockAccountByEmail :one
 -- 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。
 SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower(sqlc.arg(email)::text) FOR UPDATE;
+
+-- name: RevokeAccountDevices :exec
+-- 接受邀请时重置未验证邮箱账号的凭据（AUTH-22 第 3 项）：吊销全部设备。
+UPDATE devices SET revoked_at = sqlc.arg(now) WHERE account_id = sqlc.arg(account_id) AND revoked_at IS NULL;
+
+-- name: RevokeAccountCredentials :many
+-- 吊销账号的全部代理凭据（设备凭据与共用凭据），返回凭据 ID 以写 credential.changed。
+UPDATE proxy_credentials SET revoked_at = sqlc.arg(now)
+WHERE account_id = sqlc.arg(account_id) AND revoked_at IS NULL
+RETURNING id;
+
+-- name: DeleteExportToken :exec
+DELETE FROM export_tokens WHERE account_id = sqlc.arg(account_id);
+
+-- name: InvalidateAllVerificationCodes :exec
+-- 作废账号尚未使用的全部验证码与找回密码令牌。
+UPDATE verification_codes SET consumed_at = sqlc.arg(now) WHERE account_id = sqlc.arg(account_id) AND consumed_at IS NULL;

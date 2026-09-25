@@ -24,6 +24,7 @@ import (
 	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
+	"github.com/akari-project/panel/server/internal/secretbox"
 )
 
 // InvitationTTL 是邀请的有效期（AUTH-22）。
@@ -250,10 +251,11 @@ func (s *Server) RevokeStaffInvitation(ctx context.Context, req gen.RevokeStaffI
 }
 
 // AcceptStaffInvitation 接受管理员邀请（AUTH-22）。邀请行加锁，令牌只能使用一次；按被邀请邮箱的账号状态处理：
-//  1. 没有账号：password 必填；创建邮箱已验证的账号，生成共用代理凭据并写 credential.changed（AUTH-13）；
+//  1. 没有账号：password 必填；注册策略与邮箱域名名单不适用；创建邮箱已验证的账号，生成共用代理凭据并写 credential.changed（AUTH-13）；
 //  2. 账号存在且邮箱已验证：忽略 password；
 //  3. 账号存在但邮箱未验证：password 必填；替换密码，删除 TOTP 与 Passkey（包括待确认的绑定），
-//     吊销全部会话，标记邮箱已验证（防止他人抢先用该邮箱注册后取得管理员身份）；
+//     吊销全部会话、设备与代理凭据，轮换共用凭据，吊销导出令牌，作废未使用的验证码与找回密码令牌，
+//     标记邮箱已验证（防止他人抢先用该邮箱注册后取得管理员身份或保留访问途径）；
 //  4. 账号不在正常状态或已经是管理员：409 invalid_state。
 //
 // 授予邀请中的全部角色，发送 staff_roles_changed，写审计 staff.create。
@@ -266,10 +268,11 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 		pw = *req.Body.Password
 	}
 	var (
-		out            gen.Staff
-		revoked        []uuid.UUID
-		cancelEnroll   uuid.UUID
-		passwordHasher = func() (string, error) {
+		out              gen.Staff
+		revoked          []uuid.UUID
+		credentialsReset bool
+		cancelEnroll     uuid.UUID
+		passwordHasher   = func() (string, error) {
 			if pw == "" {
 				return "", apierr.Invalid(apierr.Field("password", "required"))
 			}
@@ -358,9 +361,13 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 				if revoked, err = q.RevokeAccountSessions(ctx, sqlc.RevokeAccountSessionsParams{AccountID: id, Now: &now}); err != nil {
 					return err
 				}
+				if err := resetCredentials(ctx, q, s.d.Keys, id, now); err != nil {
+					return err
+				}
 				if err := q.MarkEmailVerified(ctx, sqlc.MarkEmailVerifiedParams{ID: id, Now: &now}); err != nil {
 					return err
 				}
+				credentialsReset = true
 				cancelEnroll = id
 			}
 		}
@@ -378,9 +385,13 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 		if err := s.notifyRolesChanged(ctx, q, id, roles); err != nil {
 			return err
 		}
+		diff := map[string]any{"roles": roles, "staff_invitation_id": inv.ID, "inviter_id": inv.InviterID, "is_new_account": isNew}
+		if credentialsReset {
+			diff["has_credentials_reset"] = true
+		}
 		if err := audit.Record(ctx, q, audit.Entry{
 			Action: "staff.create", TargetType: "account", TargetID: id.String(), Actor: &id,
-			Diff: audit.Values(map[string]any{"roles": roles, "staff_invitation_id": inv.ID, "is_new_account": isNew}),
+			Diff: audit.Values(diff),
 		}); err != nil {
 			return err
 		}
@@ -398,4 +409,29 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 		return nil, apierr.Unavailable(err)
 	}
 	return gen.AcceptStaffInvitation200JSONResponse(out), nil
+}
+
+// resetCredentials 清除账号在接受邀请前可能被他人持有的全部访问途径（AUTH-22 第 3 项）：
+// 吊销设备与全部代理凭据（各写 credential.changed revoked），生成新的共用凭据（rotated），
+// 删除导出令牌，作废未使用的验证码与找回密码令牌。
+func resetCredentials(ctx context.Context, q *sqlc.Queries, keys *secretbox.Keyring, id uuid.UUID, now time.Time) error {
+	if err := q.RevokeAccountDevices(ctx, sqlc.RevokeAccountDevicesParams{AccountID: id, Now: &now}); err != nil {
+		return err
+	}
+	creds, err := q.RevokeAccountCredentials(ctx, sqlc.RevokeAccountCredentialsParams{AccountID: id, Now: &now})
+	if err != nil {
+		return err
+	}
+	for _, c := range creds {
+		if err := account.CredentialChanged(ctx, q, id, c, "revoked"); err != nil {
+			return err
+		}
+	}
+	if _, err := account.RotateSharedCredential(ctx, q, keys, id); err != nil {
+		return err
+	}
+	if err := q.DeleteExportToken(ctx, id); err != nil {
+		return err
+	}
+	return q.InvalidateAllVerificationCodes(ctx, sqlc.InvalidateAllVerificationCodesParams{AccountID: &id, Now: &now})
 }

@@ -27,6 +27,15 @@ func (q *Queries) AcceptInvitation(ctx context.Context, arg AcceptInvitationPara
 	return err
 }
 
+const deleteExportToken = `-- name: DeleteExportToken :exec
+DELETE FROM export_tokens WHERE account_id = $1
+`
+
+func (q *Queries) DeleteExportToken(ctx context.Context, accountID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteExportToken, accountID)
+	return err
+}
+
 const getInvitation = `-- name: GetInvitation :one
 SELECT i.id, i.email, i.inviter_id, i.expires_at, i.accepted_at, i.revoked_at, i.created_at,
        COALESCE((SELECT array_agg(ir.role ORDER BY ir.role) FROM staff_invitation_roles ir
@@ -106,6 +115,21 @@ type InsertInvitationRoleParams struct {
 
 func (q *Queries) InsertInvitationRole(ctx context.Context, arg InsertInvitationRoleParams) error {
 	_, err := q.db.Exec(ctx, insertInvitationRole, arg.StaffInvitationID, arg.Role)
+	return err
+}
+
+const invalidateAllVerificationCodes = `-- name: InvalidateAllVerificationCodes :exec
+UPDATE verification_codes SET consumed_at = $1 WHERE account_id = $2 AND consumed_at IS NULL
+`
+
+type InvalidateAllVerificationCodesParams struct {
+	Now       *time.Time
+	AccountID *uuid.UUID
+}
+
+// 作废账号尚未使用的全部验证码与找回密码令牌。
+func (q *Queries) InvalidateAllVerificationCodes(ctx context.Context, arg InvalidateAllVerificationCodesParams) error {
+	_, err := q.db.Exec(ctx, invalidateAllVerificationCodes, arg.Now, arg.AccountID)
 	return err
 }
 
@@ -298,6 +322,53 @@ func (q *Queries) PendingInvitationExists(ctx context.Context, arg PendingInvita
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const revokeAccountCredentials = `-- name: RevokeAccountCredentials :many
+UPDATE proxy_credentials SET revoked_at = $1
+WHERE account_id = $2 AND revoked_at IS NULL
+RETURNING id
+`
+
+type RevokeAccountCredentialsParams struct {
+	Now       *time.Time
+	AccountID uuid.UUID
+}
+
+// 吊销账号的全部代理凭据（设备凭据与共用凭据），返回凭据 ID 以写 credential.changed。
+func (q *Queries) RevokeAccountCredentials(ctx context.Context, arg RevokeAccountCredentialsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, revokeAccountCredentials, arg.Now, arg.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const revokeAccountDevices = `-- name: RevokeAccountDevices :exec
+UPDATE devices SET revoked_at = $1 WHERE account_id = $2 AND revoked_at IS NULL
+`
+
+type RevokeAccountDevicesParams struct {
+	Now       *time.Time
+	AccountID uuid.UUID
+}
+
+// 接受邀请时重置未验证邮箱账号的凭据（AUTH-22 第 3 项）：吊销全部设备。
+func (q *Queries) RevokeAccountDevices(ctx context.Context, arg RevokeAccountDevicesParams) error {
+	_, err := q.db.Exec(ctx, revokeAccountDevices, arg.Now, arg.AccountID)
+	return err
 }
 
 const revokeInvitation = `-- name: RevokeInvitation :exec

@@ -249,6 +249,24 @@ func TestAcceptInvitation(t *testing.T) {
 			a.id, uuid.NewString(), e.clk.Now().Add(time.Hour)); err != nil {
 			t.Fatal(err)
 		}
+		// 抢先注册者的设备、设备凭据、共用凭据、导出令牌与未使用的验证码。
+		ctx := t.Context()
+		var device, oldShared uuid.UUID
+		if err := e.pool.QueryRow(ctx, `INSERT INTO devices (account_id, platform) VALUES ($1, 'ios') RETURNING id`, a.id).Scan(&device); err != nil {
+			t.Fatal(err)
+		}
+		for stmt, args := range map[string][]any{
+			`INSERT INTO proxy_credentials (account_id, device_id, secret_enc) VALUES ($1, $2, '\x00')`:                                                {a.id, device},
+			`INSERT INTO export_tokens (account_id, token_hash, token_enc, rotated_at) VALUES ($1, $2, '\x00', now())`:                                 {a.id, uuid.NewString()},
+			`INSERT INTO verification_codes (account_id, purpose, code_hash, expires_at) VALUES ($1, 'password_reset', $2, now() + interval '1 hour')`: {a.id, uuid.NewString()},
+		} {
+			if _, err := e.pool.Exec(ctx, stmt, args...); err != nil {
+				t.Fatal(stmt, err)
+			}
+		}
+		if err := e.pool.QueryRow(ctx, `INSERT INTO proxy_credentials (account_id, secret_enc) VALUES ($1, '\x00') RETURNING id`, a.id).Scan(&oldShared); err != nil {
+			t.Fatal(err)
+		}
 		_, token := e.invite(t, super, a.email, "support")
 		if c, f, _ := e.accept(t, token, nil); c != 400 || f != "password" {
 			t.Fatalf("without password: %d %s", c, f)
@@ -271,6 +289,33 @@ func TestAcceptInvitation(t *testing.T) {
 		}
 		if n := e.count(t, `SELECT count(*) FROM accounts WHERE id = $1 AND email_verified_at IS NOT NULL`, a.id); n != 1 {
 			t.Fatal("email not marked verified")
+		}
+		for what, sql := range map[string]string{
+			"active devices":        `SELECT count(*) FROM devices WHERE account_id = $1 AND revoked_at IS NULL`,
+			"device credentials":    `SELECT count(*) FROM proxy_credentials WHERE account_id = $1 AND device_id IS NOT NULL AND revoked_at IS NULL`,
+			"export tokens":         `SELECT count(*) FROM export_tokens WHERE account_id = $1`,
+			"verification codes":    `SELECT count(*) FROM verification_codes WHERE account_id = $1 AND consumed_at IS NULL`,
+			"old shared credential": `SELECT count(*) FROM proxy_credentials WHERE account_id = $1 AND device_id IS NULL AND revoked_at IS NULL AND id = '` + oldShared.String() + `'`,
+		} {
+			if n := e.count(t, sql, a.id); n != 0 {
+				t.Errorf("%s left: %d", what, n)
+			}
+		}
+		if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE account_id = $1 AND device_id IS NULL AND revoked_at IS NULL`, a.id); n != 1 {
+			t.Fatal("new shared credential missing")
+		}
+		if n := e.count(t, `SELECT count(*) FROM outbox WHERE topic = 'credential.changed' AND payload->>'account_id' = $1 AND payload->>'change' = 'revoked'`, a.id.String()); n != 2 {
+			t.Fatalf("%d revoked events, want 2", n)
+		}
+		if n := e.count(t, `SELECT count(*) FROM outbox WHERE topic = 'credential.changed' AND payload->>'account_id' = $1 AND payload->>'change' = 'rotated'`, a.id.String()); n != 1 {
+			t.Fatal("rotated event missing")
+		}
+		var diff string
+		if err := e.pool.QueryRow(ctx, `SELECT diff::text FROM audit_logs WHERE action = 'staff.create' AND target_id = $1`, a.id.String()).Scan(&diff); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(diff, `"has_credentials_reset": true`) || !strings.Contains(diff, super.id.String()) {
+			t.Fatalf("diff = %s", diff)
 		}
 	})
 
