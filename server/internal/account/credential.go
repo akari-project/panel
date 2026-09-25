@@ -22,6 +22,16 @@ var CredentialSecretAD = []byte("proxy_credentials.secret_enc")
 // credential.changed 事件（CONV-22，载荷见 CONV-34）。凭据明文为 16 字节原始 UUIDv4（spec/21 AGT-15），
 // 加密保存（CONV-19）。
 func CreateSharedCredential(ctx context.Context, q *sqlc.Queries, keys *secretbox.Keyring, account uuid.UUID) (uuid.UUID, error) {
+	return newSharedCredential(ctx, q, keys, account, "created")
+}
+
+// RotateSharedCredential 为账号生成新的共用凭据并写 credential.changed（change 为 rotated）。
+// 调用方已在同一事务中吊销旧的共用凭据（并为其写 revoked）。
+func RotateSharedCredential(ctx context.Context, q *sqlc.Queries, keys *secretbox.Keyring, account uuid.UUID) (uuid.UUID, error) {
+	return newSharedCredential(ctx, q, keys, account, "rotated")
+}
+
+func newSharedCredential(ctx context.Context, q *sqlc.Queries, keys *secretbox.Keyring, account uuid.UUID, change string) (uuid.UUID, error) {
 	secret := uuid.New()
 	enc, err := keys.Seal(secret[:], CredentialSecretAD)
 	if err != nil {
@@ -31,7 +41,7 @@ func CreateSharedCredential(ctx context.Context, q *sqlc.Queries, keys *secretbo
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return id, CredentialChanged(ctx, q, account, id, "created")
+	return id, CredentialChanged(ctx, q, account, id, change)
 }
 
 // CredentialChanged 写入 credential.changed 事件；change 取 created、rotated、revoked（CONV-34）。

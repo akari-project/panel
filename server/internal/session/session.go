@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,6 +61,8 @@ type Service struct {
 	MFA *mfa.Service
 	// Outbox 写入安全通知（OPS-04，例如密码已修改）。
 	Outbox notify.Outbox
+	// Log 记录管理员登录与 step-up 失败的 warn 日志（只记账号 ID，AUTH-18、CONV-24），可为 nil。
+	Log *slog.Logger
 	// Verify 校验密码，默认 password.Verify。测试替换它来确认两条登录路径都恰好调用一次（AUTH-09）。
 	Verify func(pw, encoded string) (bool, error)
 }
@@ -87,8 +90,11 @@ type Tokens struct {
 	AccessExpires   time.Time
 	// RefreshExpires 是刷新令牌的失效时间（空闲期限，不超过会话链的绝对失效时间）。
 	RefreshExpires time.Time
-	SessionID      uuid.UUID
-	DeviceID       uuid.UUID
+	// AbsoluteExpires 是会话链的绝对失效时间（AUTH-07、AUTH-21），轮换不延长。
+	AbsoluteExpires time.Time
+	SessionID       uuid.UUID
+	// DeviceID 为空（uuid.Nil）表示没有设备：管理会话不注册设备。
+	DeviceID uuid.UUID
 }
 
 func newRefreshToken() (plain, hash string, err error) {
@@ -106,6 +112,7 @@ func refreshHash(plain string) string {
 }
 
 // newSession 在事务中建立会话并签发令牌对。parent 为轮换前的会话，absolute 为会话链的绝对失效时间。
+// device 为 uuid.Nil 时会话不关联设备（管理会话，AUTH-21）。
 func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, account, device uuid.UUID, aud token.Audience,
 	parent *uuid.UUID, ua, ipPrefix string, idle time.Duration, absolute time.Time, amr []string) (Tokens, error) {
 	now := s.Clock.Now()
@@ -121,9 +128,12 @@ func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, account, devi
 	if expires.After(absolute) {
 		expires = absolute
 	}
-	dev := device
+	var dev *uuid.UUID
+	if device != uuid.Nil {
+		dev = &device
+	}
 	if err := q.InsertSession(ctx, sqlc.InsertSessionParams{
-		ID: id, AccountID: account, DeviceID: &dev, Audience: string(aud), RefreshTokenHash: hash, ParentID: parent,
+		ID: id, AccountID: account, DeviceID: dev, Audience: string(aud), RefreshTokenHash: hash, ParentID: parent,
 		UserAgent: nilIfEmpty(ua), IpPrefix: nilIfEmpty(ipPrefix), ExpiresAt: expires, AbsoluteExpiresAt: &absolute,
 	}); err != nil {
 		return Tokens{}, err
@@ -132,7 +142,8 @@ func (s *Service) newSession(ctx context.Context, q *sqlc.Queries, account, devi
 	if err != nil {
 		return Tokens{}, err
 	}
-	return Tokens{Access: access, Refresh: plain, AccessExpires: claims.ExpiresAt, RefreshExpires: expires, SessionID: id, DeviceID: device}, nil
+	return Tokens{Access: access, Refresh: plain, AccessExpires: claims.ExpiresAt, RefreshExpires: expires, AbsoluteExpires: absolute,
+		SessionID: id, DeviceID: device}, nil
 }
 
 func nilIfEmpty(s string) *string {

@@ -29,7 +29,7 @@ var appendOnlyTables = []string{"entitlement_events", "credit_ledger", "audit_lo
 // 分区明细表与纯关联表不带 updated_at（CONV-17）。
 var noUpdatedAt = []string{
 	"traffic_hourly", "traffic_hourly_default",
-	"account_roles", "node_group_members", "plan_groups", "coupon_redemptions", "consumed_events",
+	"account_roles", "staff_invitation_roles", "node_group_members", "plan_groups", "coupon_redemptions", "consumed_events",
 	"goose_db_version",
 }
 
@@ -134,7 +134,7 @@ func TestSchemaConventions(t *testing.T) {
 	}
 	// spec/03 3.1 列出的表必须全部存在。
 	for _, want := range []string{
-		"accounts", "roles", "account_roles", "staff_invitations", "mfa_totp", "mfa_webauthn", "verification_codes", "sessions", "devices",
+		"accounts", "roles", "account_roles", "staff_invitations", "staff_invitation_roles", "mfa_totp", "mfa_webauthn", "verification_codes", "sessions", "devices",
 		"proxy_credentials", "export_tokens",
 		"kernels", "kernel_protocols", "kernel_transports", "machines", "nodes", "location_groups", "node_group_members", "inbounds", "node_routes",
 		"plans", "plan_groups", "plan_prices", "addon_prices", "entitlements", "entitlement_events", "addons", "usage_cycles",

@@ -231,7 +231,7 @@ func TestRender(t *testing.T) {
 	for name := range builtin {
 		for _, l := range []string{"zh-CN", "en"} {
 			c := builtin[name].locales[l]
-			vars := map[string]string{"site_name": "S", "code": "1", "minutes": "1", "link": "L", "remaining": "2"}
+			vars := map[string]string{"site_name": "S", "code": "1", "minutes": "1", "link": "L", "remaining": "2", "hours": "72", "roles": "operator"}
 			if _, err := render(builtin[name], c.subject+c.body, vars); err != nil {
 				t.Errorf("%s/%s: %v", name, l, err)
 			}

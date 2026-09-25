@@ -26,6 +26,11 @@ const (
 	TemplateRecoveryCodesLow = "recovery_codes_low"
 	// TemplateRecoveryCodesRegenerated：恢复码已重新生成（OPS-04 安全类）。无变量。
 	TemplateRecoveryCodesRegenerated = "recovery_codes_regenerated"
+	// TemplateStaffInvitation：管理员邀请（AUTH-22，OPS-04 安全类）。收件人可能没有账号，
+	// 以 Message.StaffInvitationID 指定。变量：link（秘密）、hours。
+	TemplateStaffInvitation = "staff_invitation"
+	// TemplateStaffRolesChanged：账号获得或失去管理员角色（AUTH-22，OPS-04 安全类）。变量：roles（变更后的角色，逗号分隔，可为空）。
+	TemplateStaffRolesChanged = "staff_roles_changed"
 )
 
 // DefaultLocale 是模板缺少请求的语言时使用的语言。
@@ -104,6 +109,26 @@ var builtin = map[string]template{
 		locales: map[string]content{
 			"zh-CN": {subject: "{{site_name}}：恢复码已重新生成", body: "你的二次验证恢复码已重新生成，旧恢复码全部作废。\n\n如果这不是你本人的操作，请立即修改密码。\n"},
 			"en":    {subject: "{{site_name}}: recovery codes regenerated", body: "Your two-factor recovery codes were regenerated, and the old ones no longer work.\n\nIf this wasn't you, change your password right away.\n"},
+		},
+	},
+	TemplateStaffInvitation: {
+		vars: []string{"link", "hours"},
+		locales: map[string]content{
+			"zh-CN": {
+				subject: "{{site_name}} 管理后台邀请",
+				body:    "你被邀请成为 {{site_name}} 的管理员。请打开以下链接接受邀请：\n\n{{link}}\n\n链接 {{hours}} 小时内有效，只能使用一次。首次登录管理后台时需要绑定验证器应用（TOTP）。\n\n如果你不认识发出邀请的人，请忽略本邮件。\n",
+			},
+			"en": {
+				subject: "Invitation to the {{site_name}} console",
+				body:    "You have been invited to become an administrator of {{site_name}}. Open the link below to accept:\n\n{{link}}\n\nThe link expires in {{hours}} hours and can be used once. You will set up an authenticator app (TOTP) the first time you sign in to the console.\n\nIf you don't know who invited you, you can ignore this email.\n",
+			},
+		},
+	},
+	TemplateStaffRolesChanged: {
+		vars: []string{"roles"},
+		locales: map[string]content{
+			"zh-CN": {subject: "{{site_name}}：管理员角色已变更", body: "你在 {{site_name}} 管理后台的角色已变更，当前角色：{{roles}}（为空表示已不是管理员）。你的管理会话已全部退出。\n\n如果你对此有疑问，请联系站点的超级管理员。\n"},
+			"en":    {subject: "{{site_name}}: your console roles changed", body: "Your roles in the {{site_name}} console have changed. Current roles: {{roles}} (empty means you are no longer an administrator). You have been signed out of the console.\n\nIf you have questions, contact the site's superadmin.\n"},
 		},
 	},
 	TemplateRecoveryCodesLow: {

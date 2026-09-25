@@ -40,8 +40,25 @@ paths:
       operationId: createSession
       security: []
       responses: {'201': {description: OK}, '426': {description: Upgrade}}
+  /v1/roles/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    patch:
+      operationId: updateRole
+      x-permission: 'staff.*'
+      x-sensitive: true
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses: {'200': {description: OK}}
+    get:
+      operationId: getRole
+      x-permission: none
+      responses: {'200': {description: OK}}
 components:
   schemas:
+    Permission:
+      type: string
+      enum: [accounts.read, 'staff.*', '*']
     Me:
       type: object
       required: [code]
@@ -76,10 +93,13 @@ func TestRun(t *testing.T) {
 	raw, _ := os.ReadFile(meta)
 	m := strings.Join(strings.Fields(string(raw)), " ") // gofmt 会对齐 map 字面量
 	for _, want := range []string{
-		`"GET /v1/me": {ID: "getMe", Method: "GET", Pattern: "GET /v1/me", Auth: AuthRequired, Idempotent: false, VersionChecked: false}`,
-		`"POST /v1/accounts": {ID: "createAccount", Method: "POST", Pattern: "POST /v1/accounts", Auth: AuthPublic, Idempotent: true, VersionChecked: false}`,
-		`"GET /v1/plans": {ID: "listPlans", Method: "GET", Pattern: "GET /v1/plans", Auth: AuthOptional, Idempotent: false, VersionChecked: false}`,
-		`"POST /v1/sessions": {ID: "createSession", Method: "POST", Pattern: "POST /v1/sessions", Auth: AuthPublic, Idempotent: false, VersionChecked: true}`,
+		`"GET /v1/me": {ID: "getMe", Method: "GET", Pattern: "GET /v1/me", Auth: AuthRequired, Idempotent: false, VersionChecked: false, Permission: "", Sensitive: false, IfMatch: false}`,
+		`"POST /v1/accounts": {ID: "createAccount", Method: "POST", Pattern: "POST /v1/accounts", Auth: AuthPublic, Idempotent: true, VersionChecked: false, Permission: "", Sensitive: false, IfMatch: false}`,
+		`"GET /v1/plans": {ID: "listPlans", Method: "GET", Pattern: "GET /v1/plans", Auth: AuthOptional, Idempotent: false, VersionChecked: false, Permission: "", Sensitive: false, IfMatch: false}`,
+		`"POST /v1/sessions": {ID: "createSession", Method: "POST", Pattern: "POST /v1/sessions", Auth: AuthPublic, Idempotent: false, VersionChecked: true, Permission: "", Sensitive: false, IfMatch: false}`,
+		`"PATCH /v1/roles/{id}": {ID: "updateRole", Method: "PATCH", Pattern: "PATCH /v1/roles/{id}", Auth: AuthRequired, Idempotent: false, VersionChecked: false, Permission: "staff.*", Sensitive: true, IfMatch: true}`,
+		`"GET /v1/roles/{id}": {ID: "getRole", Method: "GET", Pattern: "GET /v1/roles/{id}", Auth: AuthRequired, Idempotent: false, VersionChecked: false, Permission: "none", Sensitive: false, IfMatch: false}`,
+		`var PermissionCatalog = []string{ "accounts.read", "staff.*", "*", }`,
 		"// SPDX-License-Identifier: AGPL-3.0-or-later",
 	} {
 		if !strings.Contains(m, want) {
@@ -95,6 +115,8 @@ func TestRejects(t *testing.T) {
 		"union type":      strings.Replace(spec, "[string, 'null']", "[string, integer]", 1),
 		"no operationId":  strings.Replace(spec, "operationId: getMe\n", "", 1),
 		"no top security": strings.Replace(spec, "security:\n  - bearer: []\n  - cookie: []\n", "", 1),
+		"bad permission":  strings.Replace(spec, "x-permission: none", "x-permission: [none]", 1),
+		"empty catalog":   strings.Replace(spec, "enum: [accounts.read, 'staff.*', '*']", "enum: []", 1),
 	} {
 		in := filepath.Join(dir, "in.yaml")
 		_ = os.WriteFile(in, []byte(s), 0o644)

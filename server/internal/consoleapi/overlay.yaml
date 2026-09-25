@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# OpenAPI Overlay：只改生成的 Go 类型名，不改契约语义。
+overlay: 1.0.0
+info:
+  title: oapi-codegen 类型名修正
+  version: 1.0.0
+actions:
+  # 请求头参数 Mfa-Assertion 与响应模式 MfaAssertion 同名。
+  - target: $.components.parameters.MfaAssertion
+    update:
+      x-go-name: MfaAssertionHeader
