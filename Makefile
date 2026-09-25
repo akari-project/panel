@@ -31,7 +31,7 @@ LDFLAGS := -s -w -X $(PKG_BUILDINFO).Version=$(VERSION) -X $(PKG_BUILDINFO).Comm
 
 GENERATED := $(SERVER)/internal/db/sqlc $(SERVER)/internal/clientapi/gen $(SERVER)/internal/consoleapi/gen
 
-.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi gen-consoleapi check-spec-version check-generated test test-property e2e e2e-portal conformance lint fmt-check vet staticcheck \
+.PHONY: ci build build-noui web-build embed gen gen-sqlc gen-clientapi gen-consoleapi check-spec-version check-generated test test-property e2e e2e-portal e2e-admin conformance lint fmt-check vet staticcheck \
 	check-clock check-spdx licenses vulncheck web-check check-embed clean
 
 ## 构建 ---------------------------------------------------------------
@@ -120,6 +120,12 @@ e2e:
 e2e-portal: web-build
 	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
 	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_01_PortalPlaywright ./e2e/portal/
+
+# 管理后台在真实控制面上的 Playwright 测试（M1-02）：与 e2e-portal 相同的环境，另以 panel admin create --password-stdin
+# 创建首个超级管理员，运行 web/e2e/real 中的 m1-02 测试（环境变量见 server/e2e/admin）。
+e2e-admin: web-build
+	@if [ -z "$${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then cd $(WEB) && pnpm exec playwright install --with-deps chromium; fi
+	cd $(SERVER) && PANEL_E2E_PLAYWRIGHT=1 go test -count=1 -timeout 15m -run TestM1_02_AdminPlaywright ./e2e/admin/
 
 # 协议一致性套件（spec/20 20.6）。对真实 Agent 运行：
 #   make conformance CONFORMANCE_AGENT=exec CONFORMANCE_AGENT_CMD='...'（见 server/e2e/conformance/README.md）
