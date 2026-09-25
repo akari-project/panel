@@ -349,3 +349,75 @@ func TestAcceptInvitation(t *testing.T) {
 		}
 	})
 }
+
+// 原因文本记在被邀请邮箱已有的账号名下（CONV-29）；没有账号时为空。
+func TestInvitationReasonAccount(t *testing.T) {
+	e := newEnv(t)
+	super := e.staff(t, "superadmin")
+	e.stepUp(t, super)
+	existing := e.account(t, true)
+	id, _ := e.invite(t, super, existing.email, "support")
+	fresh, _ := e.invite(t, super, "nobody-yet@example.com", "support")
+	w := e.do(req{method: "DELETE", path: "/v1/staff-invitations/" + id.String(), as: super, sensitive: true, header: map[string]string{"Audit-Reason": "x"}})
+	if w.Code != 204 {
+		t.Fatalf("revoke: %d", w.Code)
+	}
+	for target, want := range map[string]*string{id.String(): ptr(existing.id.String()), fresh.String(): nil} {
+		rows, err := e.pool.Query(t.Context(), `SELECT r.account_id::text FROM audit_logs l JOIN reason_texts r ON r.id = l.reason_id WHERE l.target_id = $1`, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for rows.Next() {
+			var got *string
+			if err := rows.Scan(&got); err != nil {
+				t.Fatal(err)
+			}
+			if (got == nil) != (want == nil) || (got != nil && *got != *want) {
+				t.Errorf("%s: reason account %v, want %v", target, got, want)
+			}
+			n++
+		}
+		rows.Close()
+		if n == 0 {
+			t.Errorf("%s: no audit rows with a reason", target)
+		}
+	}
+}
+
+// 接受邀请与移除邀请人（撤销其 pending 邀请）并发时不死锁：两者以相同顺序取锁。
+func TestAcceptConcurrentWithInviterRemoval(t *testing.T) {
+	e := newEnv(t)
+	super := e.staff(t, "superadmin")
+	e.stepUp(t, super)
+	for i := range 8 {
+		inviter := e.account(t, true, "superadmin")
+		token := uuid.NewString()
+		var inv uuid.UUID
+		if err := e.pool.QueryRow(t.Context(),
+			`INSERT INTO staff_invitations (email, token_hash, inviter_id, expires_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+			"race-"+uuid.NewString()[:8]+"@example.com", invitationTokenHash(token), inviter.id, e.clk.Now().Add(time.Hour)).Scan(&inv); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(t.Context(), `INSERT INTO staff_invitation_roles (staff_invitation_id, role) VALUES ($1, 'support')`, inv); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		var acceptCode, removeCode int
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			acceptCode = e.do(req{method: "POST", path: "/v1/staff-invitations/acceptance",
+				body: map[string]any{"token": token, "password": "correct horse battery"}}).Code
+		}()
+		go func() {
+			defer wg.Done()
+			removeCode = e.do(req{method: "DELETE", path: "/v1/staff/" + inviter.id.String(), as: super, sensitive: true,
+				header: map[string]string{"Audit-Reason": "x"}}).Code
+		}()
+		wg.Wait()
+		if (acceptCode != 200 && acceptCode != 400) || removeCode != 204 {
+			t.Fatalf("iteration %d: accept %d, remove %d", i, acceptCode, removeCode)
+		}
+	}
+}

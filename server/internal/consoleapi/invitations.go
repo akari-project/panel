@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/akari-project/panel/server/internal/account"
@@ -199,9 +200,13 @@ func (s *Server) CreateStaffInvitation(ctx context.Context, req gen.CreateStaffI
 		}); err != nil {
 			return err
 		}
+		invitee, err := inviteeAccount(ctx, q, email)
+		if err != nil {
+			return err
+		}
 		if err := audit.Record(ctx, q, audit.Entry{
 			Action: "staff_invitation.create", TargetType: "staff_invitation", TargetID: row.ID.String(),
-			Diff: audit.Values(map[string]any{"roles": roles}), Reason: reason,
+			Diff: audit.Values(map[string]any{"roles": roles}), Reason: reason, ReasonAccount: invitee,
 		}); err != nil {
 			return err
 		}
@@ -240,8 +245,13 @@ func (s *Server) RevokeStaffInvitation(ctx context.Context, req gen.RevokeStaffI
 		if err := q.RevokeInvitation(ctx, sqlc.RevokeInvitationParams{ID: inv.ID, Now: &now}); err != nil {
 			return err
 		}
+		invitee, err := inviteeAccount(ctx, q, inv.Email)
+		if err != nil {
+			return err
+		}
 		return audit.Record(ctx, q, audit.Entry{
-			Action: "staff_invitation.revoke", TargetType: "staff_invitation", TargetID: inv.ID.String(), Reason: reason,
+			Action: "staff_invitation.revoke", TargetType: "staff_invitation", TargetID: inv.ID.String(),
+			Reason: reason, ReasonAccount: invitee,
 		})
 	})
 	if err != nil {
@@ -267,27 +277,38 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 	if req.Body.Password != nil {
 		pw = *req.Body.Password
 	}
+	// 密码哈希（argon2id）在事务之外计算，不在持有锁时耗时。长度错误只在需要密码的情形（第 1、3 项）才返回。
+	var (
+		hash  string
+		pwErr = apierr.Invalid(apierr.Field("password", "required"))
+	)
+	if pw != "" {
+		if err := password.CheckLength(pw); err != nil {
+			code := "too_long"
+			if len([]rune(pw)) < password.MinLength {
+				code = "too_short"
+			}
+			pwErr = apierr.Invalid(apierr.Field("password", code))
+		} else {
+			h, err := password.Hash(pw, s.d.Password)
+			if err != nil {
+				return nil, err
+			}
+			hash, pwErr = h, nil
+		}
+	}
 	var (
 		out              gen.Staff
 		revoked          []uuid.UUID
 		credentialsReset bool
 		cancelEnroll     uuid.UUID
-		passwordHasher   = func() (string, error) {
-			if pw == "" {
-				return "", apierr.Invalid(apierr.Field("password", "required"))
-			}
-			if err := password.CheckLength(pw); err != nil {
-				code := "too_long"
-				if len([]rune(pw)) < password.MinLength {
-					code = "too_short"
-				}
-				return "", apierr.Invalid(apierr.Field("password", code))
-			}
-			return password.Hash(pw, s.d.Password)
-		}
 	)
 	err := pgx.BeginFunc(ctx, s.d.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
+		// 与修改角色（changeRoles）取锁的顺序一致：先锁 account_roles，再锁邀请行与账号行，避免死锁。
+		if err := lockStaff(ctx, tx); err != nil {
+			return err
+		}
 		inv, err := q.LockInvitationByToken(ctx, invitationTokenHash(req.Body.Token))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierr.Invalid(apierr.Field("token", "invalid_code"))
@@ -314,9 +335,8 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 		var id uuid.UUID
 		switch {
 		case isNew:
-			hash, err := passwordHasher()
-			if err != nil {
-				return err
+			if pwErr != nil {
+				return pwErr
 			}
 			code, err := account.UniqueReferralCode(ctx, q)
 			if err != nil {
@@ -325,6 +345,11 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 			if id, err = q.CreateAccount(ctx, sqlc.CreateAccountParams{
 				Email: inv.Email, PasswordHash: &hash, EmailVerifiedAt: &now, ReferralCode: code,
 			}); err != nil {
+				var pg *pgconn.PgError
+				if errors.As(err, &pg) && pg.Code == "23505" {
+					// 与同一邮箱的注册并发：客户端重试时按已有账号处理（第 2、3 项）。
+					return apierr.Conflict
+				}
 				return err
 			}
 			if _, err := account.CreateSharedCredential(ctx, q, s.d.Keys, id); err != nil {
@@ -345,9 +370,8 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 				return apierr.InvalidState
 			}
 			if acct.EmailVerifiedAt == nil {
-				hash, err := passwordHasher()
-				if err != nil {
-					return err
+				if pwErr != nil {
+					return pwErr
 				}
 				if err := q.SetPasswordHash(ctx, sqlc.SetPasswordHashParams{ID: id, PasswordHash: &hash}); err != nil {
 					return err
@@ -370,9 +394,6 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 				credentialsReset = true
 				cancelEnroll = id
 			}
-		}
-		if err := lockStaff(ctx, tx); err != nil {
-			return err
 		}
 		for _, r := range roles {
 			if err := q.GrantRole(ctx, sqlc.GrantRoleParams{AccountID: id, Role: r}); err != nil {
@@ -434,4 +455,17 @@ func resetCredentials(ctx context.Context, q *sqlc.Queries, keys *secretbox.Keyr
 		return err
 	}
 	return q.InvalidateAllVerificationCodes(ctx, sqlc.InvalidateAllVerificationCodesParams{AccountID: &id, Now: &now})
+}
+
+// inviteeAccount 返回被邀请邮箱已有的账号：原因文本记在该账号名下，删除其个人数据时一并清空（CONV-29）。
+// 没有账号时为 nil。
+func inviteeAccount(ctx context.Context, q *sqlc.Queries, email string) (*uuid.UUID, error) {
+	a, err := q.AccountByEmail(ctx, email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a.ID, nil
 }
