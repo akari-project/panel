@@ -203,6 +203,73 @@ function AuditFilters({ search, onApply }: { search: AuditSearch; onApply: (s: A
   );
 }
 
+type DiffEntry = { kind: 'hidden' } | { kind: 'update'; from: unknown; to: unknown } | { kind: 'value'; value: unknown };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * 审计差异的三种形式（AUTH-18）：创建与删除为 {字段: 值}；修改为 {字段: {from, to}}；
+ * 不记录取值的字段（_enc、_hash 与 settings 中以 _enc 结尾的键）为 {字段: {changed: true}}。
+ */
+export function diffEntry(v: unknown): DiffEntry {
+  if (isRecord(v)) {
+    const keys = Object.keys(v);
+    if (keys.length === 1 && v.changed === true) return { kind: 'hidden' };
+    if (keys.length === 2 && 'from' in v && 'to' in v) return { kind: 'update', from: v.from, to: v.to };
+  }
+  return { kind: 'value', value: v };
+}
+
+function DiffValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return <span className="text-muted">—</span>;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return <code className="font-mono text-xs break-all">{text}</code>;
+}
+
+function AuditDiff({ diff }: { diff: Record<string, unknown> }) {
+  const { t } = useTranslation();
+  return (
+    <div className="max-h-80 overflow-auto rounded-md border border-border">
+      <table aria-label={t('audit.diff')} className="w-full text-left text-sm">
+        <thead>
+          <tr>
+            <th className={th}>{t('audit.diff_field')}</th>
+            <th className={th}>{t('audit.diff_change')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(diff).map(([field, raw]) => {
+            const e = diffEntry(raw);
+            return (
+              <tr key={field}>
+                <td className={td}>
+                  <code className="font-mono text-xs break-all">{field}</code>
+                </td>
+                <td className={td}>
+                  {e.kind === 'hidden' ? (
+                    <span className="text-muted">{t('audit.diff_hidden')}</span>
+                  ) : e.kind === 'update' ? (
+                    <span className="flex flex-wrap items-center gap-2">
+                      <DiffValue value={e.from} />
+                      <span aria-hidden>→</span>
+                      <span className="sr-only">{t('audit.diff_to')}</span>
+                      <DiffValue value={e.to} />
+                    </span>
+                  ) : (
+                    <DiffValue value={e.value} />
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** 已知动作显示本地化名称与原始标识，未知动作只显示原始标识。 */
 function ActionLabel({ action }: { action: string }) {
   const labels = useLabels();
@@ -242,10 +309,8 @@ function AuditDetail({ log, onClose }: { log: AuditLog; onClose: () => void }) {
       </dl>
       <div className="flex flex-col gap-1">
         <h3 className="font-medium">{t('audit.diff')}</h3>
-        {log.diff ? (
-          <pre className="max-h-80 overflow-auto rounded-md border border-border bg-surface p-3 font-mono text-xs whitespace-pre-wrap break-all">
-            {JSON.stringify(log.diff, null, 2)}
-          </pre>
+        {log.diff && Object.keys(log.diff).length > 0 ? (
+          <AuditDiff diff={log.diff} />
         ) : (
           <p className="text-muted">—</p>
         )}

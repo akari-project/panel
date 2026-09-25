@@ -209,7 +209,11 @@ describe('审计日志（AUTH-18）', () => {
               action: new URL(req.url).searchParams.get('action') ?? 'role.update',
               target_type: 'role',
               target_id: 'finance',
-              diff: { permissions: [['orders.read'], ['orders.read', 'audit.read']] },
+              diff: {
+                permissions: { from: ['orders.read'], to: ['orders.read', 'audit.read'] },
+                secret_enc: { changed: true },
+                description: '财务',
+              },
               reason: '需要查审计',
               ip_prefix: '198.51.100.0/24',
               request_id: 'req1',
@@ -237,6 +241,11 @@ describe('审计日志（AUTH-18）', () => {
     await user.click(within(table).getByRole('button', { name: '查看审计记录 a1' }));
     const detail = await screen.findByRole('dialog', { name: '审计记录' });
     expect(within(detail).getByText('198.51.100.0/24')).toBeInTheDocument();
+    const diff = within(detail).getByRole('table', { name: '变更' });
+    const row = (field: string) => within(diff).getByText(field).closest('tr')!;
+    expect(row('permissions')).toHaveTextContent('["orders.read"]→改为["orders.read","audit.read"]');
+    expect(row('secret_enc')).toHaveTextContent('已修改（不记录取值）');
+    expect(row('description')).toHaveTextContent('财务');
     await user.click(within(detail).getByRole('button', { name: '关闭' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });

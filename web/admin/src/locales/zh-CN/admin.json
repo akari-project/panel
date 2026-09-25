@@ -165,7 +165,11 @@
         "update": "修改角色",
         "delete": "删除角色"
       }
-    }
+    },
+    "diff_field": "字段",
+    "diff_change": "变更",
+    "diff_hidden": "已修改（不记录取值）",
+    "diff_to": "改为"
   },
   "accept": {
     "title": "接受管理员邀请",

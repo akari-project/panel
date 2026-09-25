@@ -165,7 +165,11 @@
         "update": "Role changed",
         "delete": "Role deleted"
       }
-    }
+    },
+    "diff_field": "Field",
+    "diff_change": "Change",
+    "diff_hidden": "Changed (value not recorded)",
+    "diff_to": "changed to"
   },
   "accept": {
     "title": "Accept staff invitation",
