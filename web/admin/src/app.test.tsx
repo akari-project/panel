@@ -19,7 +19,9 @@ function fakeServer() {
     const req = input as Request;
     const path = new URL(req.url).pathname;
     if (req.method === 'GET' && path === '/v1/staff/me') {
-      return signedIn ? json(200, { email: 'ops@example.com' }) : json(401, { code: 'unauthenticated' });
+      return signedIn
+        ? json(200, { account_id: 'a1', email: 'ops@example.com', roles: ['operator'], permissions: ['plans.*'], is_superadmin: false, has_totp: true, has_passkey: false })
+        : json(401, { code: 'unauthenticated' });
     }
     if (req.method === 'POST' && path === '/v1/sessions') {
       const body = (await req.json()) as Record<string, unknown>;

@@ -1,6 +1,9 @@
 {
   "nav": {
-    "overview": "概览"
+    "overview": "概览",
+    "staff": "管理员",
+    "roles": "角色",
+    "audit_logs": "审计日志"
   },
   "login": {
     "title": "管理后台登录"
@@ -9,5 +12,175 @@
     "title": "概览",
     "welcome": "当前管理员：{{email}}",
     "empty": "活跃用户、新购与续费、收入将显示在这里。"
+  },
+  "list": {
+    "load_more": "加载更多",
+    "actions": "操作"
+  },
+  "step_up": {
+    "title": "验证身份",
+    "description": "此操作需要二次验证。请输入身份验证器中的 6 位验证码，5 分钟内的其他敏感操作无需再次验证。",
+    "submit": "验证"
+  },
+  "sensitive": {
+    "reason": "操作原因",
+    "reason_hint": "必填，最多 500 字，记入审计日志。"
+  },
+  "staff": {
+    "title": "管理员",
+    "tabs_label": "管理员与邀请",
+    "tab_staff": "管理员",
+    "tab_invitations": "邀请",
+    "email": "邮箱",
+    "roles": "角色",
+    "totp": "二次验证",
+    "totp_on": "已启用",
+    "totp_off": "未绑定",
+    "last_login": "最近登录",
+    "you": "（你）",
+    "invite": "邀请管理员",
+    "invite_description": "被邀请人会收到一封邮件，链接 72 小时内有效；首次登录时必须绑定身份验证器。",
+    "invite_submit": "发送邀请",
+    "edit_roles": "修改角色",
+    "edit_roles_for": "修改 {{email}} 的角色",
+    "edit_roles_description": "修改 {{email}} 的角色。",
+    "edit_roles_submit": "保存",
+    "sessions_revoked_warning": "修改后，该管理员的全部登录会话将被吊销，需要重新登录。",
+    "remove": "移除",
+    "remove_for": "移除 {{email}}",
+    "remove_title": "移除管理员？",
+    "remove_description": "{{email}} 将失去管理后台的访问权限，其登录会话立即失效。系统至少保留一名超级管理员。",
+    "invited": "已向 {{email}} 发送邀请。"
+  },
+  "invitations": {
+    "status": "状态",
+    "status_all": "全部",
+    "expires_at": "有效期至",
+    "statuses": {
+      "pending": "待接受",
+      "accepted": "已接受",
+      "expired": "已过期",
+      "revoked": "已撤销"
+    },
+    "revoke": "撤销",
+    "revoke_for": "撤销对 {{email}} 的邀请",
+    "revoke_title": "撤销邀请？",
+    "revoke_description": "发给 {{email}} 的邀请链接将立即失效。"
+  },
+  "roles": {
+    "title": "角色",
+    "intro": "内置角色不可修改或删除。自定义角色的权限只能从权限目录中选择；管理员与角色只能由超级管理员管理。",
+    "builtin": {
+      "superadmin": "超级管理员",
+      "operator": "运营",
+      "support": "客服"
+    },
+    "builtin_badge": "内置角色",
+    "all_permissions": "全部权限",
+    "name": "名称",
+    "name_hint": "小写字母开头，可含小写字母、数字与连字符，2–32 个字符；创建后不可修改。",
+    "name_format": "格式不正确：小写字母开头，2–32 个字符，只含小写字母、数字与连字符",
+    "description": "说明",
+    "permissions": "权限",
+    "staff_count": "管理员数",
+    "create": "创建角色",
+    "create_submit": "创建",
+    "form_description": "选择该角色拥有的权限。",
+    "edit": "编辑",
+    "edit_for": "编辑角色 {{name}}",
+    "edit_title": "编辑角色 {{name}}",
+    "save": "保存",
+    "edit_impact_one": "将影响 {{count}} 名管理员，他们的登录会话将被吊销。",
+    "edit_impact_other": "将影响 {{count}} 名管理员，他们的登录会话将被吊销。",
+    "delete": "删除",
+    "delete_for": "删除角色 {{name}}",
+    "delete_title": "删除角色 {{name}}？",
+    "delete_description_one": "当前有 {{count}} 名管理员使用此角色。",
+    "delete_description_other": "当前有 {{count}} 名管理员使用此角色。"
+  },
+  "permissions": {
+    "accounts_read": "查看账号",
+    "accounts_adjust": "调整账号与权益",
+    "credits_adjust": "余额调整",
+    "orders_read": "查看订单与支付通知",
+    "orders_refund": "退款",
+    "plans_all": "套餐与价格",
+    "location_groups_all": "线路组",
+    "hosts_all": "节点、入站与路由",
+    "kernels_write": "切换节点内核",
+    "coupons_all": "优惠券与兑换码",
+    "content_all": "公告、帮助文档与通知模板",
+    "tickets_all": "工单",
+    "payments_configure": "支付渠道配置",
+    "settings_read": "查看系统设置",
+    "settings_write": "修改系统设置",
+    "staff_all": "管理员与角色",
+    "audit_read": "查询审计日志",
+    "all": "全部权限"
+  },
+  "audit": {
+    "title": "审计日志",
+    "intro": "所有管理写操作都会记录在这里，记录不可修改。",
+    "empty": "没有符合条件的记录。",
+    "filters": "筛选",
+    "apply": "查询",
+    "clear": "清除",
+    "time": "时间",
+    "actor": "操作者",
+    "actor_id": "操作者 ID",
+    "action_label": "动作",
+    "target": "对象",
+    "target_type": "对象类型",
+    "target_id": "对象 ID",
+    "created_from": "开始时间",
+    "created_to": "结束时间",
+    "invalid_uuid": "请输入有效的 UUID",
+    "system": "系统",
+    "detail": "详情",
+    "detail_for": "查看审计记录 {{id}}",
+    "detail_title": "审计记录",
+    "reason": "原因",
+    "ip_prefix": "来源 IP 前缀",
+    "request_id": "请求编号",
+    "diff": "变更",
+    "action": {
+      "session": {
+        "create": "登录",
+        "delete": "登出"
+      },
+      "step_up": {
+        "create": "重新验证"
+      },
+      "staff": {
+        "create": "加入管理员",
+        "update": "修改管理员角色",
+        "delete": "移除管理员"
+      },
+      "staff_invitation": {
+        "create": "邀请管理员",
+        "revoke": "撤销邀请"
+      },
+      "role": {
+        "create": "创建角色",
+        "update": "修改角色",
+        "delete": "删除角色"
+      }
+    }
+  },
+  "accept": {
+    "title": "接受管理员邀请",
+    "intro": "接受后即加入管理后台，首次登录时需要绑定身份验证器。",
+    "password_optional": "密码（新账号需设置）",
+    "password_new": "设置密码",
+    "password_hint": "已有账号请留空，接受后使用原密码登录；新账号请设置至少 {{min}} 位的密码。",
+    "password_required": "该邮箱还没有账号，请设置密码。",
+    "submit": "接受邀请",
+    "done": "已加入管理后台。请登录，首次登录时需要绑定身份验证器。",
+    "go_login": "前往登录",
+    "missing_token": "邀请链接不完整，请从邀请邮件中重新打开。",
+    "invalid_token": "邀请链接无效，请联系管理员重新邀请。",
+    "expired": "邀请链接已过期，请联系管理员重新邀请。",
+    "invalid_state": "无法接受此邀请：账号已暂停，或已经是管理员。",
+    "password_hint_new": "至少 {{min}} 位。"
   }
 }

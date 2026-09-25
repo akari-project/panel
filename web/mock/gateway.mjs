@@ -16,7 +16,14 @@
 //      POST /v1/me/reauthentications 的密码为 wrong-password 时返回 400 incorrect。
 //    - 特定输入返回错误示例：注册邮箱以 closed 开头 → 403 registration_closed；验证码 000000 → 400 invalid_code；
 //      重新发送的邮箱以 limited 开头 → 429（Retry-After）。
-// 4. 可选地托管构建产物，并按 spec/40 DEP-02–05 模拟控制面：SPA 回退、注入 window.__PANEL_CONFIG__、
+// 4. 管理接口的其余状态（同样保存在本地 Cookie 中）：
+//    - 当前管理员：登录邮箱以 super 开头为 superadmin，以 support 开头为 support，其余为 Prism 示例（operator）；
+//      改写 GET /v1/staff/me 与登录响应中的 staff。
+//    - 首次登录绑定 TOTP（AUTH-21）：登录邮箱包含 +new 时，第一步返回 totp_enrollment，第二步返回恢复码。
+//    - POST /v1/staff/me/step-up 的验证码为 000000 时返回 400 incorrect；成功时断言的有效期改为 5 分钟后。
+//    - 接受邀请：令牌 inv_new 未提交密码时返回 400 password required；inv_expired 返回 400 expired；
+//      inv_staff 返回 409 invalid_state。
+// 5. 可选地托管构建产物，并按 spec/40 DEP-02–05 模拟控制面：SPA 回退、注入 window.__PANEL_CONFIG__、
 //    为已有脚本补 nonce、重写 index.html 中的相对路径、安全头与 CSP nonce。用于在嵌入前验证产物（M0-06 验收 4）。
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -73,6 +80,8 @@ export function createGateway({ api, upstream, authCookie, app }) {
   const mfaCookie = `${sessionCookie}_mfa`;
   const unverifiedCookie = `${sessionCookie}_unverified`;
   const reauthCookie = `${sessionCookie}_reauth`;
+  const roleCookie = `${sessionCookie}_role`;
+  const enrollCookie = `${sessionCookie}_enroll`;
   const cookieAttrs = 'Path=/; HttpOnly; SameSite=Strict';
   const setFlag = (name, on, maxAge) =>
     on ? `${name}=1; ${cookieAttrs}${maxAge ? `; Max-Age=${maxAge}` : ''}` : `${name}=; ${cookieAttrs}; Max-Age=0`;
@@ -88,6 +97,39 @@ export function createGateway({ api, upstream, authCookie, app }) {
       res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ error: 'invalid_grant', error_description: 'mock: no session' }));
     }
+  }
+
+  const staffByRole = {
+    superadmin: { roles: ['superadmin'], permissions: ['*'], is_superadmin: true },
+    support: { roles: ['support'], permissions: ['accounts.read', 'orders.read', 'tickets.*'], is_superadmin: false },
+  };
+
+  function problem(res, status, body) {
+    res.writeHead(status, { 'content-type': 'application/problem+json' });
+    res.end(JSON.stringify({ type: 'about:blank', title: body.code, status, request_id: randomBytes(8).toString('hex'), ...body }));
+  }
+
+  /** 管理接口中由网关直接应答的请求；已应答时返回 true。 */
+  function consoleShortcut(route, json, res) {
+    if (route === 'POST /v1/staff/me/step-up' && json?.totp_code === '000000') {
+      problem(res, 400, { code: 'invalid_request', errors: [{ field: 'totp_code', code: 'incorrect' }] });
+      return true;
+    }
+    if (route === 'POST /v1/staff-invitations/acceptance') {
+      if (json?.token === 'inv_new' && !json.password) {
+        problem(res, 400, { code: 'invalid_request', errors: [{ field: 'password', code: 'required' }] });
+        return true;
+      }
+      if (json?.token === 'inv_expired') {
+        problem(res, 400, { code: 'invalid_request', errors: [{ field: 'token', code: 'expired' }] });
+        return true;
+      }
+      if (json?.token === 'inv_staff') {
+        problem(res, 409, { code: 'invalid_state' });
+        return true;
+      }
+    }
+    return false;
   }
 
   async function proxy(req, res) {
@@ -109,6 +151,7 @@ export function createGateway({ api, upstream, authCookie, app }) {
     }
 
     const json = parseJson(body);
+    if (!client && consoleShortcut(route, json, res)) return;
     const isLogin = req.method === 'POST' && url.pathname === '/v1/sessions';
     let loginEmail;
     // 第二步（提交 challenge_id）只会出现在启用了二次验证的账号上。
@@ -117,7 +160,9 @@ export function createGateway({ api, upstream, authCookie, app }) {
       const hasPassword = json && typeof json.password === 'string';
       loginEmail = typeof json?.email === 'string' ? json.email : undefined;
       const wantsMfa = api === 'console' || (loginEmail?.startsWith('mfa') ?? false);
-      if (hasPassword && wantsMfa) headers.prefer = 'code=401, example=mfa_required';
+      if (hasPassword && wantsMfa) {
+        headers.prefer = `code=401, example=${!client && loginEmail?.includes('+new') ? 'totp_enrollment' : 'mfa_required'}`;
+      }
       else if (client) headers.prefer = 'code=201, example=web';
     }
     if (client && stepUp.has(route)) {
@@ -151,8 +196,13 @@ export function createGateway({ api, upstream, authCookie, app }) {
           setCookies.push(setFlag(unverifiedCookie, loginEmail?.startsWith('unverified') ?? false));
         }
       }
+      if (!client && isLogin && status === 401 && loginEmail) {
+        // 第一步记下登录邮箱决定的角色与是否首次绑定，供第二步与之后的请求使用。
+        const role = loginEmail.startsWith('super') ? 'superadmin' : loginEmail.startsWith('support') ? 'support' : '';
+        setCookies.push(`${roleCookie}=${role}; ${cookieAttrs}`, setFlag(enrollCookie, loginEmail.includes('+new')));
+      }
       if (route === 'DELETE /v1/sessions/current' && status === 204) {
-        for (const name of [sessionCookie, accessCookie, mfaCookie, unverifiedCookie, reauthCookie]) setCookies.push(setFlag(name, false));
+        for (const name of [sessionCookie, accessCookie, mfaCookie, unverifiedCookie, reauthCookie, roleCookie, enrollCookie]) setCookies.push(setFlag(name, false));
       }
       if (client && status < 300) {
         if (route === 'POST /v1/me/reauthentications') setCookies.push(setFlag(reauthCookie, true, 300));
@@ -161,6 +211,46 @@ export function createGateway({ api, upstream, authCookie, app }) {
         if (route === 'POST /v1/accounts/verification' && cookies[sessionCookie]) setCookies.push(setFlag(unverifiedCookie, false));
       }
       if (setCookies.length) out['set-cookie'] = setCookies;
+
+      // Prism 示例的断言有效期是固定的过去时刻；改为 5 分钟后，界面才会复用断言（AUTH-19）。
+      if (!client && route === 'POST /v1/staff/me/step-up' && status === 201) {
+        const chunks = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const data = parseJson(Buffer.concat(chunks)) ?? {};
+          delete out['content-length'];
+          delete out['transfer-encoding'];
+          res.writeHead(status, out);
+          res.end(JSON.stringify({ ...data, expires_at: new Date(Date.now() + 300_000).toISOString() }));
+        });
+        return;
+      }
+
+      // 管理接口：按本地状态改写当前管理员，首次绑定时登录响应附恢复码。
+      const staffOverride = staffByRole[cookies[roleCookie]];
+      const rewriteStaff = !client && status < 300 && (route === 'GET /v1/staff/me' || (isLogin && status === 201));
+      if (rewriteStaff && (staffOverride || (isLogin && cookies[enrollCookie]))) {
+        const chunks = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const data = parseJson(Buffer.concat(chunks)) ?? {};
+          let next = data;
+          if (route === 'GET /v1/staff/me') next = { ...data, ...staffOverride };
+          else {
+            next = { ...data, staff: { ...data.staff, ...staffOverride } };
+            if (cookies[enrollCookie]) {
+              next.recovery_codes = Array.from({ length: 10 }, (_, i) => `mock-${String(i).padStart(4, '0')}-code`);
+              setCookies.push(setFlag(enrollCookie, false));
+              out['set-cookie'] = setCookies;
+            }
+          }
+          delete out['content-length'];
+          delete out['transfer-encoding'];
+          res.writeHead(status, out);
+          res.end(JSON.stringify(next));
+        });
+        return;
+      }
 
       // GET /v1/me：按本地状态改写二次验证与邮箱验证字段。
       if (client && route === 'GET /v1/me' && status === 200) {

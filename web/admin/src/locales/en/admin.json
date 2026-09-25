@@ -1,13 +1,186 @@
 {
   "nav": {
-    "overview": "Overview"
+    "overview": "Overview",
+    "staff": "Staff",
+    "roles": "Roles",
+    "audit_logs": "Audit log"
   },
   "login": {
-    "title": "Console sign in"
+    "title": "Console sign-in"
   },
   "home": {
     "title": "Overview",
     "welcome": "Signed in as {{email}}",
-    "empty": "Active users, new purchases, renewals and revenue will appear here."
+    "empty": "Active users, purchases, renewals and revenue will appear here."
+  },
+  "list": {
+    "load_more": "Load more",
+    "actions": "Actions"
+  },
+  "step_up": {
+    "title": "Verify it's you",
+    "description": "This action requires two-factor verification. Enter the 6-digit code from your authenticator app. Other sensitive actions within 5 minutes won't ask again.",
+    "submit": "Verify"
+  },
+  "sensitive": {
+    "reason": "Reason",
+    "reason_hint": "Required, up to 500 characters. Recorded in the audit log."
+  },
+  "staff": {
+    "title": "Staff",
+    "tabs_label": "Staff and invitations",
+    "tab_staff": "Staff",
+    "tab_invitations": "Invitations",
+    "email": "Email",
+    "roles": "Roles",
+    "totp": "Two-factor",
+    "totp_on": "Enabled",
+    "totp_off": "Not set up",
+    "last_login": "Last sign-in",
+    "you": "(you)",
+    "invite": "Invite staff",
+    "invite_description": "The invitee receives an email with a link valid for 72 hours and must set up an authenticator on first sign-in.",
+    "invite_submit": "Send invitation",
+    "edit_roles": "Change roles",
+    "edit_roles_for": "Change roles of {{email}}",
+    "edit_roles_description": "Change the roles of {{email}}.",
+    "edit_roles_submit": "Save",
+    "sessions_revoked_warning": "After the change, all of this staff member's sessions are revoked and they must sign in again.",
+    "remove": "Remove",
+    "remove_for": "Remove {{email}}",
+    "remove_title": "Remove staff member?",
+    "remove_description": "{{email}} will lose access to the console and their sessions end immediately. At least one superadmin must remain.",
+    "invited": "Invitation sent to {{email}}."
+  },
+  "invitations": {
+    "status": "Status",
+    "status_all": "All",
+    "expires_at": "Expires",
+    "statuses": {
+      "pending": "Pending",
+      "accepted": "Accepted",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "revoke": "Revoke",
+    "revoke_for": "Revoke invitation for {{email}}",
+    "revoke_title": "Revoke invitation?",
+    "revoke_description": "The invitation link sent to {{email}} stops working immediately."
+  },
+  "roles": {
+    "title": "Roles",
+    "intro": "Built-in roles can't be changed or deleted. Custom roles can only use permissions from the catalog; staff and roles are managed by superadmins only.",
+    "builtin": {
+      "superadmin": "Superadmin",
+      "operator": "Operator",
+      "support": "Support"
+    },
+    "builtin_badge": "Built-in role",
+    "all_permissions": "All permissions",
+    "name": "Name",
+    "name_hint": "Starts with a lowercase letter; lowercase letters, digits and hyphens; 2–32 characters. Can't be changed later.",
+    "name_format": "Invalid: start with a lowercase letter, 2–32 characters, lowercase letters, digits and hyphens only",
+    "description": "Description",
+    "permissions": "Permissions",
+    "staff_count": "Staff",
+    "create": "Create role",
+    "create_submit": "Create",
+    "form_description": "Choose the permissions this role grants.",
+    "edit": "Edit",
+    "edit_for": "Edit role {{name}}",
+    "edit_title": "Edit role {{name}}",
+    "save": "Save",
+    "edit_impact_one": "Affects {{count}} staff member; their sessions will be revoked.",
+    "edit_impact_other": "Affects {{count}} staff members; their sessions will be revoked.",
+    "delete": "Delete",
+    "delete_for": "Delete role {{name}}",
+    "delete_title": "Delete role {{name}}?",
+    "delete_description_one": "{{count}} staff member currently has this role.",
+    "delete_description_other": "{{count}} staff members currently have this role."
+  },
+  "permissions": {
+    "accounts_read": "View accounts",
+    "accounts_adjust": "Adjust accounts and entitlements",
+    "credits_adjust": "Adjust balances",
+    "orders_read": "View orders and payment notifications",
+    "orders_refund": "Refunds",
+    "plans_all": "Plans and prices",
+    "location_groups_all": "Location groups",
+    "hosts_all": "Hosts, inbounds and routes",
+    "kernels_write": "Switch host kernel",
+    "coupons_all": "Coupons and redeem codes",
+    "content_all": "Announcements, help articles and notification templates",
+    "tickets_all": "Tickets",
+    "payments_configure": "Payment configuration",
+    "settings_read": "View settings",
+    "settings_write": "Change settings",
+    "staff_all": "Staff and roles",
+    "audit_read": "Query audit log",
+    "all": "All permissions"
+  },
+  "audit": {
+    "title": "Audit log",
+    "intro": "Every administrative change is recorded here. Records can't be modified.",
+    "empty": "No matching records.",
+    "filters": "Filters",
+    "apply": "Search",
+    "clear": "Clear",
+    "time": "Time",
+    "actor": "Actor",
+    "actor_id": "Actor ID",
+    "action_label": "Action",
+    "target": "Target",
+    "target_type": "Target type",
+    "target_id": "Target ID",
+    "created_from": "From",
+    "created_to": "To",
+    "invalid_uuid": "Enter a valid UUID",
+    "system": "System",
+    "detail": "Details",
+    "detail_for": "View audit record {{id}}",
+    "detail_title": "Audit record",
+    "reason": "Reason",
+    "ip_prefix": "Source IP prefix",
+    "request_id": "Request ID",
+    "diff": "Changes",
+    "action": {
+      "session": {
+        "create": "Sign-in",
+        "delete": "Sign-out"
+      },
+      "step_up": {
+        "create": "Re-verification"
+      },
+      "staff": {
+        "create": "Staff joined",
+        "update": "Staff roles changed",
+        "delete": "Staff removed"
+      },
+      "staff_invitation": {
+        "create": "Staff invited",
+        "revoke": "Invitation revoked"
+      },
+      "role": {
+        "create": "Role created",
+        "update": "Role changed",
+        "delete": "Role deleted"
+      }
+    }
+  },
+  "accept": {
+    "title": "Accept staff invitation",
+    "intro": "Accepting adds you to the console. You'll set up an authenticator on first sign-in.",
+    "password_optional": "Password (new accounts only)",
+    "password_new": "Set a password",
+    "password_hint": "If you already have an account, leave this empty and sign in with your existing password. New accounts need a password of at least {{min}} characters.",
+    "password_required": "There's no account for this email yet. Set a password.",
+    "submit": "Accept invitation",
+    "done": "You've joined the console. Sign in; you'll set up an authenticator on first sign-in.",
+    "go_login": "Go to sign-in",
+    "missing_token": "The invitation link is incomplete. Open it again from the invitation email.",
+    "invalid_token": "The invitation link is invalid. Ask an administrator to invite you again.",
+    "expired": "The invitation link has expired. Ask an administrator to invite you again.",
+    "invalid_state": "This invitation can't be accepted: the account is suspended or is already a staff member.",
+    "password_hint_new": "At least {{min}} characters."
   }
 }
