@@ -202,6 +202,22 @@ func TestContractShape(t *testing.T) {
 			t.Errorf("%s: audit logs must be read-only", op.ID)
 		}
 	}
+	// 管理员、邀请、角色的 13 个操作与手动标记支付只允许 superadmin（AUTH-22，M1-02 验收 1）。
+	var super []string
+	for _, op := range gen.Operations {
+		if op.Permission == "superadmin" {
+			super = append(super, op.ID)
+		}
+		if strings.HasPrefix(strings.SplitN(op.Pattern, " ", 2)[1], "/v1/staff") && op.Permission != "superadmin" && op.Permission != "none" {
+			t.Errorf("%s: x-permission %s, want superadmin", op.ID, op.Permission)
+		}
+		if strings.HasPrefix(strings.SplitN(op.Pattern, " ", 2)[1], "/v1/roles") && op.Permission != "superadmin" {
+			t.Errorf("%s: x-permission %s, want superadmin", op.ID, op.Permission)
+		}
+	}
+	if len(super) != 14 {
+		t.Errorf("%d superadmin-only operations, want 14: %v", len(super), super)
+	}
 	if !slices.Contains(gen.PermissionCatalog, "staff.*") || !slices.Contains(gen.PermissionCatalog, "*") {
 		t.Errorf("catalog = %v", gen.PermissionCatalog)
 	}

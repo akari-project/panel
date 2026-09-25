@@ -13,6 +13,8 @@ github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/akari-project/panel-spec v0.6.0 h1:U1uN0KeNaiZzOvwk/g+k7tPVe8NGl8TinxSh7mFRJVg=
 github.com/akari-project/panel-spec v0.6.0/go.mod h1:luSBbwHRo0NtzVPHrvRASoZzVT+UwNeoRLpQLAKKG+o=
+github.com/akari-project/panel-spec v0.7.0 h1:4mEO+HuUnI/K3CNuRHrFpKtsJhAOcfFLZpLqiP2wclQ=
+github.com/akari-project/panel-spec v0.7.0/go.mod h1:luSBbwHRo0NtzVPHrvRASoZzVT+UwNeoRLpQLAKKG+o=
 github.com/andybalholm/brotli v1.2.3 h1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=
 github.com/andybalholm/brotli v1.2.3/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=

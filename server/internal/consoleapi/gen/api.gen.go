@@ -471,10 +471,10 @@ type IncompatibleInboundTransport string
 
 // InvitationAcceptance defines model for InvitationAcceptance.
 type InvitationAcceptance struct {
-	// Password 被邀请邮箱尚无账号时必填，用于创建账号
+	// Password 被邀请邮箱没有账号，或已有账号但邮箱未验证时必填（AUTH-22）；邮箱已验证的已有账号忽略此字段
 	Password *string `json:"password,omitempty"`
 
-	// Token 邀请邮件链接中的一次性令牌（72 小时有效）
+	// Token 邀请邮件链接片段中的一次性令牌（32 字节随机值，base64url，72 小时有效）
 	Token string `json:"token"`
 }
 
@@ -512,12 +512,12 @@ type PasswordLogin struct {
 	Password     string              `json:"password"`
 }
 
-// Permission 权限目录（spec/10 AUTH-17）；`*` 只出现在内置角色 superadmin 上
+// Permission 权限目录（spec/10 AUTH-17）；`*` 只出现在内置角色 superadmin 上；`staff.*` 为保留项，不可授予自定义角色（AUTH-22）
 type Permission string
 
 // Problem RFC 9457 problem details（CONV-16）
 type Problem struct {
-	// ChallengeId `mfa_required` 时附带：二次验证挑战 ID（5 分钟有效，AUTH-20）
+	// ChallengeId 只在登录流程（`POST /v1/sessions` 第一步）的 `mfa_required` 中附带：二次验证挑战 ID（5 分钟有效，AUTH-20）；敏感操作的 `mfa_required`（AUTH-19）不附带
 	ChallengeId *openapi_types.UUID `json:"challenge_id,omitempty"`
 
 	// Code 错误码，取值见 spec/02 CONV-16，与客户端接口相同
@@ -528,7 +528,7 @@ type Problem struct {
 	// IncompatibleInbounds `kernel_protocol_unsupported` 时附带：与目标内核不兼容的入站
 	IncompatibleInbounds *[]IncompatibleInbound `json:"incompatible_inbounds,omitempty"`
 
-	// Methods `mfa_required` 时附带：可用的二次验证方式
+	// Methods `mfa_required` 时附带：可用的二次验证方式。登录流程（AUTH-20）可含 `recovery_code`；敏感操作（AUTH-19）只列出 step-up 可用的方式，不含 `recovery_code`
 	Methods        *[]ProblemMethods `json:"methods,omitempty"`
 	RequestId      string            `json:"request_id"`
 	Status         int32             `json:"status"`
@@ -561,7 +561,7 @@ type RoleCreate struct {
 	Description nullable.Nullable[string] `json:"description,omitempty"`
 	Name        string                    `json:"name"`
 
-	// Permissions 必须是权限目录的子集，且不超出操作者自身权限；不能包含 `*`
+	// Permissions 必须是权限目录的子集；不能包含 `*` 与 `staff.*`（`not_allowed`，AUTH-22）
 	Permissions []Permission `json:"permissions"`
 
 	// Reason 操作原因，写入审计日志（spec/10 AUTH-18）
@@ -571,7 +571,9 @@ type RoleCreate struct {
 // RoleUpdate defines model for RoleUpdate.
 type RoleUpdate struct {
 	Description nullable.Nullable[string] `json:"description,omitempty"`
-	Permissions *[]Permission             `json:"permissions,omitempty"`
+
+	// Permissions 整体替换；规则同 `RoleCreate.permissions`：不能包含 `*` 与 `staff.*`（`not_allowed`，AUTH-22）
+	Permissions *[]Permission `json:"permissions,omitempty"`
 
 	// Reason 操作原因，写入审计日志（spec/10 AUTH-18）
 	Reason string `json:"reason"`
@@ -675,6 +677,9 @@ type Limit = int
 // MfaAssertionHeader defines model for MfaAssertion.
 type MfaAssertionHeader = string
 
+// MfaRequired RFC 9457 problem details（CONV-16）
+type MfaRequired = Problem
+
 // PreconditionRequired RFC 9457 problem details（CONV-16）
 type PreconditionRequired = Problem
 
@@ -705,7 +710,7 @@ type RefreshTokenFormdataBodyGrantType string
 
 // CreateRoleParams defines parameters for CreateRole.
 type CreateRoleParams struct {
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 
 	// IdempotencyKey 幂等键（CONV-12）：相同键与请求体返回相同结果；不同请求体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回 409 `conflict`。
@@ -717,7 +722,7 @@ type DeleteRoleParams struct {
 	// AuditReason 操作原因，写入审计日志（AUTH-18）。不带请求体的 DELETE 必须携带：值为 UTF-8 百分号编码，上限按解码后计算，为 1 到 500 个 Unicode 码点；`maxLength` 6000 是编码后的上限（500 个码点 × 每个码点最多 4 字节 × 每字节 3 个字符）。缺少、无法解码或超长返回 400 `invalid_request`（`errors[].field` 为 `Audit-Reason`）。
 	AuditReason *AuditReason `json:"Audit-Reason,omitempty"`
 
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 
 	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
@@ -732,7 +737,7 @@ type GetRoleParams struct {
 
 // UpdateRoleParams defines parameters for UpdateRole.
 type UpdateRoleParams struct {
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 
 	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
@@ -767,7 +772,7 @@ type ListStaffInvitationsParamsStatus string
 
 // CreateStaffInvitationParams defines parameters for CreateStaffInvitation.
 type CreateStaffInvitationParams struct {
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 
 	// IdempotencyKey 幂等键（CONV-12）：相同键与请求体返回相同结果；不同请求体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回 409 `conflict`。
@@ -785,7 +790,7 @@ type RevokeStaffInvitationParams struct {
 	// AuditReason 操作原因，写入审计日志（AUTH-18）。不带请求体的 DELETE 必须携带：值为 UTF-8 百分号编码，上限按解码后计算，为 1 到 500 个 Unicode 码点；`maxLength` 6000 是编码后的上限（500 个码点 × 每个码点最多 4 字节 × 每字节 3 个字符）。缺少、无法解码或超长返回 400 `invalid_request`（`errors[].field` 为 `Audit-Reason`）。
 	AuditReason *AuditReason `json:"Audit-Reason,omitempty"`
 
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 }
 
@@ -794,13 +799,13 @@ type RemoveStaffParams struct {
 	// AuditReason 操作原因，写入审计日志（AUTH-18）。不带请求体的 DELETE 必须携带：值为 UTF-8 百分号编码，上限按解码后计算，为 1 到 500 个 Unicode 码点；`maxLength` 6000 是编码后的上限（500 个码点 × 每个码点最多 4 字节 × 每字节 3 个字符）。缺少、无法解码或超长返回 400 `invalid_request`（`errors[].field` 为 `Audit-Reason`）。
 	AuditReason *AuditReason `json:"Audit-Reason,omitempty"`
 
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 }
 
 // UpdateStaffParams defines parameters for UpdateStaff.
 type UpdateStaffParams struct {
-	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19）。缺少或过期返回 401 `mfa_required`。
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 }
 
@@ -2071,6 +2076,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
+type MfaRequiredApplicationProblemPlusJSONResponse Problem
+
 type NotModifiedResponseHeaders struct {
 	ETag *string
 }
@@ -2312,6 +2319,22 @@ func (response CreateRole201JSONResponse) VisitCreateRoleResponse(w http.Respons
 	return err
 }
 
+type CreateRole401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CreateRole401ApplicationProblemPlusJSONResponse) VisitCreateRoleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateRoledefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -2344,6 +2367,22 @@ type DeleteRole204Response struct {
 func (response DeleteRole204Response) VisitDeleteRoleResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
+}
+
+type DeleteRole401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteRole401ApplicationProblemPlusJSONResponse) VisitDeleteRoleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type DeleteRole409ApplicationProblemPlusJSONResponse Problem
@@ -2483,6 +2522,22 @@ func (response UpdateRole200JSONResponse) VisitUpdateRoleResponse(w http.Respons
 		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
 	}
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateRole401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateRole401ApplicationProblemPlusJSONResponse) VisitUpdateRoleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2777,6 +2832,36 @@ func (response CreateStaffInvitation201JSONResponse) VisitCreateStaffInvitationR
 	return err
 }
 
+type CreateStaffInvitation400ApplicationProblemPlusJSONResponse Problem
+
+func (response CreateStaffInvitation400ApplicationProblemPlusJSONResponse) VisitCreateStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStaffInvitation401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response CreateStaffInvitation401ApplicationProblemPlusJSONResponse) VisitCreateStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateStaffInvitationdefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -2817,6 +2902,53 @@ func (response AcceptStaffInvitation200JSONResponse) VisitAcceptStaffInvitationR
 	return err
 }
 
+type AcceptStaffInvitation400ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptStaffInvitation400ApplicationProblemPlusJSONResponse) VisitAcceptStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptStaffInvitation409ApplicationProblemPlusJSONResponse Problem
+
+func (response AcceptStaffInvitation409ApplicationProblemPlusJSONResponse) VisitAcceptStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcceptStaffInvitation429ApplicationProblemPlusJSONResponse struct {
+	RateLimitedApplicationProblemPlusJSONResponse
+}
+
+func (response AcceptStaffInvitation429ApplicationProblemPlusJSONResponse) VisitAcceptStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AcceptStaffInvitationdefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -2849,6 +2981,22 @@ type RevokeStaffInvitation204Response struct {
 func (response RevokeStaffInvitation204Response) VisitRevokeStaffInvitationResponse(w http.ResponseWriter) error {
 	w.WriteHeader(204)
 	return nil
+}
+
+type RevokeStaffInvitation401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RevokeStaffInvitation401ApplicationProblemPlusJSONResponse) VisitRevokeStaffInvitationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type RevokeStaffInvitation409ApplicationProblemPlusJSONResponse Problem
@@ -3048,6 +3196,22 @@ func (response RemoveStaff204Response) VisitRemoveStaffResponse(w http.ResponseW
 	return nil
 }
 
+type RemoveStaff401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveStaff401ApplicationProblemPlusJSONResponse) VisitRemoveStaffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RemoveStaff409ApplicationProblemPlusJSONResponse Problem
 
 func (response RemoveStaff409ApplicationProblemPlusJSONResponse) VisitRemoveStaffResponse(w http.ResponseWriter) error {
@@ -3138,6 +3302,22 @@ func (response UpdateStaff200JSONResponse) VisitUpdateStaffResponse(w http.Respo
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStaff401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateStaff401ApplicationProblemPlusJSONResponse) VisitUpdateStaffResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
 	_, err := buf.WriteTo(w)
 	return err
 }

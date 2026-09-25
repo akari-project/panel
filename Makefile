@@ -191,7 +191,7 @@ check-embed:
 
 ## CI -----------------------------------------------------------------
 
-ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal
+ci: lint check-generated licenses test test-property e2e build-noui web-check check-embed e2e-portal e2e-admin
 
 clean:
 	rm -rf $(BIN)
