@@ -43,7 +43,7 @@ type configCache struct {
 }
 
 // featuresWarn 记录最近一次告警的 settings 键 features 原始值的摘要：同一份异常值每个进程只告警一次，
-// 不保存原文（spec/03 3.6、CONV-24）。
+// 不保存原文（spec/03 3.6、CONV-24）。值恢复合法后清零，之后再次出现同一份异常值时重新告警。
 type featuresWarn struct {
 	mu   sync.Mutex
 	last [sha256.Size]byte
@@ -118,10 +118,8 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	effective, invalid := clientconfig.Features(raw, clientconfig.Implemented)
-	if invalid != nil {
-		s.warnFeatures(ctx, raw, invalid)
-	}
+	effective, invalid := clientconfig.Features(raw, clientconfig.ImplementedModules())
+	s.warnFeatures(ctx, raw, invalid)
 	features := map[string]any{}
 	for m, on := range effective {
 		features[m] = on
@@ -152,10 +150,17 @@ func (s *Server) configPayload(ctx context.Context) (map[string]any, error) {
 	}, nil
 }
 
-// warnFeatures 记录 settings 键 features 中被当作关闭的异常值，只记键名（spec/03 3.6、CONV-24）。
+// warnFeatures 记录 settings 键 features 中被当作关闭的异常值，只记键名（spec/03 3.6、CONV-24）；
+// invalid 为空（值合法）时清除告警记录。
 func (s *Server) warnFeatures(ctx context.Context, raw []byte, invalid []string) {
-	sum := sha256.Sum256(raw)
 	w := &s.featuresWarn
+	if invalid == nil {
+		w.mu.Lock()
+		w.last = [sha256.Size]byte{}
+		w.mu.Unlock()
+		return
+	}
+	sum := sha256.Sum256(raw)
 	w.mu.Lock()
 	seen := w.last == sum
 	w.last = sum

@@ -5,13 +5,18 @@ package clientconfig
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 )
 
 // Modules 为 settings 键 features 的模块名（spec/13 OPS-08）。
 var Modules = []string{"announcements", "articles", "support", "referrals", "diagnostics"}
 
-// Implemented 为本二进制已实现的模块（OPS-08）。实现某个模块时在此登记；M1 阶段均未实现。
-var Implemented = map[string]bool{}
+// implemented 为本二进制已实现的模块（OPS-08）。实现某个模块时在此登记；M1 阶段均未实现。
+// 不导出，运行时不可修改；需要其他取值的测试通过 Features 的参数传入。
+var implemented = map[string]bool{}
+
+// ImplementedModules 返回本二进制已实现的模块（副本），作为 Features 的 implemented 参数。
+func ImplementedModules() map[string]bool { return maps.Clone(implemented) }
 
 // Features 按 spec/03 3.6 解码 settings 键 features 并返回各模块的有效值（OPS-08）：
 // 存储值为 JSON true 且 implemented 中已登记才为 true。raw 为 nil 表示键不存在，全部关闭。

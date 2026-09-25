@@ -156,6 +156,17 @@ func TestConfigFeaturesTolerant(t *testing.T) {
 			t.Errorf("%s: repeated warn %d %s", tc.value, code, logs.String())
 		}
 	}
+
+	// 值恢复合法后清除告警记录：同一份异常值再次出现时重新告警。
+	e.setSetting(t, "features", `null`)
+	e.getConfig(t, "", "")
+	e.setSetting(t, "features", `{"support":false}`)
+	e.getConfig(t, "", "")
+	logs.Reset()
+	e.setSetting(t, "features", `null`)
+	if e.getConfig(t, "", ""); !strings.Contains(logs.String(), `"keys":["features"]`) {
+		t.Errorf("no warn after value recovered and broke again: %s", logs.String())
+	}
 }
 
 // API-11：config_issued_at 严格递增，写入 max(当前时刻, 上一次的值 + 1 秒)，秒精度 RFC 3339 UTC。
@@ -230,12 +241,29 @@ func TestConfigIssuedAtConcurrent(t *testing.T) {
 	}
 }
 
-// 已存的 config_issued_at 不是合法时间时修改失败（fail-closed），不写入。
+// 已存的 config_issued_at 不是 YYYY-MM-DDTHH:MM:SSZ 字符串时修改失败（fail-closed），值保持不变。
+// timestamptz 能解析的特殊值、不带时区的字符串与 JSON null 同样拒绝。
 func TestConfigIssuedAtCorrupt(t *testing.T) {
 	e := newEnv(t)
-	e.setSetting(t, "config_issued_at", `"not-a-time"`)
-	if _, err := sqlc.New(e.pool).BumpConfigIssuedAt(context.Background(), t0); err == nil {
-		t.Fatal("bump over corrupt value succeeded")
+	ctx := context.Background()
+	for _, v := range []string{
+		`"not-a-time"`, `null`, `"now"`, `"epoch"`, `"infinity"`, `"2026-10-01T10:00:00"`, `"2026-10-01 10:00:00Z"`,
+		`"2026-10-01T10:00:00+08:00"`, `"2026-10-01T10:00:00.5Z"`, `"2026-13-01T10:00:00Z"`, `1790000000`, `{}`,
+	} {
+		e.setSetting(t, "config_issued_at", v)
+		if got, err := sqlc.New(e.pool).BumpConfigIssuedAt(ctx, t0); err == nil {
+			t.Errorf("bump over %s succeeded: %q", v, got)
+		}
+		var stored string
+		if err := e.pool.QueryRow(ctx, `SELECT value::text FROM settings WHERE key = 'config_issued_at'`).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		var want, have any
+		_ = json.Unmarshal([]byte(v), &want)
+		_ = json.Unmarshal([]byte(stored), &have)
+		if mustJSON(want) != mustJSON(have) {
+			t.Errorf("%s changed to %s", v, stored)
+		}
 	}
 }
 

@@ -55,14 +55,14 @@ func TestFeatures(t *testing.T) {
 	}
 }
 
-// M1 阶段五个模块都未实现：已存 true 的有效值恒为 false。在 Implemented 中登记模块时同步修改本测试。
+// M1 阶段五个模块都未实现：已存 true 的有效值恒为 false。在 implemented 中登记模块时同步修改本测试。
 func TestFeaturesNoneImplemented(t *testing.T) {
 	all := map[string]bool{}
 	for _, m := range Modules {
 		all[m] = true
 	}
 	raw, _ := json.Marshal(all)
-	got, invalid := Features(raw, Implemented)
+	got, invalid := Features(raw, ImplementedModules())
 	for m, v := range got {
 		if v {
 			t.Errorf("%s enabled though not implemented", m)
