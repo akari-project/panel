@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.5.0'
+  version: '0.6.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -7989,9 +7989,9 @@ paths:
                   ios: 1.2.0
                   android: 1.2.0
                 features:
-                  announcements: true
-                  articles: true
-                  support: true
+                  announcements: false
+                  articles: false
+                  support: false
                   referrals: false
                   diagnostics: false
                 referral:
@@ -8059,9 +8059,9 @@ paths:
                   ios: 1.2.0
                   android: 1.2.0
                 features:
-                  announcements: true
-                  articles: true
-                  support: true
+                  announcements: false
+                  articles: false
+                  support: false
                   referrals: false
                   diagnostics: false
                 referral:
@@ -13140,7 +13140,11 @@ components:
             android: 1.2.0
         features:
           type: object
-          description: '运营模块开关，键名与 `/v1/config` 的 features 相同（OPS-08）'
+          description: |
+            运营模块开关，键名与 `/v1/config` 的 features 相同（OPS-08），是 CONV-10 布尔字段须以 `is_`/`has_` 开头的例外。
+            返回有效值：存储为 `true` 且本版本控制面已实现该模块才为 `true`，与 `/v1/config` 一致；缺省全部为 `false`（spec/03 3.6）。
+            存储中为 `true` 但本版本未实现的模块返回 `false`，存储值保留，升级到实现该模块的版本后恢复生效。
+          required: [announcements, articles, support, referrals, diagnostics]
           properties:
             announcements:
               type: boolean
@@ -13274,7 +13278,12 @@ components:
             android: 1.2.0
         features:
           type: object
-          description: '运营模块开关，键名与 `/v1/config` 的 features 相同（OPS-08）'
+          description: |
+            运营模块开关（OPS-08），可选。按键合并：只修改提交的模块，未提交的保持原值（与 `min_version` 的整体替换不同，开关没有“删除”语义）。
+            `features` 本身为 `null` 或非对象时返回 400 `invalid_request`，`errors[].code` 为 `invalid_format`（`errors[].field` 为 `features`）；
+            某键的值为 `null` 或非布尔、模块名未知时同样返回 `invalid_format`（`errors[].field` 如 `features.support`）；
+            实现须按键逐一校验，不得用生成的结构体解码而静默丢弃未知键。开启本版本控制面未实现的模块返回 400 `invalid_request`，
+            `errors[].code` 为 `not_allowed`；提交 `false` 始终允许。有效值实际变化时 `/v1/config` 重新签名并更新 `issued_at`（API-11）。
           properties:
             announcements:
               type: boolean
