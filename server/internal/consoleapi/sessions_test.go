@@ -4,6 +4,7 @@ package consoleapi
 
 import (
 	"encoding/base32"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -191,9 +192,16 @@ func TestConsoleRefresh(t *testing.T) {
 	if w := e.refreshReq(b); w.Code != 400 {
 		t.Fatalf("refresh after 12h: %d", w.Code)
 	}
-	// 客户端会话的刷新令牌不能在管理接口使用（会话受众不符按 invalid_grant 处理）。
 	if w := e.refreshReq(&admin{refresh: "not-a-token"}); w.Code != 400 {
 		t.Fatalf("garbage refresh: %d", w.Code)
+	}
+	// 管理会话的刷新令牌不能在客户端接口使用（AUTH-21），且不因此吊销会话链。
+	c := e.staff(t, "operator")
+	if _, err := e.sessions.Refresh(t.Context(), c.refresh, "", ""); !errors.Is(err, session.ErrInvalidGrant) {
+		t.Fatalf("client refresh with a console token: %v", err)
+	}
+	if w := e.refreshReq(c); w.Code != 200 {
+		t.Fatalf("console refresh after the rejected client attempt: %d", w.Code)
 	}
 }
 
