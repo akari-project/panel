@@ -30,6 +30,8 @@ type req struct {
 	method, path, body, contentType, ua, ip string
 	bearer                                  string
 	cookies                                 []*http.Cookie
+	// idempotencyKey 非空时作为 Idempotency-Key 请求头（CONV-12）。
+	idempotencyKey string
 }
 
 func (e *env) do(r req) *httptest.ResponseRecorder {
@@ -48,6 +50,9 @@ func (e *env) do(r req) *httptest.ResponseRecorder {
 	}
 	if r.bearer != "" {
 		hr.Header.Set("Authorization", "Bearer "+r.bearer)
+	}
+	if r.idempotencyKey != "" {
+		hr.Header.Set("Idempotency-Key", r.idempotencyKey)
 	}
 	for _, c := range r.cookies {
 		hr.AddCookie(c)
@@ -661,5 +666,35 @@ func TestRequireVerifiedEmail(t *testing.T) {
 	_ = e.do(post("/v1/accounts/verification", jsonBody(map[string]string{"email": "unverified@example.com", "code": code})))
 	if err := account.RequireVerifiedEmail(context.Background(), q, id); err != nil {
 		t.Fatalf("verified: %v", err)
+	}
+}
+
+// CONV-12：处理器内部的限流（AUTH-09）返回的 429 不缓存。等待 Retry-After 后用原键重试原请求必须重新执行，
+// 而不是在 24 小时内重放 429。
+func TestIdempotencyHandlerRateLimitNotCached(t *testing.T) {
+	e := newEnv(t)
+	email := "resend-" + uuid.NewString() + "@example.com"
+	resend := func(key string) *httptest.ResponseRecorder {
+		r := post("/v1/accounts/verification/resend", jsonBody(map[string]string{"email": email}))
+		r.idempotencyKey = key
+		return e.do(r)
+	}
+	if w := resend(uuid.NewString()); w.Code != 202 {
+		t.Fatalf("first resend: %d %s", w.Code, w.Body)
+	}
+	key := uuid.NewString()
+	if w := resend(key); w.Code != 429 || problemCode(t, w) != "rate_limited" {
+		t.Fatalf("second resend within a minute: %d %s", w.Code, w.Body)
+	}
+	// 相当于等待 Retry-After 使每分钟的限额恢复。
+	if err := e.accounts.Limiter.Reset(context.Background(), account.ResendPerMin, email); err != nil {
+		t.Fatal(err)
+	}
+	if w := resend(key); w.Code != 202 {
+		t.Fatalf("retry with the same key after Retry-After: %d %s", w.Code, w.Body)
+	}
+	// 成功结果按常规缓存：同键再次请求重放 202，不再计入限流。
+	if w := resend(key); w.Code != 202 {
+		t.Fatalf("replay: %d %s", w.Code, w.Body)
 	}
 }
