@@ -35,6 +35,7 @@ ui:
     hosts: [console.example.com]
     path_prefix: /
     # api_base_url: https://console.example.com   # 留空时取请求来源加路径前缀
+    # public_url: https://console.example.com/    # 邮件链接（管理员邀请）使用的地址；留空时取唯一的 hosts 与 path_prefix
 client:
   app_name: Akari              # 自研客户端 User-Agent 的产品名（spec/30 API-03），不随站点名称变化
   # 备用接口根地址（不含 /v1），在 /v1/config 中排在用户中心接口地址之后（spec/30 API-11）

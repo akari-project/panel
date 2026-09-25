@@ -64,3 +64,7 @@ RETURNING id;
 
 -- name: AcceptInvitation :exec
 UPDATE staff_invitations SET accepted_at = sqlc.arg(now), account_id = sqlc.arg(account_id) WHERE id = sqlc.arg(id);
+
+-- name: LockAccountByEmail :one
+-- 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。
+SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower(sqlc.arg(email)::text) FOR UPDATE;

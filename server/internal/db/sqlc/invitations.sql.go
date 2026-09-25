@@ -201,6 +201,30 @@ func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams
 	return items, nil
 }
 
+const lockAccountByEmail = `-- name: LockAccountByEmail :one
+SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower($1::text) FOR UPDATE
+`
+
+type LockAccountByEmailRow struct {
+	ID              uuid.UUID
+	Status          string
+	EmailVerifiedAt *time.Time
+	Locale          string
+}
+
+// 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。
+func (q *Queries) LockAccountByEmail(ctx context.Context, email string) (LockAccountByEmailRow, error) {
+	row := q.db.QueryRow(ctx, lockAccountByEmail, email)
+	var i LockAccountByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.EmailVerifiedAt,
+		&i.Locale,
+	)
+	return i, err
+}
+
 const lockInvitation = `-- name: LockInvitation :one
 SELECT id, email, inviter_id, expires_at, accepted_at, revoked_at FROM staff_invitations WHERE id = $1 FOR UPDATE
 `

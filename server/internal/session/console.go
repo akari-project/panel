@@ -322,9 +322,11 @@ func (s *Service) ConsoleLogout(ctx context.Context, p auth.Principal) error {
 }
 
 // stepUp 是 Valkey 中保存的 Mfa-Assertion：绑定账号与签发时的会话链（以根会话标识，AUTH-19）。
+// 失效时间按注入的时钟判断（CONV-04）；Valkey 的 TTL 只作为清理的上界。
 type stepUp struct {
 	Account uuid.UUID `json:"a"`
 	Chain   uuid.UUID `json:"c"`
+	Expires int64     `json:"e"` // Unix 毫秒
 }
 
 // StepUp 以 TOTP 码完成一次重新验证，签发 5 分钟有效的 Mfa-Assertion（AUTH-19）：
@@ -363,11 +365,11 @@ func (s *Service) StepUp(ctx context.Context, p auth.Principal, totpCode string)
 		return "", time.Time{}, err
 	}
 	assertion := base64.RawURLEncoding.EncodeToString(b)
-	rec, err := json.Marshal(stepUp{Account: p.AccountID, Chain: chain})
+	expires := s.Clock.Now().Add(StepUpTTL)
+	rec, err := json.Marshal(stepUp{Account: p.AccountID, Chain: chain, Expires: expires.UnixMilli()})
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	expires := s.Clock.Now().Add(StepUpTTL)
 	var ok bool
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
@@ -415,7 +417,7 @@ func (s *Service) CheckStepUp(ctx context.Context, p auth.Principal, assertion s
 		return apierr.Unavailable(err)
 	}
 	var rec stepUp
-	if err := json.Unmarshal(raw, &rec); err != nil || rec.Account != p.AccountID {
+	if err := json.Unmarshal(raw, &rec); err != nil || rec.Account != p.AccountID || !s.Clock.Now().Before(time.UnixMilli(rec.Expires)) {
 		return ErrStepUpRequired
 	}
 	chain, err := sqlc.New(s.Pool).SessionChainRoot(ctx, p.SessionID)
