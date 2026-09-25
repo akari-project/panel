@@ -29,3 +29,11 @@ ON CONFLICT (key) DO UPDATE SET value = to_jsonb(to_char(
   ) AT TIME ZONE 'UTC',
   'YYYY-MM-DD"T"HH24:MI:SS"Z"'))
 RETURNING (value #>> '{}')::text AS issued_at;
+
+-- name: GetSettings :many
+-- 在一条语句中读取多个设置项，结果来自同一个快照（如三个注册控制键，spec/10 AUTH-02）。不存在的键不返回。
+SELECT key, value FROM settings WHERE key = ANY(sqlc.arg(keys)::text[]);
+
+-- name: ReplaceSettingIf :execrows
+-- 仅当设置项仍为 old 时替换为 value（按 jsonb 相等比较），用于纠正异常值而不覆盖并发写入的新值。
+UPDATE settings SET value = sqlc.arg(value) WHERE key = sqlc.arg(key) AND value = sqlc.arg(old)::jsonb;

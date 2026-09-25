@@ -140,16 +140,17 @@ func ValidLocale(l string) bool { return len(l) <= 35 && localeRE.MatchString(l)
 
 // RegistrationControl 返回有效的注册控制（spec/10 AUTH-02、spec/03 3.6）：缺键按 open 与空名单；
 // 三个注册控制键中任一值异常时策略为 closed，并记 warn 日志，只记键名（CONV-24），同一份异常值每个进程
-// 只告警一次。q 由调用方提供，使 GET /v1/config 与其他设置在同一个 q 上读取。
+// 只告警一次；告警记录在 Log 为 nil 时同样更新，只是不输出。三个键在一条语句中读取，策略与名单来自同一个
+// 快照。q 由调用方提供，使 GET /v1/config 与其他设置在同一个 q 上读取。
 func (s *Service) RegistrationControl(ctx context.Context, q *sqlc.Queries) (clientconfig.RegistrationControl, error) {
 	keys := [3]string{"registration_policy", "email_domain_allowlist", "email_domain_denylist"}
+	rows, err := q.GetSettings(ctx, keys[:])
+	if err != nil {
+		return clientconfig.RegistrationControl{}, err
+	}
 	var raw [3][]byte
-	for i, k := range keys {
-		v, err := q.GetSetting(ctx, k)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return clientconfig.RegistrationControl{}, err
-		}
-		raw[i] = v
+	for _, r := range rows {
+		raw[slices.Index(keys[:], r.Key)] = r.Value
 	}
 	rc, invalid := clientconfig.Registration(raw[0], raw[1], raw[2])
 	for i, k := range keys {

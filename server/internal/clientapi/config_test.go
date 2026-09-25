@@ -267,6 +267,49 @@ func TestConfigIssuedAtCorrupt(t *testing.T) {
 	}
 }
 
+// spec/03 3.6：config_issued_at 的存储值异常时 GET /v1/config 按缺键处理：用当前时刻覆盖并下发合法的
+// issued_at，不返回 500；warn 日志只记键名。
+func TestConfigIssuedAtInvalidStored(t *testing.T) {
+	e := newEnv(t)
+	var logs bytes.Buffer
+	e.server.d.Log = slog.New(slog.NewJSONHandler(&logs, nil))
+	for i, v := range []string{`null`, `"now"`, `1790000000`, `"secret-marker"`, `"2026-10-01T10:00:00"`, `"2026-13-01T10:00:00Z"`, `{}`} {
+		logs.Reset()
+		e.clk.Advance(time.Hour)
+		want := t0.Add(time.Duration(i+1) * time.Hour).UTC().Format(time.RFC3339)
+		e.setSetting(t, "config_issued_at", v)
+		code, _, _, p := e.getConfig(t, "", "")
+		if code != 200 || p["issued_at"] != want {
+			t.Errorf("%s: %d issued_at %v, want %s", v, code, p["issued_at"], want)
+		}
+		if !strings.Contains(logs.String(), `"keys":["config_issued_at"]`) || strings.Contains(logs.String(), "secret-marker") {
+			t.Errorf("%s: logs %s", v, logs.String())
+		}
+		// 已纠正：再次请求读到同一值，不再告警。
+		logs.Reset()
+		e.clk.Advance(time.Minute)
+		if _, _, _, p := e.getConfig(t, "", ""); p["issued_at"] != want || logs.Len() != 0 {
+			t.Errorf("%s: second read %v %s", v, p["issued_at"], logs.String())
+		}
+		e.clk.Advance(-time.Minute)
+	}
+}
+
+// 纠正只在存储值仍为读到的异常值时生效，不覆盖并发写入的新值。
+func TestReplaceSettingIfConditional(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	q := sqlc.New(e.pool)
+	e.setSetting(t, "config_issued_at", `"2026-10-01T12:00:00Z"`)
+	n, err := q.ReplaceSettingIf(ctx, sqlc.ReplaceSettingIfParams{Key: "config_issued_at", Value: []byte(`"2026-10-01T10:00:00Z"`), Old: []byte(`null`)})
+	if err != nil || n != 0 {
+		t.Fatalf("replaced a value that changed: %d %v", n, err)
+	}
+	if _, _, _, p := e.getConfig(t, "", ""); p["issued_at"] != "2026-10-01T12:00:00Z" {
+		t.Fatalf("issued_at = %v", p["issued_at"])
+	}
+}
+
 // spec/03 3.6、API-11：registration_policy 为契约之外的取值时有效策略为 closed，与注册的服务端校验一致。
 func TestConfigRegistrationPolicyInvalid(t *testing.T) {
 	e := newEnv(t)

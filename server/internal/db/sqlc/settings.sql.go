@@ -54,6 +54,36 @@ func (q *Queries) GetSetting(ctx context.Context, key string) ([]byte, error) {
 	return value, err
 }
 
+const getSettings = `-- name: GetSettings :many
+SELECT key, value FROM settings WHERE key = ANY($1::text[])
+`
+
+type GetSettingsRow struct {
+	Key   string
+	Value []byte
+}
+
+// 在一条语句中读取多个设置项，结果来自同一个快照（如三个注册控制键，spec/10 AUTH-02）。不存在的键不返回。
+func (q *Queries) GetSettings(ctx context.Context, keys []string) ([]GetSettingsRow, error) {
+	rows, err := q.db.Query(ctx, getSettings, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSettingsRow
+	for rows.Next() {
+		var i GetSettingsRow
+		if err := rows.Scan(&i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const initSetting = `-- name: InitSetting :exec
 INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING
 `
@@ -67,4 +97,23 @@ type InitSettingParams struct {
 func (q *Queries) InitSetting(ctx context.Context, arg InitSettingParams) error {
 	_, err := q.db.Exec(ctx, initSetting, arg.Key, arg.Value)
 	return err
+}
+
+const replaceSettingIf = `-- name: ReplaceSettingIf :execrows
+UPDATE settings SET value = $1 WHERE key = $2 AND value = $3::jsonb
+`
+
+type ReplaceSettingIfParams struct {
+	Value []byte
+	Key   string
+	Old   []byte
+}
+
+// 仅当设置项仍为 old 时替换为 value（按 jsonb 相等比较），用于纠正异常值而不覆盖并发写入的新值。
+func (q *Queries) ReplaceSettingIf(ctx context.Context, arg ReplaceSettingIfParams) (int64, error) {
+	result, err := q.db.Exec(ctx, replaceSettingIf, arg.Value, arg.Key, arg.Old)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

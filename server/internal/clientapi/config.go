@@ -6,8 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -157,23 +157,53 @@ func (s *Server) warnSetting(ctx context.Context, key string, raw []byte, invali
 // min_version 的有效值变化时，在同一事务中以 sqlc BumpConfigIssuedAt 严格递增地更新（API-11）。这两条写入
 // 路径分别属于站点初始化与设置管理接口（M1-09），尚未实现。键缺失时由第一次请求用注入的时钟惰性初始化，
 // 这只是兜底（CONV-04、CONV-27），并发时先写入者生效，各副本读到同一值。
+//
+// 已存的值不是 YYYY-MM-DDTHH:MM:SSZ 字符串（直接改库，spec/03 3.6）时按缺键处理：记 warn 日志（只记键名），
+// 仅当该行仍为这份异常值时用当前时刻覆盖，再读取生效的值；永不因此失败。
 func (s *Server) issuedAt(ctx context.Context, q *sqlc.Queries) (string, error) {
+	raw, err := q.GetSetting(ctx, "config_issued_at")
+	missing := errors.Is(err, pgx.ErrNoRows)
+	if err != nil && !missing {
+		return "", err
+	}
+	if v, ok := validIssuedAt(raw); ok {
+		s.warnSetting(ctx, "config_issued_at", raw, nil)
+		return v, nil
+	}
+	now := s.d.Clock.Now().UTC().Truncate(time.Second).Format(time.RFC3339)
+	nowJSON, _ := json.Marshal(now)
+	if missing {
+		err = q.InitSetting(ctx, sqlc.InitSettingParams{Key: "config_issued_at", Value: nowJSON})
+	} else {
+		s.warnSetting(ctx, "config_issued_at", raw, []string{"config_issued_at"})
+		_, err = q.ReplaceSettingIf(ctx, sqlc.ReplaceSettingIfParams{Key: "config_issued_at", Value: nowJSON, Old: raw})
+	}
+	if err != nil {
+		return "", err
+	}
+	raw, err = q.GetSetting(ctx, "config_issued_at")
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	if v, ok := validIssuedAt(raw); ok {
+		return v, nil
+	}
+	// 读取之间又被写入异常值或删除：本次使用当前时刻，下次请求再纠正。
+	return now, nil
+}
+
+var issuedAtRE = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`)
+
+// validIssuedAt 判断 config_issued_at 的存储值是否为 YYYY-MM-DDTHH:MM:SSZ 形式的合法时刻（与 BumpConfigIssuedAt 的校验一致）。
+func validIssuedAt(raw []byte) (string, bool) {
 	var v string
-	err := setting(ctx, q, "config_issued_at", &v)
-	if err != nil || v != "" {
-		return v, err
+	if len(raw) == 0 || raw[0] != '"' || json.Unmarshal(raw, &v) != nil || !issuedAtRE.MatchString(v) {
+		return "", false
 	}
-	now, _ := json.Marshal(s.d.Clock.Now().UTC().Truncate(time.Second).Format(time.RFC3339))
-	if err := q.InitSetting(ctx, sqlc.InitSettingParams{Key: "config_issued_at", Value: now}); err != nil {
-		return "", err
+	if _, err := time.Parse(time.RFC3339, v); err != nil {
+		return "", false
 	}
-	if err := setting(ctx, q, "config_issued_at", &v); err != nil {
-		return "", err
-	}
-	if v == "" {
-		return "", errors.New("config_issued_at not initialized")
-	}
-	return v, nil
+	return v, true
 }
 
 // minVersions 返回 settings 键 min_version 的有效值（spec/03 3.6、API-11），GET /v1/config 与 426 判断
@@ -186,21 +216,6 @@ func (s *Server) minVersions(ctx context.Context, q *sqlc.Queries) (map[string]s
 	versions, invalid := clientconfig.MinVersion(raw)
 	s.warnSetting(ctx, "min_version", raw, invalid)
 	return versions, nil
-}
-
-// setting 把设置项解码到 dst；不存在时 dst 保持默认值。
-func setting(ctx context.Context, q *sqlc.Queries, key string, dst any) error {
-	raw, err := q.GetSetting(ctx, key)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(raw, dst); err != nil {
-		return fmt.Errorf("settings %s: %w", key, err)
-	}
-	return nil
 }
 
 // etagMatches 按 RFC 9110 13.1.2 的弱比较判断 If-None-Match 是否命中。
