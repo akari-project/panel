@@ -90,6 +90,11 @@ func (s *Service) refresh(ctx context.Context, aud token.Audience, refresh, ipPr
 		if sess.RevokedAt != nil {
 			return ErrInvalidGrant
 		}
+		// 两种会话的刷新令牌只能在各自的接口使用（AUTH-21）：先于重试窗口与泄露判定检查，
+		// 另一接口上出现的令牌既不能取得缓存的令牌对，也不能触发对方会话链的吊销。
+		if sess.Audience != string(aud) {
+			return ErrInvalidGrant
+		}
 		if sess.UsedAt != nil {
 			if now.Sub(*sess.UsedAt) < RetryWindow {
 				child, err := q.ChildSession(ctx, &sess.ID)
@@ -104,9 +109,6 @@ func (s *Service) refresh(ctx context.Context, aud token.Audience, refresh, ipPr
 			// 泄露：吊销整条链（AUTH-07）。吊销需要提交，因此不以错误结束事务。
 			revoked, err = revokeChain(ctx, q, sess.ID, now)
 			return err
-		}
-		if sess.Audience != string(aud) {
-			return ErrInvalidGrant // 两种会话的刷新令牌只能在各自的接口使用（AUTH-21）
 		}
 		absolute := sess.ExpiresAt
 		if sess.AbsoluteExpiresAt != nil {

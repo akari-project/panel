@@ -275,3 +275,43 @@ func TestStepUp(t *testing.T) {
 func b32decode(s string) ([]byte, error) {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(s)
 }
+
+// 刷新令牌的受众隔离先于重试窗口（AUTH-21）：已轮换的令牌在 10 秒内出现在另一接口，
+// 既不返回缓存的令牌对，也不吊销原会话链。
+func TestRefreshAudienceIsolationInRetryWindow(t *testing.T) {
+	e := newEnv(t)
+	prefix := prefix24(e.ip)
+
+	// 管理会话的旧刷新令牌在客户端接口重放。
+	a := e.staff(t, "operator")
+	old := a.refresh
+	w := e.refreshReq(a)
+	if w.Code != 200 {
+		t.Fatalf("console refresh: %d", w.Code)
+	}
+	e.takeCookies(t, a, w)
+	if _, err := e.sessions.Refresh(t.Context(), old, prefix, ""); !errors.Is(err, session.ErrInvalidGrant) {
+		t.Fatalf("console token on the client endpoint within the window: %v", err)
+	}
+	if w := e.refreshReq(a); w.Code != 200 {
+		t.Fatalf("console chain revoked by the cross-audience replay: %d", w.Code)
+	}
+
+	// 客户端会话的旧刷新令牌在管理接口重放。
+	u := e.account(t, false)
+	res, err := e.sessions.PasswordLogin(t.Context(), session.Login{Email: u.email, Password: u.password,
+		Device: session.Device{Platform: "web"}, IP: e.ip, IPPrefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := e.sessions.Refresh(t.Context(), res.Refresh, prefix, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := e.refreshReq(&admin{refresh: res.Refresh}); w.Code != 400 {
+		t.Fatalf("client token on the console endpoint within the window: %d %s", w.Code, w.Body)
+	}
+	if _, err := e.sessions.Refresh(t.Context(), next.Refresh, prefix, ""); err != nil {
+		t.Fatalf("client chain revoked by the cross-audience replay: %v", err)
+	}
+}
