@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: Client API
-  version: 0.6.0
+  version: 0.7.0
   summary: 用户中心与自研客户端共用的接口
   description: |
     面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
@@ -159,8 +159,8 @@ paths:
                 version: 1.4.0
                 url: https://downloads.example.invalid/client/1.4.0/app-release.apk
                 sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-                signature: MEUCIQDx3v8fJb1l0m9Kp3yVZ4aQeX2nR6tUoHcFgWjD5sLkPwIgN1iE8rT7yB4uA2zC9xM6qS3hG5fJ1dK0wL8oY7eQ
-                key_id: rel-2026-01
+                signature: WgyOP3Gy2aZOHwfDuJJdaqTz4MHXuClW70ocMLfZ4vgTxqny4Ft9hMGj9p4tC1jHpOGfPWsgyF5/GpTTtsDipw==
+                key_id: '1'
                 notes: 修复导入配置后偶发断线的问题。
                 is_mandatory: false
                 published_at: '2026-09-20T12:00:00+08:00'
@@ -3962,8 +3962,13 @@ components:
           pattern: ^[a-f0-9]{64}$
         signature:
           type: string
+          description: |
+            安装包的 Ed25519 签名（64 字节，标准 base64 编码的字符串）。密钥由发布流程离线保管，不在控制面中（CONV-30）；
+            签名输入尚未定义，在自研客户端立项时比照 spec/40 DEP-09 定义（workspace `backlog/M5.md`）。
         key_id:
           type: string
+          pattern: '^(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]?)$'
+          description: 发布签名密钥的 key id，1–255 的十进制字符串（CONV-30）；客户端内置当前与下一把公钥，按它选择
         notes:
           type: string
         is_mandatory:

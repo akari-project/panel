@@ -7,7 +7,7 @@ export { formatMoney, formatBytes, formatDateTime } from './format';
 export { createI18n, supportedLanguages, LANGUAGE_STORAGE_KEY, type Language } from './i18n';
 export { ThemeProvider, useTheme, type ThemePreference } from './theme';
 export { Button, type ButtonProps } from './components/Button';
-export { TextField, type TextFieldProps } from './components/Field';
+export { TextField, TextAreaField, type TextFieldProps, type TextAreaFieldProps } from './components/Field';
 export { LoadingState, EmptyState, ErrorState, problemOf, useProblemMessage } from './components/States';
 export { ThemeMenu, LanguageMenu } from './components/Preferences';
 export { AppShell, AuthLayout, Footer, SkipLink, navLinkClass, type AppShellProps, type SiteInfo } from './components/Layout';
@@ -15,3 +15,4 @@ export { SignInFlow, type SignInFlowProps, type MfaAnswer } from './components/S
 export { Modal, ConfirmDialog, type ModalProps, type ConfirmDialogProps } from './components/Dialog';
 export { QrCode, type QrCodeProps } from './components/QrCode';
 export { ProblemAlert, applyFieldErrors } from './components/ProblemAlert';
+export { RecoveryCodes, type RecoveryCodesProps } from './components/RecoveryCodes';

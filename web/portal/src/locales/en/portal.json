@@ -103,12 +103,6 @@
       "code": "Verification code",
       "submit": "Turn on"
     },
-    "codes": {
-      "title": "Save your recovery codes",
-      "warning": "If you can't use your authenticator, sign in with a recovery code. Each code works once. These codes are shown only this once, so copy or download them and keep them somewhere safe.",
-      "list_label": "Recovery codes",
-      "done": "I've saved them"
-    },
     "password": {
       "title": "Change password",
       "description": "After changing it, you'll be signed out on other devices.",

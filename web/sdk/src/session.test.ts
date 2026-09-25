@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it, vi } from 'vitest';
-import { createClientApi, unwrap, type Problem } from './index';
+import { createClientApi, createConsoleApi, sessionKeys, unwrap, type Problem } from './index';
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -114,5 +114,42 @@ describe('重新验证', () => {
       problem: { code: 'mfa_required' },
     });
     expect(s.calls).toHaveLength(1);
+  });
+});
+
+describe('管理接口', () => {
+  it('跨标签页的锁与时间戳使用独立命名空间，用户中心保持原名', () => {
+    expect(sessionKeys()).toEqual({ lock: 'panel.session-refresh', refreshedAt: 'panel.session-refreshed-at' });
+    expect(sessionKeys('console')).toEqual({
+      lock: 'panel.console.session-refresh',
+      refreshedAt: 'panel.console.session-refreshed-at',
+    });
+  });
+
+  it('敏感操作返回 mfa_required 时，验证后附加 Mfa-Assertion 并以同一幂等键重试（AUTH-19、CONV-12）', async () => {
+    const seen: { assertion: string | null; key: string | null; body: string }[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const req = input as Request;
+      seen.push({ assertion: req.headers.get('Mfa-Assertion'), key: req.headers.get('Idempotency-Key'), body: await req.text() });
+      if (req.headers.get('Mfa-Assertion') !== 'v4.public.x') return json(401, { code: 'mfa_required', methods: ['totp'] });
+      return json(201, { name: 'finance' });
+    });
+    const api = createConsoleApi({ baseUrl: 'https://console.example.invalid', fetch });
+    const reauthenticate = vi.fn(async (p: Problem) => {
+      expect(p.body.methods).toEqual(['totp']);
+      return { headers: { 'Mfa-Assertion': 'v4.public.x' } };
+    });
+    api.setSessionHooks({ reauthenticate });
+    const key = '01927c3e-8a41-7030-9d3e-5f6a7b8c0099';
+    await unwrap(
+      api.POST('/v1/roles', {
+        params: { header: { 'Mfa-Assertion': 'v4.public.expired', 'Idempotency-Key': key } },
+        body: { name: 'finance', permissions: ['orders.read'], reason: '财务' },
+      }),
+    );
+    expect(reauthenticate).toHaveBeenCalledTimes(1);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toMatchObject({ assertion: 'v4.public.x', key });
+    expect(seen[1]!.body).toBe(seen[0]!.body);
   });
 });

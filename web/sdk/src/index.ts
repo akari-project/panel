@@ -10,7 +10,8 @@ export type ClientSchemas = ClientComponents['schemas'];
 export type ConsoleSchemas = ConsoleComponents['schemas'];
 
 export * from './problem';
-export type { SessionHooks } from './session';
+export { sessionKeys, type SessionHooks, type ReauthResult } from './session';
+export * from './permissions';
 
 export interface ApiOptions {
   /** 接口根地址，不含 /v1；空串表示与页面同源。来自运行时配置（UI-06）。 */
@@ -23,19 +24,11 @@ function options({ baseUrl, fetch }: ApiOptions) {
   return { baseUrl: baseUrl.replace(/\/+$/, ''), credentials: 'include' as const, ...(fetch ? { fetch } : {}) };
 }
 
-/**
- * 客户端接口（用户中心）。请求层自动处理访问令牌过期与重新验证（见 session.ts）；
- * 应用通过 `setSessionHooks` 提供重新验证框与会话失效时的处理，返回值用于撤销。
- */
-export function createClientApi(opts: ApiOptions) {
+/** 带会话恢复的 fetch 与设置 hooks 的方法（见 session.ts）。 */
+function sessionFetch(opts: ApiOptions, baseUrl: string, namespace?: string) {
   const hooks: SessionHooks = {};
-  const base = options(opts);
   // 不在创建时固定 globalThis.fetch，便于测试替换。
   const baseFetch = opts.fetch ?? ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init));
-  const client = createClient<ClientPaths>({
-    ...base,
-    fetch: createSessionFetch({ baseUrl: base.baseUrl, fetch: baseFetch, hooks }),
-  });
   const setSessionHooks = (next: SessionHooks) => {
     Object.assign(hooks, next);
     return () => {
@@ -44,12 +37,27 @@ export function createClientApi(opts: ApiOptions) {
       }
     };
   };
-  return Object.assign(client, { setSessionHooks });
+  return { fetch: createSessionFetch({ baseUrl, fetch: baseFetch, hooks, namespace }), setSessionHooks };
 }
 
-/** 管理接口（管理后台）。 */
+/**
+ * 客户端接口（用户中心）。请求层自动处理访问令牌过期与重新验证（见 session.ts）；
+ * 应用通过 `setSessionHooks` 提供重新验证框与会话失效时的处理，返回值用于撤销。
+ */
+export function createClientApi(opts: ApiOptions) {
+  const base = options(opts);
+  const { fetch, setSessionHooks } = sessionFetch(opts, base.baseUrl);
+  return Object.assign(createClient<ClientPaths>({ ...base, fetch }), { setSessionHooks });
+}
+
+/**
+ * 管理接口（管理后台）。会话恢复同客户端接口，跨标签页的锁与时间戳使用独立的命名空间；
+ * 敏感操作的 Mfa-Assertion 由应用经 `setSessionHooks` 提供（AUTH-19）。
+ */
 export function createConsoleApi(opts: ApiOptions) {
-  return createClient<ConsolePaths>(options(opts));
+  const base = options(opts);
+  const { fetch, setSessionHooks } = sessionFetch(opts, base.baseUrl, 'console');
+  return Object.assign(createClient<ConsolePaths>({ ...base, fetch }), { setSessionHooks });
 }
 
 export type ClientApi = ReturnType<typeof createClientApi>;
