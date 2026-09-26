@@ -121,8 +121,7 @@ function CreatePlanForm({ onClose }: { onClose: () => void }) {
   const idempotencyKey = useIdempotencyKey();
   const submit = async (fields: PlanFields) => {
     // 新建的套餐总是草稿：非免费套餐须先有在售价格才能上架（BIL-26）。
-    const { status: _status, ...body } = fields;
-    void _status;
+    const body = { ...fields, status: 'draft' as const };
     const plan = await unwrap(api.POST('/v1/plans', { params: { header: { 'Idempotency-Key': idempotencyKey(body) } }, body }));
     await queryClient.invalidateQueries({ queryKey: plansKey });
     onClose();

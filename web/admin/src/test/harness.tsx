@@ -28,6 +28,7 @@ export const superadmin = {
   is_superadmin: true,
   has_totp: true,
   has_passkey: false,
+  site_currency: 'CNY',
 };
 
 export const support = {

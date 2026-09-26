@@ -290,7 +290,8 @@
         "out_of_range": "Free plans must have tier 0; other plans must have a tier greater than 0"
       },
       "kind": {
-        "not_allowed": "This type is not allowed"
+        "not_allowed": "This type is not allowed",
+        "taken": "A free plan already exists; a site can only have one"
       },
       "name": {
         "taken": "This name is already in use"
@@ -357,8 +358,7 @@
     "amount_hint": "Must be greater than 0.",
     "amount_format": "Invalid amount or too many decimal places",
     "amount_positive": "The amount must be greater than 0",
-    "no_currency": "The site currency is unknown: you need permission to view settings, or an admin with that permission must create the first price.",
-    "create_invalid_state": "Free plans have no prices.",
+    "no_currency": "The site currency has not been initialized, so prices cannot be created yet.",
     "discontinue": "Discontinue",
     "discontinue_for": "Discontinue {{period}} {{amount}}",
     "discontinue_title": "Discontinue price?",
@@ -393,6 +393,6 @@
     "delete_description": "This cannot be undone.",
     "delete_in_use_one": "This group is used by {{count}} plan; remove it from that plan before deleting.",
     "delete_in_use_other": "This group is used by {{count}} plans; remove it from those plans before deleting.",
-    "delete_invalid_state": "This location group is still used by plans. Remove it from those plans first."
+    "delete_invalid_state": "This location group is still used by plans or still has hosts. Remove it from those plans and remove its hosts first."
   }
 }

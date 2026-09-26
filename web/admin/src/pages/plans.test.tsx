@@ -95,6 +95,7 @@ describe('套餐列表与新建（spec/32 32.3）', () => {
       name: '旗舰版',
       description: null,
       kind: 'recurring',
+      status: 'draft',
       tier: 3,
       bytes_per_cycle: 1649267441664,
       device_limit: 3,
@@ -210,7 +211,6 @@ describe('价格行（BIL-01、CONV-08）', () => {
       [`GET /v1/plans/${PLAN_ID}`]: () => json(200, plan, { ETag: '"v1"' }),
       [`GET /v1/plans/${PLAN_ID}/prices`]: () => json(200, { items: [price], next_cursor: null }),
       'GET /v1/location-groups': () => json(200, groups),
-      'GET /v1/settings': () => json(200, { currency: 'CNY' }),
       [`POST /v1/plans/${PLAN_ID}/prices`]: () => json(201, { ...price, id: 'p2', period: 'year', amount_minor: 29990 }),
       [`GET /v1/plans/${PLAN_ID}/prices/${PRICE_ID}`]: () => json(200, price, { ETag: '"pr1"' }),
       [`PATCH /v1/plans/${PLAN_ID}/prices/${PRICE_ID}`]: () => problem(409, 'invalid_state'),
@@ -253,7 +253,6 @@ describe('价格行（BIL-01、CONV-08）', () => {
       [`GET /v1/plans/${PLAN_ID}`]: () => json(200, oneTime, { ETag: '"v1"' }),
       [`GET /v1/plans/${PLAN_ID}/prices`]: () => json(200, { items: [], next_cursor: null }),
       'GET /v1/location-groups': () => json(200, groups),
-      'GET /v1/settings': () => json(200, { currency: 'CNY' }),
       [`POST /v1/plans/${PLAN_ID}/prices`]: () => problem(400, 'invalid_request', { errors: [{ field: 'period_days', code: 'not_allowed' }] }),
     });
     renderAdmin(server, `/plans/${PLAN_ID}`);
@@ -267,6 +266,23 @@ describe('价格行（BIL-01、CONV-08）', () => {
     await user.click(within(dialog).getByRole('button', { name: '创建' }));
     expect(await within(dialog).findByText('只有一次性套餐可以设置有效天数')).toBeInTheDocument();
     expect(server.called('POST', `/v1/plans/${PLAN_ID}/prices`)[0]!.body).toEqual({ period: 'one_time', amount_minor: 5000, currency: 'CNY', period_days: 90 });
+  });
+
+  it('站点尚未初始化结算货币时不能新建价格', async () => {
+    renderAdmin(
+      fakeServer({ ...superadmin, site_currency: null }, {
+        [`GET /v1/plans/${PLAN_ID}`]: () => json(200, plan, { ETag: '"v1"' }),
+        [`GET /v1/plans/${PLAN_ID}/prices`]: () => json(200, { items: [price], next_cursor: null }),
+        'GET /v1/location-groups': () => json(200, groups),
+      }),
+      `/plans/${PLAN_ID}`,
+    );
+    const user = userEvent.setup();
+    const section = await screen.findByRole('region', { name: '价格' });
+    await user.click(within(section).getByRole('button', { name: '新增价格' }));
+    const dialog = await screen.findByRole('dialog', { name: '新增价格' });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('站点结算货币未初始化');
+    expect(within(dialog).queryByRole('button', { name: '创建' })).not.toBeInTheDocument();
   });
 
   it('免费套餐不显示价格操作', async () => {
@@ -313,7 +329,7 @@ describe('线路组（ACS-05、ACS-06）', () => {
     const del = await screen.findByRole('dialog', { name: '删除线路组 亚太标准？' });
     expect(del).toHaveTextContent('仍被 1 个套餐使用');
     await user.click(within(del).getByRole('button', { name: '删除' }));
-    expect(await within(del).findByText('线路组仍被套餐使用，请先从相关套餐中移除。')).toBeInTheDocument();
+    expect(await within(del).findByText('线路组仍被套餐使用或仍有节点，请先从相关套餐中移除并移出节点。')).toBeInTheDocument();
     expect(server.called('DELETE', `/v1/location-groups/${G1}`)[0]!.headers.get('If-Match')).toBe('"g1"');
 
     await user.click(within(del).getByRole('button', { name: '取消' }));

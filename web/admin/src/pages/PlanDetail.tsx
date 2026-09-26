@@ -526,7 +526,7 @@ function PriceForm({ plan, onClose, onCreated }: { plan: Plan; onClose: () => vo
   const idempotencyKey = useIdempotencyKey();
   const [problem, setProblem] = useState<Problem | null>(null);
   const periods = periodsFor(plan.kind);
-  const { currency, isPending } = useSiteCurrency(plan.prices[0]?.currency);
+  const currency = useSiteCurrency();
   const schema = useMemo(
     () =>
       z
@@ -553,8 +553,21 @@ function PriceForm({ plan, onClose, onCreated }: { plan: Plan; onClose: () => vo
     return m ? t(m) : undefined;
   };
 
-  if (isPending) return <LoadingState />;
-  if (!currency) return <p role="alert" className="text-sm text-danger">{t('prices.no_currency')}</p>;
+  if (!currency) {
+    // 站点尚未初始化结算货币时服务端同样拒绝新建（409 invalid_state）。
+    return (
+      <div className="flex flex-col gap-4">
+        <p role="alert" className="text-sm text-danger">
+          {t('prices.no_currency')}
+        </p>
+        <div className="flex justify-end">
+          <Button variant="secondary" onClick={onClose}>
+            {t('common:cancel')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const submit = handleSubmit(async (v) => {
     setProblem(null);
@@ -615,7 +628,7 @@ function PriceForm({ plan, onClose, onCreated }: { plan: Plan; onClose: () => vo
         error={err('amount')}
         {...register('amount')}
       />
-      <ProblemAlert problem={problem} message={problem?.code === 'invalid_state' ? t('prices.create_invalid_state') : undefined} />
+      <ProblemAlert problem={problem} message={problem?.code === 'invalid_state' ? t('prices.no_currency') : undefined} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onClose} disabled={formState.isSubmitting}>
           {t('common:cancel')}

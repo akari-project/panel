@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // 套餐、价格行与线路组页面共用的查询与取值（spec/11、spec/31）。
-import { queryOptions, useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import { queryOptions, useSuspenseQuery } from '@tanstack/react-query';
 import { useRouteContext } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { ProblemError, canOperate, toProblem, unwrap, type ConsoleApi, type ConsoleSchemas, type Problem } from '@panel/sdk';
+import { ProblemError, toProblem, unwrap, type ConsoleApi, type ConsoleSchemas, type Problem } from '@panel/sdk';
 import { formatBytes, formatMoney } from '@panel/ui';
 import { staffMeQuery } from './queries';
 
@@ -73,32 +73,11 @@ export const allLocationGroupsQuery = (api: ConsoleApi) =>
     },
   });
 
-/**
- * 站点结算货币（CONV-08），新建价格行时固定使用。来自 GET /v1/settings（需要 settings.read）；
- * 没有该权限时取已有价格行的币种（同一站点只有一种货币，BIL-01）。都取不到时为 undefined。
- */
-export function useSiteCurrency(known?: string): { currency: string | undefined; isPending: boolean } {
+/** 站点结算货币（CONV-08），新建价格行时固定使用；来自 GET /v1/staff/me，null 表示站点尚未初始化。 */
+export function useSiteCurrency(): string | null {
   const { api } = useRouteContext({ from: '__root__' });
   const { data: me } = useSuspenseQuery(staffMeQuery(api));
-  const canRead = canOperate(me, 'GET /v1/settings');
-  const settings = useQuery({
-    queryKey: ['settings'],
-    queryFn: () => unwrap(api.GET('/v1/settings')),
-    enabled: canRead,
-    staleTime: 5 * 60_000,
-  });
-  const probe = useQuery({
-    queryKey: [...plansKey, 'currency-probe'],
-    queryFn: async () => {
-      const page = await unwrap(api.GET('/v1/plans', { params: { query: { limit: 200 } } }));
-      return page.items.flatMap((p) => p.prices)[0]?.currency ?? null;
-    },
-    enabled: !known && (!canRead || settings.isError),
-    staleTime: 5 * 60_000,
-  });
-  const currency = settings.data?.currency ?? known ?? probe.data ?? undefined;
-  const isPending = !currency && ((canRead && settings.isPending) || probe.isFetching);
-  return { currency, isPending };
+  return me.site_currency;
 }
 
 export function useFormatters() {

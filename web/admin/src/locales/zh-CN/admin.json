@@ -290,7 +290,8 @@
         "out_of_range": "免费套餐的等级必须为 0，其他套餐的等级必须大于 0"
       },
       "kind": {
-        "not_allowed": "该类型不被允许"
+        "not_allowed": "该类型不被允许",
+        "taken": "已有免费套餐，一个站点只能有一个"
       },
       "name": {
         "taken": "名称已被使用"
@@ -357,8 +358,7 @@
     "amount_hint": "必须大于 0。",
     "amount_format": "金额格式不正确或小数位过多",
     "amount_positive": "金额必须大于 0",
-    "no_currency": "无法确定站点结算货币：需要“查看系统设置”权限，或先由有权限的管理员创建一个价格。",
-    "create_invalid_state": "免费套餐不设价格。",
+    "no_currency": "站点结算货币未初始化，暂不能新建价格。",
     "discontinue": "停售",
     "discontinue_for": "停售 {{period}} {{amount}}",
     "discontinue_title": "停售价格？",
@@ -393,6 +393,6 @@
     "delete_description": "删除后不可恢复。",
     "delete_in_use_one": "该线路组仍被 {{count}} 个套餐使用，需先从这些套餐中移除才能删除。",
     "delete_in_use_other": "该线路组仍被 {{count}} 个套餐使用，需先从这些套餐中移除才能删除。",
-    "delete_invalid_state": "线路组仍被套餐使用，请先从相关套餐中移除。"
+    "delete_invalid_state": "线路组仍被套餐使用或仍有节点，请先从相关套餐中移除并移出节点。"
   }
 }
