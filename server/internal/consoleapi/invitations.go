@@ -355,6 +355,9 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 			if _, err := account.CreateSharedCredential(ctx, q, s.d.Keys, id); err != nil {
 				return err
 			}
+			if err := account.CreateExportToken(ctx, q, s.d.Keys, id, now); err != nil {
+				return err
+			}
 		case err != nil:
 			return err
 		default:

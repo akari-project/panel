@@ -209,6 +209,9 @@ func TestAcceptInvitation(t *testing.T) {
 		if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE account_id = $1 AND device_id IS NULL`, id); n != 1 {
 			t.Fatal("shared credential missing (AUTH-13)")
 		}
+		if n := e.count(t, `SELECT count(*) FROM export_tokens WHERE account_id = $1`, id); n != 1 {
+			t.Fatal("export token missing (AUTH-16)")
+		}
 		if n := e.count(t, `SELECT count(*) FROM outbox WHERE topic = 'credential.changed' AND payload->>'account_id' = $1`, id.String()); n != 1 {
 			t.Fatal("credential.changed missing")
 		}

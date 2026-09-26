@@ -285,6 +285,9 @@ func (s *Service) Register(ctx context.Context, in Registration) error {
 		if _, err := CreateSharedCredential(ctx, q, s.Keys, id); err != nil {
 			return err
 		}
+		if err := CreateExportToken(ctx, q, s.Keys, id, s.Clock.Now()); err != nil {
+			return err
+		}
 		return s.sendVerificationCode(ctx, q, id, locale)
 	})
 	var pg *pgconn.PgError

@@ -70,6 +70,11 @@ func TestCreateFirstSuperadmin(t *testing.T) {
 	if u, err := uuid.FromBytes(secret); err != nil || u.Version() != 4 {
 		t.Errorf("credential secret is not 16 raw bytes of a UUIDv4: %x", secret)
 	}
+	// 导出令牌与共用凭据在同一事务中生成（AUTH-16）。
+	var tokens int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM export_tokens WHERE account_id = $1`, res.AccountID).Scan(&tokens); err != nil || tokens != 1 {
+		t.Errorf("export tokens = %d, %v", tokens, err)
+	}
 
 	var topic string
 	var payload []byte
