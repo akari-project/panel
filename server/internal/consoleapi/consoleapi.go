@@ -37,6 +37,7 @@ import (
 	"github.com/akari-project/panel/server/internal/audit"
 	"github.com/akari-project/panel/server/internal/auth"
 	"github.com/akari-project/panel/server/internal/auth/token"
+	"github.com/akari-project/panel/server/internal/billing/catalog"
 	"github.com/akari-project/panel/server/internal/clock"
 	"github.com/akari-project/panel/server/internal/consoleapi/gen"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
@@ -90,14 +91,15 @@ type Deps struct {
 
 // Server 实现 gen.StrictServerInterface。
 type Server struct {
-	d Deps
+	d       Deps
+	catalog *catalog.Service
 }
 
 var _ gen.StrictServerInterface = (*Server)(nil)
 
 // New 返回管理接口的处理器。收到的路径以 /v1/ 开头（webui 已去掉应用前缀）。
 func New(d Deps) http.Handler {
-	s := &Server{d: d}
+	s := &Server{d: d, catalog: &catalog.Service{Pool: d.Pool, Clock: d.Clock}}
 	mux := http.NewServeMux()
 	fail := s.fail
 	strict := gen.NewStrictHandlerWithOptions(s, nil, gen.StrictHTTPServerOptions{

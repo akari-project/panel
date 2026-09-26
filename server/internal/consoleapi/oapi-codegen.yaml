@@ -37,4 +37,23 @@ output-options:
     # 审计日志（M1-02；导出见 M1-02b）
     - listAuditLogs
     - getAuditLog
+    # 套餐、价格、线路组（M1-04；rollouts 见 M1-05，线路组成员见 M2-01，加购项价格见 M4）
+    - listPlans
+    - createPlan
+    - getPlan
+    - updatePlan
+    - deletePlan
+    - addPlanLocationGroup
+    - removePlanLocationGroup
+    - listPlanPrices
+    - createPlanPrice
+    - getPlanPrice
+    - discontinuePlanPrice
+    - previewPlanImpact
+    - listLocationGroups
+    - createLocationGroup
+    - getLocationGroup
+    - updateLocationGroup
+    - deleteLocationGroup
+    - previewLocationGroupImpact
 output: internal/consoleapi/gen/api.gen.go

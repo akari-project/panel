@@ -245,6 +245,306 @@ func (e Permission) Valid() bool {
 	}
 }
 
+// Defines values for PlanKind.
+const (
+	PlanKindFree      PlanKind = "free"
+	PlanKindOneTime   PlanKind = "one_time"
+	PlanKindRecurring PlanKind = "recurring"
+)
+
+// Valid indicates whether the value is a known member of the PlanKind enum.
+func (e PlanKind) Valid() bool {
+	switch e {
+	case PlanKindFree:
+		return true
+	case PlanKindOneTime:
+		return true
+	case PlanKindRecurring:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanResetPolicy.
+const (
+	PlanResetPolicyCalendarMonth  PlanResetPolicy = "calendar_month"
+	PlanResetPolicyNever          PlanResetPolicy = "never"
+	PlanResetPolicyPurchaseAnchor PlanResetPolicy = "purchase_anchor"
+)
+
+// Valid indicates whether the value is a known member of the PlanResetPolicy enum.
+func (e PlanResetPolicy) Valid() bool {
+	switch e {
+	case PlanResetPolicyCalendarMonth:
+		return true
+	case PlanResetPolicyNever:
+		return true
+	case PlanResetPolicyPurchaseAnchor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanStatus.
+const (
+	PlanStatusArchived PlanStatus = "archived"
+	PlanStatusDraft    PlanStatus = "draft"
+	PlanStatusHidden   PlanStatus = "hidden"
+	PlanStatusOnSale   PlanStatus = "on_sale"
+)
+
+// Valid indicates whether the value is a known member of the PlanStatus enum.
+func (e PlanStatus) Valid() bool {
+	switch e {
+	case PlanStatusArchived:
+		return true
+	case PlanStatusDraft:
+		return true
+	case PlanStatusHidden:
+		return true
+	case PlanStatusOnSale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCreateKind.
+const (
+	PlanCreateKindFree      PlanCreateKind = "free"
+	PlanCreateKindOneTime   PlanCreateKind = "one_time"
+	PlanCreateKindRecurring PlanCreateKind = "recurring"
+)
+
+// Valid indicates whether the value is a known member of the PlanCreateKind enum.
+func (e PlanCreateKind) Valid() bool {
+	switch e {
+	case PlanCreateKindFree:
+		return true
+	case PlanCreateKindOneTime:
+		return true
+	case PlanCreateKindRecurring:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCreateResetPolicy.
+const (
+	PlanCreateResetPolicyCalendarMonth  PlanCreateResetPolicy = "calendar_month"
+	PlanCreateResetPolicyNever          PlanCreateResetPolicy = "never"
+	PlanCreateResetPolicyPurchaseAnchor PlanCreateResetPolicy = "purchase_anchor"
+)
+
+// Valid indicates whether the value is a known member of the PlanCreateResetPolicy enum.
+func (e PlanCreateResetPolicy) Valid() bool {
+	switch e {
+	case PlanCreateResetPolicyCalendarMonth:
+		return true
+	case PlanCreateResetPolicyNever:
+		return true
+	case PlanCreateResetPolicyPurchaseAnchor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCreateStatus.
+const (
+	PlanCreateStatusArchived PlanCreateStatus = "archived"
+	PlanCreateStatusDraft    PlanCreateStatus = "draft"
+	PlanCreateStatusHidden   PlanCreateStatus = "hidden"
+	PlanCreateStatusOnSale   PlanCreateStatus = "on_sale"
+)
+
+// Valid indicates whether the value is a known member of the PlanCreateStatus enum.
+func (e PlanCreateStatus) Valid() bool {
+	switch e {
+	case PlanCreateStatusArchived:
+		return true
+	case PlanCreateStatusDraft:
+		return true
+	case PlanCreateStatusHidden:
+		return true
+	case PlanCreateStatusOnSale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanImpactRequestRolloutFields.
+const (
+	PlanImpactRequestRolloutFieldsBytesPerCycle  PlanImpactRequestRolloutFields = "bytes_per_cycle"
+	PlanImpactRequestRolloutFieldsDeviceLimit    PlanImpactRequestRolloutFields = "device_limit"
+	PlanImpactRequestRolloutFieldsResetPolicy    PlanImpactRequestRolloutFields = "reset_policy"
+	PlanImpactRequestRolloutFieldsSpeedLimitMbps PlanImpactRequestRolloutFields = "speed_limit_mbps"
+)
+
+// Valid indicates whether the value is a known member of the PlanImpactRequestRolloutFields enum.
+func (e PlanImpactRequestRolloutFields) Valid() bool {
+	switch e {
+	case PlanImpactRequestRolloutFieldsBytesPerCycle:
+		return true
+	case PlanImpactRequestRolloutFieldsDeviceLimit:
+		return true
+	case PlanImpactRequestRolloutFieldsResetPolicy:
+		return true
+	case PlanImpactRequestRolloutFieldsSpeedLimitMbps:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanImpactRequestStatus.
+const (
+	PlanImpactRequestStatusArchived PlanImpactRequestStatus = "archived"
+	PlanImpactRequestStatusDraft    PlanImpactRequestStatus = "draft"
+	PlanImpactRequestStatusHidden   PlanImpactRequestStatus = "hidden"
+	PlanImpactRequestStatusOnSale   PlanImpactRequestStatus = "on_sale"
+)
+
+// Valid indicates whether the value is a known member of the PlanImpactRequestStatus enum.
+func (e PlanImpactRequestStatus) Valid() bool {
+	switch e {
+	case PlanImpactRequestStatusArchived:
+		return true
+	case PlanImpactRequestStatusDraft:
+		return true
+	case PlanImpactRequestStatusHidden:
+		return true
+	case PlanImpactRequestStatusOnSale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanPricePeriod.
+const (
+	PlanPricePeriodHalfYear PlanPricePeriod = "half_year"
+	PlanPricePeriodMonth    PlanPricePeriod = "month"
+	PlanPricePeriodOneTime  PlanPricePeriod = "one_time"
+	PlanPricePeriodQuarter  PlanPricePeriod = "quarter"
+	PlanPricePeriodYear     PlanPricePeriod = "year"
+)
+
+// Valid indicates whether the value is a known member of the PlanPricePeriod enum.
+func (e PlanPricePeriod) Valid() bool {
+	switch e {
+	case PlanPricePeriodHalfYear:
+		return true
+	case PlanPricePeriodMonth:
+		return true
+	case PlanPricePeriodOneTime:
+		return true
+	case PlanPricePeriodQuarter:
+		return true
+	case PlanPricePeriodYear:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanPriceCreatePeriod.
+const (
+	PlanPriceCreatePeriodHalfYear PlanPriceCreatePeriod = "half_year"
+	PlanPriceCreatePeriodMonth    PlanPriceCreatePeriod = "month"
+	PlanPriceCreatePeriodOneTime  PlanPriceCreatePeriod = "one_time"
+	PlanPriceCreatePeriodQuarter  PlanPriceCreatePeriod = "quarter"
+	PlanPriceCreatePeriodYear     PlanPriceCreatePeriod = "year"
+)
+
+// Valid indicates whether the value is a known member of the PlanPriceCreatePeriod enum.
+func (e PlanPriceCreatePeriod) Valid() bool {
+	switch e {
+	case PlanPriceCreatePeriodHalfYear:
+		return true
+	case PlanPriceCreatePeriodMonth:
+		return true
+	case PlanPriceCreatePeriodOneTime:
+		return true
+	case PlanPriceCreatePeriodQuarter:
+		return true
+	case PlanPriceCreatePeriodYear:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanUpdateKind.
+const (
+	PlanUpdateKindFree      PlanUpdateKind = "free"
+	PlanUpdateKindOneTime   PlanUpdateKind = "one_time"
+	PlanUpdateKindRecurring PlanUpdateKind = "recurring"
+)
+
+// Valid indicates whether the value is a known member of the PlanUpdateKind enum.
+func (e PlanUpdateKind) Valid() bool {
+	switch e {
+	case PlanUpdateKindFree:
+		return true
+	case PlanUpdateKindOneTime:
+		return true
+	case PlanUpdateKindRecurring:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanUpdateResetPolicy.
+const (
+	PlanUpdateResetPolicyCalendarMonth  PlanUpdateResetPolicy = "calendar_month"
+	PlanUpdateResetPolicyNever          PlanUpdateResetPolicy = "never"
+	PlanUpdateResetPolicyPurchaseAnchor PlanUpdateResetPolicy = "purchase_anchor"
+)
+
+// Valid indicates whether the value is a known member of the PlanUpdateResetPolicy enum.
+func (e PlanUpdateResetPolicy) Valid() bool {
+	switch e {
+	case PlanUpdateResetPolicyCalendarMonth:
+		return true
+	case PlanUpdateResetPolicyNever:
+		return true
+	case PlanUpdateResetPolicyPurchaseAnchor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanUpdateStatus.
+const (
+	PlanUpdateStatusArchived PlanUpdateStatus = "archived"
+	PlanUpdateStatusDraft    PlanUpdateStatus = "draft"
+	PlanUpdateStatusHidden   PlanUpdateStatus = "hidden"
+	PlanUpdateStatusOnSale   PlanUpdateStatus = "on_sale"
+)
+
+// Valid indicates whether the value is a known member of the PlanUpdateStatus enum.
+func (e PlanUpdateStatus) Valid() bool {
+	switch e {
+	case PlanUpdateStatusArchived:
+		return true
+	case PlanUpdateStatusDraft:
+		return true
+	case PlanUpdateStatusHidden:
+		return true
+	case PlanUpdateStatusOnSale:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemMethods.
 const (
 	ProblemMethodsPasskey      ProblemMethods = "passkey"
@@ -383,6 +683,51 @@ func (e RefreshTokenFormdataBodyGrantType) Valid() bool {
 	}
 }
 
+// Defines values for ListPlansParamsStatus.
+const (
+	ListPlansParamsStatusArchived ListPlansParamsStatus = "archived"
+	ListPlansParamsStatusDraft    ListPlansParamsStatus = "draft"
+	ListPlansParamsStatusHidden   ListPlansParamsStatus = "hidden"
+	ListPlansParamsStatusOnSale   ListPlansParamsStatus = "on_sale"
+)
+
+// Valid indicates whether the value is a known member of the ListPlansParamsStatus enum.
+func (e ListPlansParamsStatus) Valid() bool {
+	switch e {
+	case ListPlansParamsStatusArchived:
+		return true
+	case ListPlansParamsStatusDraft:
+		return true
+	case ListPlansParamsStatusHidden:
+		return true
+	case ListPlansParamsStatusOnSale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPlansParamsKind.
+const (
+	ListPlansParamsKindFree      ListPlansParamsKind = "free"
+	ListPlansParamsKindOneTime   ListPlansParamsKind = "one_time"
+	ListPlansParamsKindRecurring ListPlansParamsKind = "recurring"
+)
+
+// Valid indicates whether the value is a known member of the ListPlansParamsKind enum.
+func (e ListPlansParamsKind) Valid() bool {
+	switch e {
+	case ListPlansParamsKindFree:
+		return true
+	case ListPlansParamsKindOneTime:
+		return true
+	case ListPlansParamsKindRecurring:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListStaffInvitationsParamsStatus.
 const (
 	ListStaffInvitationsParamsStatusAccepted ListStaffInvitationsParamsStatus = "accepted"
@@ -450,6 +795,21 @@ type FieldError struct {
 // FieldErrorCode `errors[].code`，取值见 spec/02 CONV-16；`taken`（取值已被占用）只用于管理接口
 type FieldErrorCode string
 
+// ImpactPreview 只计算，不产生副作用（CON-07）
+type ImpactPreview struct {
+	// AffectedAccountCount 受影响的账号数（UI-03“将影响 N 名用户”）
+	AffectedAccountCount int32 `json:"affected_account_count"`
+
+	// AffectedHostCount 需要重新下发配置的节点数
+	AffectedHostCount   int32     `json:"affected_host_count"`
+	ComputedAt          time.Time `json:"computed_at"`
+	CredentialAdditions *int32    `json:"credential_additions,omitempty"`
+	CredentialRemovals  *int32    `json:"credential_removals,omitempty"`
+
+	// IncompatibleInbounds 只在切换内核或关闭实验协议时出现（CON-07）
+	IncompatibleInbounds *[]IncompatibleInbound `json:"incompatible_inbounds,omitempty"`
+}
+
 // IncompatibleInbound defines model for IncompatibleInbound.
 type IncompatibleInbound struct {
 	Cause      IncompatibleInboundCause     `json:"cause"`
@@ -476,6 +836,46 @@ type InvitationAcceptance struct {
 
 	// Token 邀请邮件链接片段中的一次性令牌（32 字节随机值，base64url，72 小时有效）
 	Token string `json:"token"`
+}
+
+// LocationGroup defines model for LocationGroup.
+type LocationGroup struct {
+	CreatedAt   time.Time                 `json:"created_at"`
+	Description nullable.Nullable[string] `json:"description,omitempty"`
+	HostCount   int32                     `json:"host_count"`
+	Id          openapi_types.UUID        `json:"id"`
+
+	// MinTier 套餐 tier 低于该值时不下发（ACS-05）
+	MinTier   nullable.Nullable[int] `json:"min_tier,omitempty"`
+	Name      string                 `json:"name"`
+	PlanIds   []openapi_types.UUID   `json:"plan_ids"`
+	UpdatedAt time.Time              `json:"updated_at"`
+}
+
+// LocationGroupCreate defines model for LocationGroupCreate.
+type LocationGroupCreate struct {
+	Description nullable.Nullable[string] `json:"description,omitempty"`
+
+	// MinTier 套餐 tier 低于该值时不下发（ACS-05）
+	MinTier nullable.Nullable[int] `json:"min_tier,omitempty"`
+	Name    string                 `json:"name"`
+}
+
+// LocationGroupImpactRequest defines model for LocationGroupImpactRequest.
+type LocationGroupImpactRequest struct {
+	AddHostIds    *[]openapi_types.UUID  `json:"add_host_ids,omitempty"`
+	IsDeletion    *bool                  `json:"is_deletion,omitempty"`
+	MinTier       nullable.Nullable[int] `json:"min_tier,omitempty"`
+	RemoveHostIds *[]openapi_types.UUID  `json:"remove_host_ids,omitempty"`
+}
+
+// LocationGroupUpdate defines model for LocationGroupUpdate.
+type LocationGroupUpdate struct {
+	Description nullable.Nullable[string] `json:"description,omitempty"`
+
+	// MinTier 套餐 tier 低于该值时不下发（ACS-05）
+	MinTier nullable.Nullable[int] `json:"min_tier,omitempty"`
+	Name    *string                `json:"name,omitempty"`
 }
 
 // MfaAssertion defines model for MfaAssertion.
@@ -514,6 +914,159 @@ type PasswordLogin struct {
 
 // Permission 权限目录（spec/10 AUTH-17）；`*` 只出现在内置角色 superadmin 上；`staff.*` 为保留项，不可授予自定义角色（AUTH-22）
 type Permission string
+
+// Plan defines model for Plan.
+type Plan struct {
+	ActiveEntitlementCount int32 `json:"active_entitlement_count"`
+
+	// BytesPerCycle 每周期流量；0 表示不限
+	BytesPerCycle int64                     `json:"bytes_per_cycle"`
+	CreatedAt     time.Time                 `json:"created_at"`
+	Description   nullable.Nullable[string] `json:"description,omitempty"`
+	DeviceLimit   int                       `json:"device_limit"`
+	Id            openapi_types.UUID        `json:"id"`
+
+	// IsLegacyRenewAllowed `archived` 时是否允许按锁定价格续费（BIL-21）
+	IsLegacyRenewAllowed bool                 `json:"is_legacy_renew_allowed"`
+	Kind                 PlanKind             `json:"kind"`
+	LocationGroupIds     []openapi_types.UUID `json:"location_group_ids"`
+	Name                 string               `json:"name"`
+
+	// Prices 当前在售的价格行
+	Prices         []PlanPrice            `json:"prices"`
+	ResetPolicy    PlanResetPolicy        `json:"reset_policy"`
+	Sort           int32                  `json:"sort"`
+	SpeedLimitMbps nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
+	Status         PlanStatus             `json:"status"`
+
+	// Tier 等级；0 保留给免费套餐
+	Tier      int       `json:"tier"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// PlanKind defines model for Plan.Kind.
+type PlanKind string
+
+// PlanResetPolicy defines model for Plan.ResetPolicy.
+type PlanResetPolicy string
+
+// PlanStatus defines model for Plan.Status.
+type PlanStatus string
+
+// PlanCreate defines model for PlanCreate.
+type PlanCreate struct {
+	// BytesPerCycle 每周期流量；0 表示不限
+	BytesPerCycle int64                     `json:"bytes_per_cycle"`
+	Description   nullable.Nullable[string] `json:"description,omitempty"`
+	DeviceLimit   int                       `json:"device_limit"`
+
+	// IsLegacyRenewAllowed `archived` 时是否允许按锁定价格续费（BIL-21）
+	IsLegacyRenewAllowed *bool                  `json:"is_legacy_renew_allowed,omitempty"`
+	Kind                 PlanCreateKind         `json:"kind"`
+	LocationGroupIds     *[]openapi_types.UUID  `json:"location_group_ids,omitempty"`
+	Name                 string                 `json:"name"`
+	ResetPolicy          *PlanCreateResetPolicy `json:"reset_policy,omitempty"`
+	Sort                 *int32                 `json:"sort,omitempty"`
+	SpeedLimitMbps       nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
+	Status               *PlanCreateStatus      `json:"status,omitempty"`
+
+	// Tier 等级；0 保留给免费套餐
+	Tier int `json:"tier"`
+}
+
+// PlanCreateKind defines model for PlanCreate.Kind.
+type PlanCreateKind string
+
+// PlanCreateResetPolicy defines model for PlanCreate.ResetPolicy.
+type PlanCreateResetPolicy string
+
+// PlanCreateStatus defines model for PlanCreate.Status.
+type PlanCreateStatus string
+
+// PlanImpactRequest defines model for PlanImpactRequest.
+type PlanImpactRequest struct {
+	// LocationGroupIds 拟设置的线路组集合
+	LocationGroupIds *[]openapi_types.UUID `json:"location_group_ids,omitempty"`
+
+	// RolloutFields 拟“应用到现有用户”的字段
+	RolloutFields *[]PlanImpactRequestRolloutFields `json:"rollout_fields,omitempty"`
+	Status        *PlanImpactRequestStatus          `json:"status,omitempty"`
+	Tier          *int                              `json:"tier,omitempty"`
+}
+
+// PlanImpactRequestRolloutFields defines model for PlanImpactRequest.RolloutFields.
+type PlanImpactRequestRolloutFields string
+
+// PlanImpactRequestStatus defines model for PlanImpactRequest.Status.
+type PlanImpactRequestStatus string
+
+// PlanPrice defines model for PlanPrice.
+type PlanPrice struct {
+	AmountMinor int64     `json:"amount_minor"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// Currency ISO 4217 货币代码（CONV-05）
+	Currency string             `json:"currency"`
+	Id       openapi_types.UUID `json:"id"`
+	IsOnSale bool               `json:"is_on_sale"`
+	Period   PlanPricePeriod    `json:"period"`
+
+	// PeriodDays `one_time` 的有效天数；为空表示长期有效
+	PeriodDays nullable.Nullable[int32] `json:"period_days,omitempty"`
+	PlanId     openapi_types.UUID       `json:"plan_id"`
+}
+
+// PlanPricePeriod defines model for PlanPrice.Period.
+type PlanPricePeriod string
+
+// PlanPriceCreate 同一周期已有在售行时，旧行在同一事务中停售
+type PlanPriceCreate struct {
+	// AmountMinor 必须大于 0（BIL-01）
+	AmountMinor int64 `json:"amount_minor"`
+
+	// Currency ISO 4217 货币代码（CONV-05）
+	Currency   string                 `json:"currency"`
+	Period     PlanPriceCreatePeriod  `json:"period"`
+	PeriodDays nullable.Nullable[int] `json:"period_days,omitempty"`
+}
+
+// PlanPriceCreatePeriod defines model for PlanPriceCreate.Period.
+type PlanPriceCreatePeriod string
+
+// PlanUpdate 修改套餐不影响已有权益的快照（BIL-02）。线路组关联通过 `/v1/plans/{id}/location-groups/{group_id}` 修改
+type PlanUpdate struct {
+	// BytesPerCycle 每周期流量；0 表示不限
+	BytesPerCycle *int64                    `json:"bytes_per_cycle,omitempty"`
+	Description   nullable.Nullable[string] `json:"description,omitempty"`
+	DeviceLimit   *int                      `json:"device_limit,omitempty"`
+
+	// IsLegacyRenewAllowed `archived` 时是否允许按锁定价格续费（BIL-21）
+	IsLegacyRenewAllowed *bool                  `json:"is_legacy_renew_allowed,omitempty"`
+	Kind                 *PlanUpdateKind        `json:"kind,omitempty"`
+	Name                 *string                `json:"name,omitempty"`
+	ResetPolicy          *PlanUpdateResetPolicy `json:"reset_policy,omitempty"`
+	Sort                 *int32                 `json:"sort,omitempty"`
+	SpeedLimitMbps       nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
+	Status               *PlanUpdateStatus      `json:"status,omitempty"`
+
+	// Tier 等级；0 保留给免费套餐
+	Tier *int `json:"tier,omitempty"`
+}
+
+// PlanUpdateKind defines model for PlanUpdate.Kind.
+type PlanUpdateKind string
+
+// PlanUpdateResetPolicy defines model for PlanUpdate.ResetPolicy.
+type PlanUpdateResetPolicy string
+
+// PlanUpdateStatus defines model for PlanUpdate.Status.
+type PlanUpdateStatus string
+
+// PriceDiscontinue defines model for PriceDiscontinue.
+type PriceDiscontinue struct {
+	// IsOnSale 只能由 true 改为 false，不能重新开售（BIL-01）
+	IsOnSale interface{} `json:"is_on_sale"`
+}
 
 // Problem RFC 9457 problem details（CONV-16）
 type Problem struct {
@@ -700,6 +1253,38 @@ type ListAuditLogsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListLocationGroupsParams defines parameters for ListLocationGroups.
+type ListLocationGroupsParams struct {
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor 不透明的 base64url 游标（CONV-11）
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateLocationGroupParams defines parameters for CreateLocationGroup.
+type CreateLocationGroupParams struct {
+	// IdempotencyKey 幂等键（CONV-12）：相同键与请求体返回相同结果；不同请求体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回 409 `conflict`。
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteLocationGroupParams defines parameters for DeleteLocationGroup.
+type DeleteLocationGroupParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// GetLocationGroupParams defines parameters for GetLocationGroup.
+type GetLocationGroupParams struct {
+	// IfNoneMatch 与当前 ETag 相同时返回 304（CONV-13）
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdateLocationGroupParams defines parameters for UpdateLocationGroup.
+type UpdateLocationGroupParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
 // RefreshTokenFormdataBody defines parameters for RefreshToken.
 type RefreshTokenFormdataBody struct {
 	GrantType RefreshTokenFormdataBodyGrantType `form:"grant_type" json:"grant_type"`
@@ -707,6 +1292,91 @@ type RefreshTokenFormdataBody struct {
 
 // RefreshTokenFormdataBodyGrantType defines parameters for RefreshToken.
 type RefreshTokenFormdataBodyGrantType string
+
+// ListPlansParams defines parameters for ListPlans.
+type ListPlansParams struct {
+	Status *ListPlansParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Kind   *ListPlansParamsKind   `form:"kind,omitempty" json:"kind,omitempty"`
+	Limit  *Limit                 `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor 不透明的 base64url 游标（CONV-11）
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListPlansParamsStatus defines parameters for ListPlans.
+type ListPlansParamsStatus string
+
+// ListPlansParamsKind defines parameters for ListPlans.
+type ListPlansParamsKind string
+
+// CreatePlanParams defines parameters for CreatePlan.
+type CreatePlanParams struct {
+	// IdempotencyKey 幂等键（CONV-12）：相同键与请求体返回相同结果；不同请求体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回 409 `conflict`。
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// DeletePlanParams defines parameters for DeletePlan.
+type DeletePlanParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// GetPlanParams defines parameters for GetPlan.
+type GetPlanParams struct {
+	// IfNoneMatch 与当前 ETag 相同时返回 304（CONV-13）
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// UpdatePlanParams defines parameters for UpdatePlan.
+type UpdatePlanParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// RemovePlanLocationGroupParams defines parameters for RemovePlanLocationGroup.
+type RemovePlanLocationGroupParams struct {
+	// AuditReason 操作原因，写入审计日志（AUTH-18）。不带请求体的 DELETE 必须携带：值为 UTF-8 百分号编码，上限按解码后计算，为 1 到 500 个 Unicode 码点；`maxLength` 6000 是编码后的上限（500 个码点 × 每个码点最多 4 字节 × 每字节 3 个字符）。缺少、无法解码或超长返回 400 `invalid_request`（`errors[].field` 为 `Audit-Reason`）。
+	AuditReason *AuditReason `json:"Audit-Reason,omitempty"`
+
+	// MfaAssertionHeader 敏感操作必须携带：5 分钟内由 `POST /v1/staff/me/step-up` 取得的短期令牌（AUTH-19），有效期内可以复用，只在签发它的会话链中有效。缺少、过期、签名无效或会话链不符返回 401 `mfa_required`（响应 `MfaRequired`）。
+	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
+
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// AddPlanLocationGroupParams defines parameters for AddPlanLocationGroup.
+type AddPlanLocationGroupParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
+
+// ListPlanPricesParams defines parameters for ListPlanPrices.
+type ListPlanPricesParams struct {
+	IsOnSale *bool  `form:"is_on_sale,omitempty" json:"is_on_sale,omitempty"`
+	Limit    *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor 不透明的 base64url 游标（CONV-11）
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreatePlanPriceParams defines parameters for CreatePlanPrice.
+type CreatePlanPriceParams struct {
+	// IdempotencyKey 幂等键（CONV-12）：相同键与请求体返回相同结果；不同请求体返回 422 `idempotency_key_reused`；首个请求仍在处理时返回 409 `conflict`。
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetPlanPriceParams defines parameters for GetPlanPrice.
+type GetPlanPriceParams struct {
+	// IfNoneMatch 与当前 ETag 相同时返回 304（CONV-13）
+	IfNoneMatch *IfNoneMatch `json:"If-None-Match,omitempty"`
+}
+
+// DiscontinuePlanPriceParams defines parameters for DiscontinuePlanPrice.
+type DiscontinuePlanPriceParams struct {
+	// IfMatch 必须携带：资源当前的强 ETag。缺少返回 428 `precondition_required`，不一致返回 409 `conflict`（CONV-28）。
+	IfMatch *IfMatch `json:"If-Match,omitempty"`
+}
 
 // CreateRoleParams defines parameters for CreateRole.
 type CreateRoleParams struct {
@@ -809,8 +1479,32 @@ type UpdateStaffParams struct {
 	MfaAssertionHeader *MfaAssertionHeader `json:"Mfa-Assertion,omitempty"`
 }
 
+// CreateLocationGroupJSONRequestBody defines body for CreateLocationGroup for application/json ContentType.
+type CreateLocationGroupJSONRequestBody = LocationGroupCreate
+
+// UpdateLocationGroupJSONRequestBody defines body for UpdateLocationGroup for application/json ContentType.
+type UpdateLocationGroupJSONRequestBody = LocationGroupUpdate
+
+// PreviewLocationGroupImpactJSONRequestBody defines body for PreviewLocationGroupImpact for application/json ContentType.
+type PreviewLocationGroupImpactJSONRequestBody = LocationGroupImpactRequest
+
 // RefreshTokenFormdataRequestBody defines body for RefreshToken for application/x-www-form-urlencoded ContentType.
 type RefreshTokenFormdataRequestBody RefreshTokenFormdataBody
+
+// CreatePlanJSONRequestBody defines body for CreatePlan for application/json ContentType.
+type CreatePlanJSONRequestBody = PlanCreate
+
+// UpdatePlanJSONRequestBody defines body for UpdatePlan for application/json ContentType.
+type UpdatePlanJSONRequestBody = PlanUpdate
+
+// PreviewPlanImpactJSONRequestBody defines body for PreviewPlanImpact for application/json ContentType.
+type PreviewPlanImpactJSONRequestBody = PlanImpactRequest
+
+// CreatePlanPriceJSONRequestBody defines body for CreatePlanPrice for application/json ContentType.
+type CreatePlanPriceJSONRequestBody = PlanPriceCreate
+
+// DiscontinuePlanPriceJSONRequestBody defines body for DiscontinuePlanPrice for application/json ContentType.
+type DiscontinuePlanPriceJSONRequestBody = PriceDiscontinue
 
 // CreateRoleJSONRequestBody defines body for CreateRole for application/json ContentType.
 type CreateRoleJSONRequestBody = RoleCreate
@@ -903,9 +1597,63 @@ type ServerInterface interface {
 	// GetAuditLog 审计日志详情（只读）
 	// (GET /v1/audit-logs/{id})
 	GetAuditLog(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// ListLocationGroups 线路组列表
+	// (GET /v1/location-groups)
+	ListLocationGroups(w http.ResponseWriter, r *http.Request, params ListLocationGroupsParams)
+	// CreateLocationGroup 创建线路组
+	// (POST /v1/location-groups)
+	CreateLocationGroup(w http.ResponseWriter, r *http.Request, params CreateLocationGroupParams)
+	// DeleteLocationGroup 删除线路组
+	// (DELETE /v1/location-groups/{id})
+	DeleteLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params DeleteLocationGroupParams)
+	// GetLocationGroup 线路组详情
+	// (GET /v1/location-groups/{id})
+	GetLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params GetLocationGroupParams)
+	// UpdateLocationGroup 修改线路组
+	// (PATCH /v1/location-groups/{id})
+	UpdateLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params UpdateLocationGroupParams)
+	// PreviewLocationGroupImpact 线路组变更的影响预览
+	// (POST /v1/location-groups/{id}/impact)
+	PreviewLocationGroupImpact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
 	// RefreshToken 刷新访问令牌
 	// (POST /v1/oauth/token)
 	RefreshToken(w http.ResponseWriter, r *http.Request)
+	// ListPlans 套餐列表
+	// (GET /v1/plans)
+	ListPlans(w http.ResponseWriter, r *http.Request, params ListPlansParams)
+	// CreatePlan 创建套餐
+	// (POST /v1/plans)
+	CreatePlan(w http.ResponseWriter, r *http.Request, params CreatePlanParams)
+	// DeletePlan 删除套餐
+	// (DELETE /v1/plans/{id})
+	DeletePlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params DeletePlanParams)
+	// GetPlan 套餐详情
+	// (GET /v1/plans/{id})
+	GetPlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params GetPlanParams)
+	// UpdatePlan 修改套餐
+	// (PATCH /v1/plans/{id})
+	UpdatePlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params UpdatePlanParams)
+	// PreviewPlanImpact 套餐变更的影响预览
+	// (POST /v1/plans/{id}/impact)
+	PreviewPlanImpact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID)
+	// RemovePlanLocationGroup 从套餐移除线路组
+	// (DELETE /v1/plans/{id}/location-groups/{group_id})
+	RemovePlanLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, groupId openapi_types.UUID, params RemovePlanLocationGroupParams)
+	// AddPlanLocationGroup 为套餐添加线路组
+	// (PUT /v1/plans/{id}/location-groups/{group_id})
+	AddPlanLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, groupId openapi_types.UUID, params AddPlanLocationGroupParams)
+	// ListPlanPrices 价格行
+	// (GET /v1/plans/{id}/prices)
+	ListPlanPrices(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListPlanPricesParams)
+	// CreatePlanPrice 新建价格行
+	// (POST /v1/plans/{id}/prices)
+	CreatePlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params CreatePlanPriceParams)
+	// GetPlanPrice 价格行详情
+	// (GET /v1/plans/{id}/prices/{price_id})
+	GetPlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, priceId openapi_types.UUID, params GetPlanPriceParams)
+	// DiscontinuePlanPrice 停售价格行
+	// (PATCH /v1/plans/{id}/prices/{price_id})
+	DiscontinuePlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, priceId openapi_types.UUID, params DiscontinuePlanPriceParams)
 	// ListRoles 角色列表
 	// (GET /v1/roles)
 	ListRoles(w http.ResponseWriter, r *http.Request)
@@ -1121,11 +1869,955 @@ func (siw *ServerInterfaceWrapper) GetAuditLog(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListLocationGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListLocationGroups(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListLocationGroupsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListLocationGroups(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateLocationGroup(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteLocationGroup(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) GetLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLocationGroup(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateLocationGroup(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewLocationGroupImpact operation middleware
+func (siw *ServerInterfaceWrapper) PreviewLocationGroupImpact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewLocationGroupImpact(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RefreshToken operation middleware
 func (siw *ServerInterfaceWrapper) RefreshToken(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RefreshToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPlans operation middleware
+func (siw *ServerInterfaceWrapper) ListPlans(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPlansParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", r.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "kind"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "kind", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlans(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePlan operation middleware
+func (siw *ServerInterfaceWrapper) CreatePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePlanParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePlan(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeletePlan operation middleware
+func (siw *ServerInterfaceWrapper) DeletePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeletePlanParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePlan(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPlan operation middleware
+func (siw *ServerInterfaceWrapper) GetPlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPlanParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPlan(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePlan operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdatePlanParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePlan(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewPlanImpact operation middleware
+func (siw *ServerInterfaceWrapper) PreviewPlanImpact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewPlanImpact(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemovePlanLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) RemovePlanLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "group_id" -------------
+	var groupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "group_id", r.PathValue("group_id"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemovePlanLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Audit-Reason" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Audit-Reason")]; found {
+		var AuditReason AuditReason
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Audit-Reason", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Audit-Reason", valueList[0], &AuditReason, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Audit-Reason", Err: err})
+			return
+		}
+
+		params.AuditReason = &AuditReason
+
+	}
+
+	// ------------- Optional header parameter "Mfa-Assertion" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Mfa-Assertion")]; found {
+		var MfaAssertionHeader MfaAssertionHeader
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Mfa-Assertion", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Mfa-Assertion", valueList[0], &MfaAssertionHeader, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Mfa-Assertion", Err: err})
+			return
+		}
+
+		params.MfaAssertionHeader = &MfaAssertionHeader
+
+	}
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemovePlanLocationGroup(w, r, id, groupId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddPlanLocationGroup operation middleware
+func (siw *ServerInterfaceWrapper) AddPlanLocationGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "group_id" -------------
+	var groupId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "group_id", r.PathValue("group_id"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "group_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AddPlanLocationGroupParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddPlanLocationGroup(w, r, id, groupId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPlanPrices operation middleware
+func (siw *ServerInterfaceWrapper) ListPlanPrices(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPlanPricesParams
+
+	// ------------- Optional query parameter "is_on_sale" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "is_on_sale", r.URL.Query(), &params.IsOnSale, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "is_on_sale"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "is_on_sale", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlanPrices(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePlanPrice operation middleware
+func (siw *ServerInterfaceWrapper) CreatePlanPrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePlanPriceParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePlanPrice(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPlanPrice operation middleware
+func (siw *ServerInterfaceWrapper) GetPlanPrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "price_id" -------------
+	var priceId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "price_id", r.PathValue("price_id"), &priceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "price_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetPlanPriceParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch IfNoneMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-None-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-None-Match", Err: err})
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPlanPrice(w, r, id, priceId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DiscontinuePlanPrice operation middleware
+func (siw *ServerInterfaceWrapper) DiscontinuePlanPrice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "price_id" -------------
+	var priceId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "price_id", r.PathValue("price_id"), &priceId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "price_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DiscontinuePlanPriceParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch IfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "If-Match", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "If-Match", Err: err})
+			return
+		}
+
+		params.IfMatch = &IfMatch
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DiscontinuePlanPrice(w, r, id, priceId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2053,7 +3745,25 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/audit-logs", wrapper.ListAuditLogs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/audit-logs/{id}", wrapper.GetAuditLog)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/location-groups", wrapper.ListLocationGroups)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/location-groups", wrapper.CreateLocationGroup)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/location-groups/{id}", wrapper.DeleteLocationGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/location-groups/{id}", wrapper.GetLocationGroup)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/location-groups/{id}", wrapper.UpdateLocationGroup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/location-groups/{id}/impact", wrapper.PreviewLocationGroupImpact)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/oauth/token", wrapper.RefreshToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plans", wrapper.ListPlans)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plans", wrapper.CreatePlan)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/plans/{id}", wrapper.DeletePlan)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plans/{id}", wrapper.GetPlan)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/plans/{id}", wrapper.UpdatePlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plans/{id}/impact", wrapper.PreviewPlanImpact)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/plans/{id}/location-groups/{group_id}", wrapper.RemovePlanLocationGroup)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/plans/{id}/location-groups/{group_id}", wrapper.AddPlanLocationGroup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plans/{id}/prices", wrapper.ListPlanPrices)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plans/{id}/prices", wrapper.CreatePlanPrice)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plans/{id}/prices/{price_id}", wrapper.GetPlanPrice)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/plans/{id}/prices/{price_id}", wrapper.DiscontinuePlanPrice)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/roles", wrapper.ListRoles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/roles", wrapper.CreateRole)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/roles/{id}", wrapper.DeleteRole)
@@ -2179,6 +3889,343 @@ func (response GetAuditLogdefaultApplicationProblemPlusJSONResponse) VisitGetAud
 	return err
 }
 
+type ListLocationGroupsRequestObject struct {
+	Params ListLocationGroupsParams
+}
+
+type ListLocationGroupsResponseObject interface {
+	VisitListLocationGroupsResponse(w http.ResponseWriter) error
+}
+
+type ListLocationGroups200JSONResponse struct {
+	Items      []LocationGroup           `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+func (response ListLocationGroups200JSONResponse) VisitListLocationGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListLocationGroupsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListLocationGroupsdefaultApplicationProblemPlusJSONResponse) VisitListLocationGroupsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLocationGroupRequestObject struct {
+	Params CreateLocationGroupParams
+	Body   *CreateLocationGroupJSONRequestBody
+}
+
+type CreateLocationGroupResponseObject interface {
+	VisitCreateLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateLocationGroup201ResponseHeaders struct {
+	ETag *string
+}
+
+type CreateLocationGroup201JSONResponse struct {
+	Body    LocationGroup
+	Headers CreateLocationGroup201ResponseHeaders
+}
+
+func (response CreateLocationGroup201JSONResponse) VisitCreateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitCreateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLocationGroupRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params DeleteLocationGroupParams
+}
+
+type DeleteLocationGroupResponseObject interface {
+	VisitDeleteLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type DeleteLocationGroup204Response struct {
+}
+
+func (response DeleteLocationGroup204Response) VisitDeleteLocationGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteLocationGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteLocationGroup409ApplicationProblemPlusJSONResponse) VisitDeleteLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLocationGroup428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteLocationGroup428ApplicationProblemPlusJSONResponse) VisitDeleteLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitDeleteLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLocationGroupRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params GetLocationGroupParams
+}
+
+type GetLocationGroupResponseObject interface {
+	VisitGetLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type GetLocationGroup200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetLocationGroup200JSONResponse struct {
+	Body    LocationGroup
+	Headers GetLocationGroup200ResponseHeaders
+}
+
+func (response GetLocationGroup200JSONResponse) VisitGetLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetLocationGroup304Response = NotModifiedResponse
+
+func (response GetLocationGroup304Response) VisitGetLocationGroupResponse(w http.ResponseWriter) error {
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitGetLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLocationGroupRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params UpdateLocationGroupParams
+	Body   *UpdateLocationGroupJSONRequestBody
+}
+
+type UpdateLocationGroupResponseObject interface {
+	VisitUpdateLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateLocationGroup200ResponseHeaders struct {
+	ETag *string
+}
+
+type UpdateLocationGroup200JSONResponse struct {
+	Body    LocationGroup
+	Headers UpdateLocationGroup200ResponseHeaders
+}
+
+func (response UpdateLocationGroup200JSONResponse) VisitUpdateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLocationGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateLocationGroup409ApplicationProblemPlusJSONResponse) VisitUpdateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLocationGroup428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdateLocationGroup428ApplicationProblemPlusJSONResponse) VisitUpdateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitUpdateLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLocationGroupImpactRequestObject struct {
+	Id   openapi_types.UUID `json:"id"`
+	Body *PreviewLocationGroupImpactJSONRequestBody
+}
+
+type PreviewLocationGroupImpactResponseObject interface {
+	VisitPreviewLocationGroupImpactResponse(w http.ResponseWriter) error
+}
+
+type PreviewLocationGroupImpact200JSONResponse ImpactPreview
+
+func (response PreviewLocationGroupImpact200JSONResponse) VisitPreviewLocationGroupImpactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewLocationGroupImpactdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PreviewLocationGroupImpactdefaultApplicationProblemPlusJSONResponse) VisitPreviewLocationGroupImpactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type RefreshTokenRequestObject struct {
 	Body *RefreshTokenFormdataRequestBody
 }
@@ -2235,6 +4282,758 @@ type RefreshTokendefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response RefreshTokendefaultApplicationProblemPlusJSONResponse) VisitRefreshTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlansRequestObject struct {
+	Params ListPlansParams
+}
+
+type ListPlansResponseObject interface {
+	VisitListPlansResponse(w http.ResponseWriter) error
+}
+
+type ListPlans200JSONResponse struct {
+	Items      []Plan                    `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+func (response ListPlans200JSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlansdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListPlansdefaultApplicationProblemPlusJSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlanRequestObject struct {
+	Params CreatePlanParams
+	Body   *CreatePlanJSONRequestBody
+}
+
+type CreatePlanResponseObject interface {
+	VisitCreatePlanResponse(w http.ResponseWriter) error
+}
+
+type CreatePlan201ResponseHeaders struct {
+	ETag *string
+}
+
+type CreatePlan201JSONResponse struct {
+	Body    Plan
+	Headers CreatePlan201ResponseHeaders
+}
+
+func (response CreatePlan201JSONResponse) VisitCreatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlandefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreatePlandefaultApplicationProblemPlusJSONResponse) VisitCreatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlanRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params DeletePlanParams
+}
+
+type DeletePlanResponseObject interface {
+	VisitDeletePlanResponse(w http.ResponseWriter) error
+}
+
+type DeletePlan204Response struct {
+}
+
+func (response DeletePlan204Response) VisitDeletePlanResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePlan409ApplicationProblemPlusJSONResponse Problem
+
+func (response DeletePlan409ApplicationProblemPlusJSONResponse) VisitDeletePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlan428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DeletePlan428ApplicationProblemPlusJSONResponse) VisitDeletePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePlandefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeletePlandefaultApplicationProblemPlusJSONResponse) VisitDeletePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlanRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params GetPlanParams
+}
+
+type GetPlanResponseObject interface {
+	VisitGetPlanResponse(w http.ResponseWriter) error
+}
+
+type GetPlan200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetPlan200JSONResponse struct {
+	Body    Plan
+	Headers GetPlan200ResponseHeaders
+}
+
+func (response GetPlan200JSONResponse) VisitGetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlan304Response = NotModifiedResponse
+
+func (response GetPlan304Response) VisitGetPlanResponse(w http.ResponseWriter) error {
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetPlandefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPlandefaultApplicationProblemPlusJSONResponse) VisitGetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePlanRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params UpdatePlanParams
+	Body   *UpdatePlanJSONRequestBody
+}
+
+type UpdatePlanResponseObject interface {
+	VisitUpdatePlanResponse(w http.ResponseWriter) error
+}
+
+type UpdatePlan200ResponseHeaders struct {
+	ETag *string
+}
+
+type UpdatePlan200JSONResponse struct {
+	Body    Plan
+	Headers UpdatePlan200ResponseHeaders
+}
+
+func (response UpdatePlan200JSONResponse) VisitUpdatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePlan409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdatePlan409ApplicationProblemPlusJSONResponse) VisitUpdatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePlan428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response UpdatePlan428ApplicationProblemPlusJSONResponse) VisitUpdatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePlandefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdatePlandefaultApplicationProblemPlusJSONResponse) VisitUpdatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewPlanImpactRequestObject struct {
+	Id   openapi_types.UUID `json:"id"`
+	Body *PreviewPlanImpactJSONRequestBody
+}
+
+type PreviewPlanImpactResponseObject interface {
+	VisitPreviewPlanImpactResponse(w http.ResponseWriter) error
+}
+
+type PreviewPlanImpact200JSONResponse ImpactPreview
+
+func (response PreviewPlanImpact200JSONResponse) VisitPreviewPlanImpactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PreviewPlanImpactdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PreviewPlanImpactdefaultApplicationProblemPlusJSONResponse) VisitPreviewPlanImpactResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePlanLocationGroupRequestObject struct {
+	Id      openapi_types.UUID `json:"id"`
+	GroupId openapi_types.UUID `json:"group_id"`
+	Params  RemovePlanLocationGroupParams
+}
+
+type RemovePlanLocationGroupResponseObject interface {
+	VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type RemovePlanLocationGroup200ResponseHeaders struct {
+	ETag *string
+}
+
+type RemovePlanLocationGroup200JSONResponse struct {
+	Body    Plan
+	Headers RemovePlanLocationGroup200ResponseHeaders
+}
+
+func (response RemovePlanLocationGroup200JSONResponse) VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePlanLocationGroup401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RemovePlanLocationGroup401ApplicationProblemPlusJSONResponse) VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePlanLocationGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response RemovePlanLocationGroup409ApplicationProblemPlusJSONResponse) VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePlanLocationGroup428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RemovePlanLocationGroup428ApplicationProblemPlusJSONResponse) VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemovePlanLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RemovePlanLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitRemovePlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPlanLocationGroupRequestObject struct {
+	Id      openapi_types.UUID `json:"id"`
+	GroupId openapi_types.UUID `json:"group_id"`
+	Params  AddPlanLocationGroupParams
+}
+
+type AddPlanLocationGroupResponseObject interface {
+	VisitAddPlanLocationGroupResponse(w http.ResponseWriter) error
+}
+
+type AddPlanLocationGroup200ResponseHeaders struct {
+	ETag *string
+}
+
+type AddPlanLocationGroup200JSONResponse struct {
+	Body    Plan
+	Headers AddPlanLocationGroup200ResponseHeaders
+}
+
+func (response AddPlanLocationGroup200JSONResponse) VisitAddPlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPlanLocationGroup409ApplicationProblemPlusJSONResponse Problem
+
+func (response AddPlanLocationGroup409ApplicationProblemPlusJSONResponse) VisitAddPlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPlanLocationGroup428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response AddPlanLocationGroup428ApplicationProblemPlusJSONResponse) VisitAddPlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddPlanLocationGroupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AddPlanLocationGroupdefaultApplicationProblemPlusJSONResponse) VisitAddPlanLocationGroupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlanPricesRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params ListPlanPricesParams
+}
+
+type ListPlanPricesResponseObject interface {
+	VisitListPlanPricesResponse(w http.ResponseWriter) error
+}
+
+type ListPlanPrices200JSONResponse struct {
+	Items      []PlanPrice               `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+func (response ListPlanPrices200JSONResponse) VisitListPlanPricesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlanPricesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListPlanPricesdefaultApplicationProblemPlusJSONResponse) VisitListPlanPricesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlanPriceRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params CreatePlanPriceParams
+	Body   *CreatePlanPriceJSONRequestBody
+}
+
+type CreatePlanPriceResponseObject interface {
+	VisitCreatePlanPriceResponse(w http.ResponseWriter) error
+}
+
+type CreatePlanPrice201ResponseHeaders struct {
+	ETag *string
+}
+
+type CreatePlanPrice201JSONResponse struct {
+	Body    PlanPrice
+	Headers CreatePlanPrice201ResponseHeaders
+}
+
+func (response CreatePlanPrice201JSONResponse) VisitCreatePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlanPricedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreatePlanPricedefaultApplicationProblemPlusJSONResponse) VisitCreatePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlanPriceRequestObject struct {
+	Id      openapi_types.UUID `json:"id"`
+	PriceId openapi_types.UUID `json:"price_id"`
+	Params  GetPlanPriceParams
+}
+
+type GetPlanPriceResponseObject interface {
+	VisitGetPlanPriceResponse(w http.ResponseWriter) error
+}
+
+type GetPlanPrice200ResponseHeaders struct {
+	ETag *string
+}
+
+type GetPlanPrice200JSONResponse struct {
+	Body    PlanPrice
+	Headers GetPlanPrice200ResponseHeaders
+}
+
+func (response GetPlanPrice200JSONResponse) VisitGetPlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlanPrice304Response = NotModifiedResponse
+
+func (response GetPlanPrice304Response) VisitGetPlanPriceResponse(w http.ResponseWriter) error {
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(304)
+	return nil
+}
+
+type GetPlanPricedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPlanPricedefaultApplicationProblemPlusJSONResponse) VisitGetPlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscontinuePlanPriceRequestObject struct {
+	Id      openapi_types.UUID `json:"id"`
+	PriceId openapi_types.UUID `json:"price_id"`
+	Params  DiscontinuePlanPriceParams
+	Body    *DiscontinuePlanPriceJSONRequestBody
+}
+
+type DiscontinuePlanPriceResponseObject interface {
+	VisitDiscontinuePlanPriceResponse(w http.ResponseWriter) error
+}
+
+type DiscontinuePlanPrice200ResponseHeaders struct {
+	ETag *string
+}
+
+type DiscontinuePlanPrice200JSONResponse struct {
+	Body    PlanPrice
+	Headers DiscontinuePlanPrice200ResponseHeaders
+}
+
+func (response DiscontinuePlanPrice200JSONResponse) VisitDiscontinuePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.ETag != nil {
+		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscontinuePlanPrice409ApplicationProblemPlusJSONResponse Problem
+
+func (response DiscontinuePlanPrice409ApplicationProblemPlusJSONResponse) VisitDiscontinuePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscontinuePlanPrice428ApplicationProblemPlusJSONResponse struct {
+	PreconditionRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response DiscontinuePlanPrice428ApplicationProblemPlusJSONResponse) VisitDiscontinuePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(428)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscontinuePlanPricedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DiscontinuePlanPricedefaultApplicationProblemPlusJSONResponse) VisitDiscontinuePlanPriceResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3361,9 +6160,63 @@ type StrictServerInterface interface {
 	// GetAuditLog 审计日志详情（只读）
 	// (GET /v1/audit-logs/{id})
 	GetAuditLog(ctx context.Context, request GetAuditLogRequestObject) (GetAuditLogResponseObject, error)
+	// ListLocationGroups 线路组列表
+	// (GET /v1/location-groups)
+	ListLocationGroups(ctx context.Context, request ListLocationGroupsRequestObject) (ListLocationGroupsResponseObject, error)
+	// CreateLocationGroup 创建线路组
+	// (POST /v1/location-groups)
+	CreateLocationGroup(ctx context.Context, request CreateLocationGroupRequestObject) (CreateLocationGroupResponseObject, error)
+	// DeleteLocationGroup 删除线路组
+	// (DELETE /v1/location-groups/{id})
+	DeleteLocationGroup(ctx context.Context, request DeleteLocationGroupRequestObject) (DeleteLocationGroupResponseObject, error)
+	// GetLocationGroup 线路组详情
+	// (GET /v1/location-groups/{id})
+	GetLocationGroup(ctx context.Context, request GetLocationGroupRequestObject) (GetLocationGroupResponseObject, error)
+	// UpdateLocationGroup 修改线路组
+	// (PATCH /v1/location-groups/{id})
+	UpdateLocationGroup(ctx context.Context, request UpdateLocationGroupRequestObject) (UpdateLocationGroupResponseObject, error)
+	// PreviewLocationGroupImpact 线路组变更的影响预览
+	// (POST /v1/location-groups/{id}/impact)
+	PreviewLocationGroupImpact(ctx context.Context, request PreviewLocationGroupImpactRequestObject) (PreviewLocationGroupImpactResponseObject, error)
 	// RefreshToken 刷新访问令牌
 	// (POST /v1/oauth/token)
 	RefreshToken(ctx context.Context, request RefreshTokenRequestObject) (RefreshTokenResponseObject, error)
+	// ListPlans 套餐列表
+	// (GET /v1/plans)
+	ListPlans(ctx context.Context, request ListPlansRequestObject) (ListPlansResponseObject, error)
+	// CreatePlan 创建套餐
+	// (POST /v1/plans)
+	CreatePlan(ctx context.Context, request CreatePlanRequestObject) (CreatePlanResponseObject, error)
+	// DeletePlan 删除套餐
+	// (DELETE /v1/plans/{id})
+	DeletePlan(ctx context.Context, request DeletePlanRequestObject) (DeletePlanResponseObject, error)
+	// GetPlan 套餐详情
+	// (GET /v1/plans/{id})
+	GetPlan(ctx context.Context, request GetPlanRequestObject) (GetPlanResponseObject, error)
+	// UpdatePlan 修改套餐
+	// (PATCH /v1/plans/{id})
+	UpdatePlan(ctx context.Context, request UpdatePlanRequestObject) (UpdatePlanResponseObject, error)
+	// PreviewPlanImpact 套餐变更的影响预览
+	// (POST /v1/plans/{id}/impact)
+	PreviewPlanImpact(ctx context.Context, request PreviewPlanImpactRequestObject) (PreviewPlanImpactResponseObject, error)
+	// RemovePlanLocationGroup 从套餐移除线路组
+	// (DELETE /v1/plans/{id}/location-groups/{group_id})
+	RemovePlanLocationGroup(ctx context.Context, request RemovePlanLocationGroupRequestObject) (RemovePlanLocationGroupResponseObject, error)
+	// AddPlanLocationGroup 为套餐添加线路组
+	// (PUT /v1/plans/{id}/location-groups/{group_id})
+	AddPlanLocationGroup(ctx context.Context, request AddPlanLocationGroupRequestObject) (AddPlanLocationGroupResponseObject, error)
+	// ListPlanPrices 价格行
+	// (GET /v1/plans/{id}/prices)
+	ListPlanPrices(ctx context.Context, request ListPlanPricesRequestObject) (ListPlanPricesResponseObject, error)
+	// CreatePlanPrice 新建价格行
+	// (POST /v1/plans/{id}/prices)
+	CreatePlanPrice(ctx context.Context, request CreatePlanPriceRequestObject) (CreatePlanPriceResponseObject, error)
+	// GetPlanPrice 价格行详情
+	// (GET /v1/plans/{id}/prices/{price_id})
+	GetPlanPrice(ctx context.Context, request GetPlanPriceRequestObject) (GetPlanPriceResponseObject, error)
+	// DiscontinuePlanPrice 停售价格行
+	// (PATCH /v1/plans/{id}/prices/{price_id})
+	DiscontinuePlanPrice(ctx context.Context, request DiscontinuePlanPriceRequestObject) (DiscontinuePlanPriceResponseObject, error)
 	// ListRoles 角色列表
 	// (GET /v1/roles)
 	ListRoles(ctx context.Context, request ListRolesRequestObject) (ListRolesResponseObject, error)
@@ -3511,6 +6364,186 @@ func (sh *strictHandler) GetAuditLog(w http.ResponseWriter, r *http.Request, id 
 	}
 }
 
+// ListLocationGroups operation middleware
+func (sh *strictHandler) ListLocationGroups(w http.ResponseWriter, r *http.Request, params ListLocationGroupsParams) {
+	var request ListLocationGroupsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListLocationGroups(ctx, request.(ListLocationGroupsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListLocationGroups")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListLocationGroupsResponseObject); ok {
+		if err := validResponse.VisitListLocationGroupsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateLocationGroup operation middleware
+func (sh *strictHandler) CreateLocationGroup(w http.ResponseWriter, r *http.Request, params CreateLocationGroupParams) {
+	var request CreateLocationGroupRequestObject
+
+	request.Params = params
+
+	var body CreateLocationGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateLocationGroup(ctx, request.(CreateLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateLocationGroupResponseObject); ok {
+		if err := validResponse.VisitCreateLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteLocationGroup operation middleware
+func (sh *strictHandler) DeleteLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params DeleteLocationGroupParams) {
+	var request DeleteLocationGroupRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteLocationGroup(ctx, request.(DeleteLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteLocationGroupResponseObject); ok {
+		if err := validResponse.VisitDeleteLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetLocationGroup operation middleware
+func (sh *strictHandler) GetLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params GetLocationGroupParams) {
+	var request GetLocationGroupRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetLocationGroup(ctx, request.(GetLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetLocationGroupResponseObject); ok {
+		if err := validResponse.VisitGetLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateLocationGroup operation middleware
+func (sh *strictHandler) UpdateLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params UpdateLocationGroupParams) {
+	var request UpdateLocationGroupRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body UpdateLocationGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateLocationGroup(ctx, request.(UpdateLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateLocationGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewLocationGroupImpact operation middleware
+func (sh *strictHandler) PreviewLocationGroupImpact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request PreviewLocationGroupImpactRequestObject
+
+	request.Id = id
+
+	var body PreviewLocationGroupImpactJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewLocationGroupImpact(ctx, request.(PreviewLocationGroupImpactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewLocationGroupImpact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewLocationGroupImpactResponseObject); ok {
+		if err := validResponse.VisitPreviewLocationGroupImpactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // RefreshToken operation middleware
 func (sh *strictHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var request RefreshTokenRequestObject
@@ -3539,6 +6572,366 @@ func (sh *strictHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RefreshTokenResponseObject); ok {
 		if err := validResponse.VisitRefreshTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlans operation middleware
+func (sh *strictHandler) ListPlans(w http.ResponseWriter, r *http.Request, params ListPlansParams) {
+	var request ListPlansRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlans(ctx, request.(ListPlansRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlans")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPlansResponseObject); ok {
+		if err := validResponse.VisitListPlansResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePlan operation middleware
+func (sh *strictHandler) CreatePlan(w http.ResponseWriter, r *http.Request, params CreatePlanParams) {
+	var request CreatePlanRequestObject
+
+	request.Params = params
+
+	var body CreatePlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePlan(ctx, request.(CreatePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePlanResponseObject); ok {
+		if err := validResponse.VisitCreatePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeletePlan operation middleware
+func (sh *strictHandler) DeletePlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params DeletePlanParams) {
+	var request DeletePlanRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePlan(ctx, request.(DeletePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePlanResponseObject); ok {
+		if err := validResponse.VisitDeletePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPlan operation middleware
+func (sh *strictHandler) GetPlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params GetPlanParams) {
+	var request GetPlanRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPlan(ctx, request.(GetPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPlanResponseObject); ok {
+		if err := validResponse.VisitGetPlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdatePlan operation middleware
+func (sh *strictHandler) UpdatePlan(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params UpdatePlanParams) {
+	var request UpdatePlanRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body UpdatePlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdatePlan(ctx, request.(UpdatePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdatePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdatePlanResponseObject); ok {
+		if err := validResponse.VisitUpdatePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PreviewPlanImpact operation middleware
+func (sh *strictHandler) PreviewPlanImpact(w http.ResponseWriter, r *http.Request, id openapi_types.UUID) {
+	var request PreviewPlanImpactRequestObject
+
+	request.Id = id
+
+	var body PreviewPlanImpactJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PreviewPlanImpact(ctx, request.(PreviewPlanImpactRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PreviewPlanImpact")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PreviewPlanImpactResponseObject); ok {
+		if err := validResponse.VisitPreviewPlanImpactResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemovePlanLocationGroup operation middleware
+func (sh *strictHandler) RemovePlanLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, groupId openapi_types.UUID, params RemovePlanLocationGroupParams) {
+	var request RemovePlanLocationGroupRequestObject
+
+	request.Id = id
+	request.GroupId = groupId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemovePlanLocationGroup(ctx, request.(RemovePlanLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemovePlanLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemovePlanLocationGroupResponseObject); ok {
+		if err := validResponse.VisitRemovePlanLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddPlanLocationGroup operation middleware
+func (sh *strictHandler) AddPlanLocationGroup(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, groupId openapi_types.UUID, params AddPlanLocationGroupParams) {
+	var request AddPlanLocationGroupRequestObject
+
+	request.Id = id
+	request.GroupId = groupId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddPlanLocationGroup(ctx, request.(AddPlanLocationGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddPlanLocationGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddPlanLocationGroupResponseObject); ok {
+		if err := validResponse.VisitAddPlanLocationGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlanPrices operation middleware
+func (sh *strictHandler) ListPlanPrices(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params ListPlanPricesParams) {
+	var request ListPlanPricesRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlanPrices(ctx, request.(ListPlanPricesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlanPrices")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPlanPricesResponseObject); ok {
+		if err := validResponse.VisitListPlanPricesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePlanPrice operation middleware
+func (sh *strictHandler) CreatePlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, params CreatePlanPriceParams) {
+	var request CreatePlanPriceRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body CreatePlanPriceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePlanPrice(ctx, request.(CreatePlanPriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePlanPrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePlanPriceResponseObject); ok {
+		if err := validResponse.VisitCreatePlanPriceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPlanPrice operation middleware
+func (sh *strictHandler) GetPlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, priceId openapi_types.UUID, params GetPlanPriceParams) {
+	var request GetPlanPriceRequestObject
+
+	request.Id = id
+	request.PriceId = priceId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPlanPrice(ctx, request.(GetPlanPriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPlanPrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPlanPriceResponseObject); ok {
+		if err := validResponse.VisitGetPlanPriceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DiscontinuePlanPrice operation middleware
+func (sh *strictHandler) DiscontinuePlanPrice(w http.ResponseWriter, r *http.Request, id openapi_types.UUID, priceId openapi_types.UUID, params DiscontinuePlanPriceParams) {
+	var request DiscontinuePlanPriceRequestObject
+
+	request.Id = id
+	request.PriceId = priceId
+	request.Params = params
+
+	var body DiscontinuePlanPriceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DiscontinuePlanPrice(ctx, request.(DiscontinuePlanPriceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DiscontinuePlanPrice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiscontinuePlanPriceResponseObject); ok {
+		if err := validResponse.VisitDiscontinuePlanPriceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

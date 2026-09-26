@@ -188,8 +188,8 @@ func TestRolesStartSeparatelyAndTogether(t *testing.T) {
 		if resp, _ := get(t, addrs["api"], "", "/v1/config"); resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("GET /v1/config = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 		}
-		if resp, _ := get(t, addrs["api"], "", "/v1/plans"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
-			t.Errorf("GET /v1/plans (not implemented) = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+		if resp, _ := get(t, addrs["api"], "", "/v1/locations"); resp.StatusCode != 404 || resp.Header.Get("Content-Type") != "application/problem+json" {
+			t.Errorf("GET /v1/locations (not implemented) = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 		}
 	})
 

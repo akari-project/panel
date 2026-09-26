@@ -21,6 +21,24 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AddonKind.
+const (
+	AddonKindData    AddonKind = "data"
+	AddonKindDevices AddonKind = "devices"
+)
+
+// Valid indicates whether the value is a known member of the AddonKind enum.
+func (e AddonKind) Valid() bool {
+	switch e {
+	case AddonKindData:
+		return true
+	case AddonKindDevices:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CredentialStatus.
 const (
 	CredentialStatusDeviceLimitReached  CredentialStatus = "device_limit_reached"
@@ -195,6 +213,75 @@ func (e OAuthErrorBodyError) Valid() bool {
 	}
 }
 
+// Defines values for PlanKind.
+const (
+	PlanKindFree      PlanKind = "free"
+	PlanKindOneTime   PlanKind = "one_time"
+	PlanKindRecurring PlanKind = "recurring"
+)
+
+// Valid indicates whether the value is a known member of the PlanKind enum.
+func (e PlanKind) Valid() bool {
+	switch e {
+	case PlanKindFree:
+		return true
+	case PlanKindOneTime:
+		return true
+	case PlanKindRecurring:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanResetPolicy.
+const (
+	PlanResetPolicyCalendarMonth  PlanResetPolicy = "calendar_month"
+	PlanResetPolicyNever          PlanResetPolicy = "never"
+	PlanResetPolicyPurchaseAnchor PlanResetPolicy = "purchase_anchor"
+)
+
+// Valid indicates whether the value is a known member of the PlanResetPolicy enum.
+func (e PlanResetPolicy) Valid() bool {
+	switch e {
+	case PlanResetPolicyCalendarMonth:
+		return true
+	case PlanResetPolicyNever:
+		return true
+	case PlanResetPolicyPurchaseAnchor:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanPricePeriod.
+const (
+	PlanPricePeriodHalfYear PlanPricePeriod = "half_year"
+	PlanPricePeriodMonth    PlanPricePeriod = "month"
+	PlanPricePeriodOneTime  PlanPricePeriod = "one_time"
+	PlanPricePeriodQuarter  PlanPricePeriod = "quarter"
+	PlanPricePeriodYear     PlanPricePeriod = "year"
+)
+
+// Valid indicates whether the value is a known member of the PlanPricePeriod enum.
+func (e PlanPricePeriod) Valid() bool {
+	switch e {
+	case PlanPricePeriodHalfYear:
+		return true
+	case PlanPricePeriodMonth:
+		return true
+	case PlanPricePeriodOneTime:
+		return true
+	case PlanPricePeriodQuarter:
+		return true
+	case PlanPricePeriodYear:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Platform.
 const (
 	PlatformAndroid Platform = "android"
@@ -350,6 +437,28 @@ type Accepted struct {
 	Status string `json:"status"`
 }
 
+// AddonKind `data` 流量包；`devices` 额外设备名额（BIL-24）
+type AddonKind string
+
+// AddonPrice defines model for AddonPrice.
+type AddonPrice struct {
+	AmountMinor int64 `json:"amount_minor"`
+
+	// BytesTotal 仅 `data`
+	BytesTotal nullable.Nullable[int64] `json:"bytes_total,omitempty"`
+
+	// Currency ISO 4217 货币代码
+	Currency Currency `json:"currency"`
+
+	// ExtraDevices 仅 `devices`
+	ExtraDevices nullable.Nullable[int] `json:"extra_devices,omitempty"`
+	Id           openapi_types.UUID     `json:"id"`
+
+	// Kind `data` 流量包；`devices` 额外设备名额（BIL-24）
+	Kind AddonKind `json:"kind"`
+	Name string    `json:"name"`
+}
+
 // CookieTokenRefresh 浏览器刷新令牌的响应：新令牌只以 HttpOnly Cookie 下发，响应体不含令牌（AUTH-08）
 type CookieTokenRefresh struct {
 	DeviceId *openapi_types.UUID `json:"device_id,omitempty"`
@@ -362,6 +471,9 @@ type CookieTokenRefresh struct {
 // CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
 // `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
 type CredentialStatus string
+
+// Currency ISO 4217 货币代码
+type Currency = string
 
 // DeviceInfo defines model for DeviceInfo.
 type DeviceInfo struct {
@@ -462,6 +574,46 @@ type PasswordLogin struct {
 	Email        openapi_types.Email `json:"email"`
 	Password     string              `json:"password"`
 }
+
+// Plan defines model for Plan.
+type Plan struct {
+	// BytesPerCycle 周期额度；0 表示不限
+	BytesPerCycle int64              `json:"bytes_per_cycle"`
+	Description   *string            `json:"description,omitempty"`
+	DeviceLimit   int                `json:"device_limit"`
+	Id            openapi_types.UUID `json:"id"`
+	Kind          PlanKind           `json:"kind"`
+
+	// LocationCount 可访问的地区数
+	LocationCount  int                    `json:"location_count"`
+	Name           string                 `json:"name"`
+	Prices         []PlanPrice            `json:"prices"`
+	ResetPolicy    PlanResetPolicy        `json:"reset_policy"`
+	SpeedLimitMbps nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
+	Tier           int                    `json:"tier"`
+}
+
+// PlanKind defines model for Plan.Kind.
+type PlanKind string
+
+// PlanResetPolicy defines model for Plan.ResetPolicy.
+type PlanResetPolicy string
+
+// PlanPrice defines model for PlanPrice.
+type PlanPrice struct {
+	AmountMinor int64 `json:"amount_minor"`
+
+	// Currency ISO 4217 货币代码
+	Currency Currency           `json:"currency"`
+	Id       openapi_types.UUID `json:"id"`
+	Period   PlanPricePeriod    `json:"period"`
+
+	// PeriodDays 仅 `one_time`：有效天数；null 表示长期有效（BIL-09）
+	PeriodDays nullable.Nullable[int] `json:"period_days,omitempty"`
+}
+
+// PlanPricePeriod defines model for PlanPrice.Period.
+type PlanPricePeriod string
 
 // Platform 设备平台；`web` 为浏览器中的用户中心
 type Platform string
@@ -1129,6 +1281,9 @@ type ServerInterface interface {
 	// ConfirmPasswordReset 确认找回密码并设置新密码
 	// (POST /v1/password-resets/confirmation)
 	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request, params ConfirmPasswordResetParams)
+	// ListPlans 在售套餐、价格与加购项价格
+	// (GET /v1/plans)
+	ListPlans(w http.ResponseWriter, r *http.Request)
 	// CreateSession 登录并注册设备
 	// (POST /v1/sessions)
 	CreateSession(w http.ResponseWriter, r *http.Request)
@@ -1507,6 +1662,20 @@ func (siw *ServerInterfaceWrapper) ConfirmPasswordReset(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// ListPlans operation middleware
+func (siw *ServerInterfaceWrapper) ListPlans(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlans(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
 
@@ -1683,6 +1852,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/oauth/token", wrapper.IssueToken)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets", wrapper.RequestPasswordReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/password-resets/confirmation", wrapper.ConfirmPasswordReset)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plans", wrapper.ListPlans)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/nonces", wrapper.CreateSessionNonce)
@@ -2985,6 +3155,66 @@ func (response ConfirmPasswordResetdefaultApplicationProblemPlusJSONResponse) Vi
 	return err
 }
 
+type ListPlansRequestObject struct {
+}
+
+type ListPlansResponseObject interface {
+	VisitListPlansResponse(w http.ResponseWriter) error
+}
+
+type ListPlans200JSONResponse struct {
+	AddonPrices []AddonPrice `json:"addon_prices"`
+	Items       []Plan       `json:"items"`
+}
+
+func (response ListPlans200JSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlans429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response ListPlans429ApplicationProblemPlusJSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlansdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListPlansdefaultApplicationProblemPlusJSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateSessionRequestObject struct {
 	Body *CreateSessionJSONRequestBody
 }
@@ -3297,6 +3527,9 @@ type StrictServerInterface interface {
 	// ConfirmPasswordReset 确认找回密码并设置新密码
 	// (POST /v1/password-resets/confirmation)
 	ConfirmPasswordReset(ctx context.Context, request ConfirmPasswordResetRequestObject) (ConfirmPasswordResetResponseObject, error)
+	// ListPlans 在售套餐、价格与加购项价格
+	// (GET /v1/plans)
+	ListPlans(ctx context.Context, request ListPlansRequestObject) (ListPlansResponseObject, error)
 	// CreateSession 登录并注册设备
 	// (POST /v1/sessions)
 	CreateSession(ctx context.Context, request CreateSessionRequestObject) (CreateSessionResponseObject, error)
@@ -3758,6 +3991,30 @@ func (sh *strictHandler) ConfirmPasswordReset(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ConfirmPasswordResetResponseObject); ok {
 		if err := validResponse.VisitConfirmPasswordResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlans operation middleware
+func (sh *strictHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
+	var request ListPlansRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlans(ctx, request.(ListPlansRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlans")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPlansResponseObject); ok {
+		if err := validResponse.VisitListPlansResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
