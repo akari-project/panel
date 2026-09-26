@@ -383,41 +383,55 @@ func TestCooldownUnderConcurrency(t *testing.T) {
 	}
 }
 
-// AUTH-14：并发登录的多台设备不能超出设备上限。
+// AUTH-14：并发登录的多台设备不能超出设备上限（-race 下运行）。
 func TestDeviceLimitUnderConcurrency(t *testing.T) {
-	e := newEnv(t)
-	e.register(t, "limit@example.com", "correct horse battery")
-	ctx := context.Background()
-	if _, err := e.pool.Exec(ctx, `
-		WITH p AS (INSERT INTO plans (name, tier, bytes_per_cycle, device_limit) VALUES ('p', 1, 0, 2) RETURNING id)
-		INSERT INTO entitlements (account_id, plan_id, status, starts_at, cycle_start, bytes_limit, device_limit, reset_policy)
-		SELECT a.id, p.id, 'active', $1, $1, 0, 2, 'never' FROM accounts a, p WHERE a.email = 'limit@example.com'`, t0); err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
-	statuses := make(chan string, 6)
-	for i := range 6 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			d, _ := appDevice(t)
-			w := e.do(req{method: "POST", path: "/v1/sessions", ip: "10.8.0." + strconv.Itoa(i+1),
-				body: jsonBody(map[string]any{"email": "limit@example.com", "password": "correct horse battery", "device": d})})
-			var s sessionBody
-			_ = json.Unmarshal(w.Body.Bytes(), &s)
-			statuses <- s.CredentialStatus
-		}()
-	}
-	wg.Wait()
-	close(statuses)
-	issued := 0
-	for st := range statuses {
-		if st == "issued" {
-			issued++
-		}
-	}
-	if issued != 2 || e.count(t, `SELECT count(*) FROM proxy_credentials WHERE device_id IS NOT NULL AND revoked_at IS NULL`) != 2 {
-		t.Fatalf("issued %d credentials for a limit of 2", issued)
+	for _, limit := range []int{1, 2} {
+		t.Run(strconv.Itoa(limit), func(t *testing.T) {
+			e := newEnv(t)
+			// 并发登录不超过账号的失败预占上限（AUTH-09 MaxFailures），否则第 6 个起进入冷却。
+			const logins = session.MaxFailures
+			email := "limit" + strconv.Itoa(limit) + "@example.com"
+			e.register(t, email, "correct horse battery")
+			ctx := context.Background()
+			if _, err := e.pool.Exec(ctx, `
+				WITH p AS (INSERT INTO plans (name, tier, bytes_per_cycle, device_limit) VALUES ('p', 1, 0, $2) RETURNING id)
+				INSERT INTO entitlements (account_id, plan_id, status, starts_at, cycle_start, bytes_limit, device_limit, reset_policy)
+				SELECT a.id, p.id, 'active', $1, $1, 0, $2, 'never' FROM accounts a, p WHERE a.email = $3`, t0, limit, email); err != nil {
+				t.Fatal(err)
+			}
+			var wg sync.WaitGroup
+			statuses := make(chan string, logins)
+			for i := range logins {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					d, _ := appDevice(t)
+					w := e.do(req{method: "POST", path: "/v1/sessions", ip: "10.8.0." + strconv.Itoa(i+1),
+						body: jsonBody(map[string]any{"email": email, "password": "correct horse battery", "device": d})})
+					var s sessionBody
+					_ = json.Unmarshal(w.Body.Bytes(), &s)
+					if w.Code != 201 {
+						t.Errorf("login: %d %s", w.Code, w.Body)
+					}
+					statuses <- s.CredentialStatus
+				}()
+			}
+			wg.Wait()
+			close(statuses)
+			issued, waiting := 0, 0
+			for st := range statuses {
+				switch st {
+				case "issued":
+					issued++
+				case "device_limit_reached":
+					waiting++
+				}
+			}
+			if issued != limit || waiting != logins-limit ||
+				e.count(t, `SELECT count(*) FROM proxy_credentials WHERE device_id IS NOT NULL AND revoked_at IS NULL`) != limit {
+				t.Fatalf("issued %d credentials (%d waiting) for a limit of %d", issued, waiting, limit)
+			}
+		})
 	}
 }
 

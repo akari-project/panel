@@ -92,8 +92,9 @@ func newEnv(t *testing.T) *env {
 	d := Deps{
 		Log: slog.New(slog.DiscardHandler), Clock: clk, Pool: e.pool, Tokens: tokens,
 		Revocations: e.rev, Limiter: limiter, IdempotencyKey: []byte("k"), Accounts: e.accounts, Sessions: e.sessions,
-		MFA:    e.sessions.MFA,
-		Config: ConfigDeps{Signer: e.signer, AppName: "Akari", APIEndpoints: []string{"https://api.example.com", "https://api-backup.example.net/panel"}},
+		MFA:           e.sessions.MFA,
+		Config:        ConfigDeps{Signer: e.signer, AppName: "Akari", APIEndpoints: []string{"https://api.example.com", "https://api-backup.example.net/panel"}},
+		ExportBaseURL: "https://api.example.com",
 	}
 	e.h = New(d)
 	e.server = e.h.(*router).s
