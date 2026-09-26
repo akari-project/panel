@@ -582,9 +582,11 @@ type Plan struct {
 	Description   *string            `json:"description,omitempty"`
 	DeviceLimit   int                `json:"device_limit"`
 	Id            openapi_types.UUID `json:"id"`
-	Kind          PlanKind           `json:"kind"`
 
-	// LocationCount 可访问的地区数
+	// Kind 本接口不返回 `free`：免费套餐不列出（spec/11 BIL-15）
+	Kind PlanKind `json:"kind"`
+
+	// LocationCount 可访问的地区数：持有该套餐的用户调用 `GET /v1/locations` 时，`is_accessible` 为真的节点的不同 `region_code` 数（套餐关联的线路组，且套餐 `tier` 不低于线路组的 `min_tier`）；节点在 M2 才存在，此前为 0
 	LocationCount  int                    `json:"location_count"`
 	Name           string                 `json:"name"`
 	Prices         []PlanPrice            `json:"prices"`
@@ -593,7 +595,7 @@ type Plan struct {
 	Tier           int                    `json:"tier"`
 }
 
-// PlanKind defines model for Plan.Kind.
+// PlanKind 本接口不返回 `free`：免费套餐不列出（spec/11 BIL-15）
 type PlanKind string
 
 // PlanResetPolicy defines model for Plan.ResetPolicy.

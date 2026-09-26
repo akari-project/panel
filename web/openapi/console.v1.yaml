@@ -143,6 +143,7 @@ paths:
                   is_superadmin: false
                   has_totp: true
                   has_passkey: false
+                  site_currency: CNY
           headers:
             Set-Cookie:
               description: '两个 Cookie：`__Host-console_access_token`（访问令牌，Max-Age=900）与 `__Host-console_refresh_token`（刷新令牌），均为 HttpOnly、Secure、SameSite=Strict、Path=/（AUTH-08、AUTH-21）'
@@ -320,6 +321,7 @@ paths:
                 is_superadmin: false
                 has_totp: true
                 has_passkey: false
+                site_currency: CNY
         default:
           $ref: '#/components/responses/Problem'
   /v1/staff/me/step-up:
@@ -2054,6 +2056,7 @@ paths:
       - plans
       operationId: listPlans
       summary: '套餐列表'
+      description: '包括全部状态与免费套餐，按 `sort`、`id` 升序分页（CONV-11）。'
       x-permission: 'plans.*'
       parameters:
       - name: status
@@ -2133,7 +2136,7 @@ paths:
                   active_entitlement_count: 312
                   created_at: '2026-03-01T12:00:00+08:00'
                   updated_at: '2026-09-01T09:00:00+08:00'
-                next_cursor: eyJrIjoiMjAyNi0wOS0yM1QxMDoxNTowMCswODowMCIsImlkIjoiMDE5MjdjM2UifQ
+                next_cursor: eyJrIjoxMCwiaWQiOiIwMTkyN2MzZSJ9
         default:
           $ref: '#/components/responses/Problem'
     post:
@@ -2141,7 +2144,12 @@ paths:
       - plans
       operationId: createPlan
       summary: '创建套餐'
-      description: '新建套餐默认为 `draft`；价格行另行创建（`POST /v1/plans/{id}/prices`）。'
+      description: |-
+        新建套餐默认为 `draft`；价格行另行创建（`POST /v1/plans/{id}/prices`）。套餐可以不关联线路组。写审计 `plan.create`（CON-09）。
+
+        - `kind` 为 `free` 时 `tier` 必须为 0，其他类型必须大于 0，否则返回 400（`tier`、`out_of_range`）。
+        - 一个站点至多一个免费套餐，再建返回 400（`kind`、`taken`，spec/11 BIL-15）。
+        - 非免费套餐没有在售价格前不能进入 `on_sale`，因此不能以 `status: on_sale` 新建，返回 409 `invalid_state`（BIL-26）。免费套餐的状态没有启用含义，启用由设置 `free_plan_id` 决定（BIL-15）。
       x-permission: 'plans.*'
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -2191,6 +2199,51 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '400':
+          description: '参数错误'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                tier_mismatch:
+                  summary: '`kind` 与 `tier` 不匹配'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: tier
+                      code: out_of_range
+                taken:
+                  summary: '已有免费套餐'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: kind
+                      code: taken
+        '409':
+          description: '状态不允许'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                invalid_state:
+                  summary: '非免费套餐没有在售价格'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '套餐还没有在售价格，不能上架'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/plans/{id}':
@@ -2265,7 +2318,17 @@ paths:
       operationId: updatePlan
       summary: '修改套餐'
       description: |-
-        修改不影响已有权益的快照（BIL-02），需要时使用 `POST /v1/plans/{id}/rollouts`。`tier` 变更写入 `plan.access_changed` 事件。本操作不能修改线路组关联，请使用 `PUT`、`DELETE /v1/plans/{id}/location-groups/{group_id}`。
+        修改不影响已有权益的快照（BIL-02），需要时使用 `POST /v1/plans/{id}/rollouts`。`tier` 变更写入 `plan.access_changed` 事件。本操作不能修改线路组关联，请使用 `PUT`、`DELETE /v1/plans/{id}/location-groups/{group_id}`。写审计 `plan.update`（CON-09）。
+
+        约束（spec/11 BIL-26、BIL-15），违反时返回 409 `invalid_state`：
+        - 按修改后的状态检查：修改之后，状态为 `on_sale` 的非免费套餐必须至少有一行在售价格。这包括改为 `on_sale`，以及 `on_sale` 的免费套餐把 `kind` 改为非免费；
+        - 已产生权益的套餐不能改回 `draft`，请改用 `hidden` 或 `archived`；
+        - `kind` 只在套餐既没有价格行、也没有权益时可以修改；
+        - 被设置 `free_plan_id` 引用的套餐不能修改 `kind`。
+
+        免费套餐的状态不受上述上架条件限制，也没有启用含义；启用由设置 `free_plan_id` 决定（BIL-15）。
+
+        修改后 `kind` 与 `tier` 不匹配（`free` 必须为 0，其他必须大于 0）返回 400（`tier`、`out_of_range`）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'plans.*'
@@ -2333,13 +2396,51 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
-        '409':
-          description: '版本冲突'
+        '400':
+          description: '参数错误'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
               examples:
+                tier_mismatch:
+                  summary: '`kind` 与 `tier` 不匹配'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: tier
+                      code: out_of_range
+                taken:
+                  summary: '已有免费套餐'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: kind
+                      code: taken
+        '409':
+          description: '版本冲突或状态不允许'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                invalid_state:
+                  summary: '状态不允许'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '套餐已有权益，不能改回草稿'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
                 conflict:
                   summary: 'ETag 不一致'
                   value:
@@ -2359,7 +2460,7 @@ paths:
       operationId: deletePlan
       summary: '删除套餐'
       description: |-
-        只能删除从未产生权益与订单的套餐，否则返回 409 `invalid_state`，请改为 `archived`。
+        只能删除既没有价格行、也没有权益、且未被设置 `free_plan_id` 引用的套餐，否则返回 409 `invalid_state`，请改为 `archived`（spec/11 BIL-26）。价格行不可删除（BIL-01），曾经定价的套餐只能归档。写审计 `plan.delete`（CON-09）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'plans.*'
@@ -2389,7 +2490,7 @@ paths:
                     title: '当前状态不允许该操作'
                     status: 409
                     code: invalid_state
-                    detail: '套餐已有权益或订单，请改为下架'
+                    detail: '套餐已有价格行或权益，请改为归档'
                     request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
                 conflict:
                   summary: 'ETag 不一致'
@@ -2411,7 +2512,7 @@ paths:
       operationId: addPlanLocationGroup
       summary: '为套餐添加线路组'
       description: |-
-        幂等：已关联时返回当前套餐。写入 `plan.access_changed` 事件，访问关系实时生效（BIL-04）。`If-Match` 使用套餐的 ETag（`GET /v1/plans/{id}`）。
+        幂等：已关联时返回当前套餐。写入 `plan.access_changed` 事件，访问关系实时生效（BIL-04）。`If-Match` 使用套餐的 ETag（`GET /v1/plans/{id}`）；关联变化使套餐的 ETag 改变（CON-05）。写审计 `plan_location_group.create`（CON-09）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'plans.*'
@@ -2503,7 +2604,7 @@ paths:
       operationId: removePlanLocationGroup
       summary: '从套餐移除线路组'
       description: |-
-        持有该套餐的用户立即失去该线路组节点的访问（BIL-04），写入 `plan.access_changed` 事件；执行前应调用 `POST /v1/plans/{id}/impact` 显示受影响人数。未关联时返回 404。`If-Match` 使用套餐的 ETag。
+        持有该套餐的用户立即失去该线路组节点的访问（BIL-04），写入 `plan.access_changed` 事件；执行前应调用 `POST /v1/plans/{id}/impact` 显示受影响人数。未关联时返回 404。`If-Match` 使用套餐的 ETag；移除后套餐的 ETag 改变（CON-05）。写审计 `plan_location_group.delete`（CON-09）。
 
         敏感操作（spec/10 AUTH-19）：DELETE 不带请求体，原因放在请求头 `Audit-Reason` 中（缺少返回 400 `invalid_request`）；请求头必须带 `Mfa-Assertion`，缺少或过期返回 401 `mfa_required`。
 
@@ -2670,7 +2771,12 @@ paths:
       - plans
       operationId: createPlanPrice
       summary: '新建价格行'
-      description: '价格行只能新建与停售（BIL-01）；改价就是新建一行。同一周期已有在售行时，旧行在同一事务中停售。免费套餐不设价格行，提交时返回 409 `invalid_state`；币种必须等于站点结算货币。'
+      description: |-
+        价格行只能新建与停售（BIL-01）；改价就是新建一行。同一周期已有在售行时，旧行在同一事务中停售。新建使套餐的 ETag 改变（CON-05）。写审计 `plan_price.create`（CON-09），旧行被停售时 `diff` 另含 `discontinued_price_id`。
+
+        - 免费套餐不设价格行，提交时返回 409 `invalid_state`。
+        - 周期必须与套餐类型匹配：`recurring` 只用 `month`、`quarter`、`half_year`、`year`，且 `period_days` 为空；`one_time` 只用 `one_time`，`period_days` 为有效天数，为空表示长期有效。不匹配返回 400（`period` 或 `period_days`、`not_allowed`）。
+        - 币种必须等于站点结算货币（CONV-08），否则返回 400（`currency`、`not_allowed`）；站点尚未初始化结算货币时返回 409 `invalid_state`（`GET /v1/staff/me` 的 `site_currency` 为 `null`）。
       x-permission: 'plans.*'
       parameters:
       - name: id
@@ -2710,6 +2816,60 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '400':
+          description: '参数错误'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                period:
+                  summary: '周期与套餐类型不匹配'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: period
+                      code: not_allowed
+                currency:
+                  summary: '币种不是站点结算货币'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: currency
+                      code: not_allowed
+        '409':
+          description: '状态不允许'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                invalid_state:
+                  summary: '免费套餐不设价格行'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '免费套餐不设价格行'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                site_not_initialized:
+                  summary: '站点尚未初始化结算货币'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '站点尚未设置结算货币'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
         default:
           $ref: '#/components/responses/Problem'
   '/v1/plans/{id}/prices/{price_id}':
@@ -2764,7 +2924,7 @@ paths:
       operationId: discontinuePlanPrice
       summary: '停售价格行'
       description: |-
-        只接受 `{"is_on_sale": false}`；金额、币种、周期、`period_days` 不可修改，停售后不能重新开售（BIL-01）。价格行不可删除。
+        只接受 `{"is_on_sale": false}`；金额、币种、周期、`period_days` 不可修改，停售后不能重新开售（BIL-01）。价格行不可删除。`on_sale` 套餐停售最后一行在售价格返回 409 `invalid_state`，需先把套餐改为 `hidden` 或 `archived`（BIL-01）。停售使套餐的 ETag 改变（CON-05）；`If-Match` 使用价格行的 ETag。写审计 `plan_price.discontinue`（CON-09）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'plans.*'
@@ -2812,12 +2972,21 @@ paths:
             ETag:
               $ref: '#/components/headers/ETag'
         '409':
-          description: '版本冲突'
+          description: '版本冲突或状态不允许'
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
               examples:
+                invalid_state:
+                  summary: '在售套餐的最后一行在售价格'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_state'
+                    title: '当前状态不允许该操作'
+                    status: 409
+                    code: invalid_state
+                    detail: '套餐在售，不能停售最后一个在售价格'
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
                 conflict:
                   summary: 'ETag 不一致'
                   value:
@@ -2837,7 +3006,7 @@ paths:
       - plans
       operationId: previewPlanImpact
       summary: '套餐变更的影响预览'
-      description: '只计算，不产生副作用。返回拟议变更（线路组、等级、状态，或应用到现有用户）影响的账号数与节点数（CON-07），用于 UI-03 的二次确认。'
+      description: '只计算，不产生副作用。返回拟议变更（线路组、等级、状态，或应用到现有用户）影响的账号数与节点数（CON-07），用于 UI-03 的二次确认。受影响账号数是持有该套餐、状态为 `active`、`over_quota`、`suspended` 权益的不同账号数，与 `active_entitlement_count` 口径相同（spec/11 BIL-26）；节点在 M2 才存在，此前 `affected_host_count` 为 0，凭据增减省略。'
       x-permission: 'plans.*'
       parameters:
       - name: id
@@ -3233,6 +3402,7 @@ paths:
       - location-groups
       operationId: listLocationGroups
       summary: '线路组列表'
+      description: '按 `created_at`、`id` 升序分页（CONV-11）。'
       x-permission: 'location-groups.*'
       parameters:
       - $ref: '#/components/parameters/Limit'
@@ -3276,6 +3446,7 @@ paths:
       - location-groups
       operationId: createLocationGroup
       summary: '创建线路组'
+      description: '写审计 `location_group.create`（CON-09）。'
       x-permission: 'location-groups.*'
       parameters:
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3357,7 +3528,7 @@ paths:
       operationId: updateLocationGroup
       summary: '修改线路组'
       description: |-
-        修改 `min_tier` 写入 `location_group.changed` 事件（ACS-05）。
+        修改 `min_tier` 写入 `location_group.changed` 事件（ACS-05）。写审计 `location_group.update`（CON-09）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'location-groups.*'
@@ -3425,7 +3596,7 @@ paths:
       operationId: deleteLocationGroup
       summary: '删除线路组'
       description: |-
-        仍被套餐引用时返回 409 `invalid_state`（ACS-06）。
+        仍被套餐引用、或仍有节点成员时返回 409 `invalid_state`（ACS-06）。写审计 `location_group.delete`（CON-09）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: 'location-groups.*'
@@ -3604,7 +3775,7 @@ paths:
       - location-groups
       operationId: previewLocationGroupImpact
       summary: '线路组变更的影响预览'
-      description: '只计算，不产生副作用（CON-07）。'
+      description: '只计算，不产生副作用（CON-07）。`min_tier` 变更的受影响账号，是关联该线路组、且 `tier` 在新旧 `min_tier` 之间跨越的套餐的持有者（按不同账号计，spec/11 BIL-26）；`is_deletion` 的影响恒为 0（仍被引用或有成员时删除返回 409）。节点成员在 M2 才存在。'
       x-permission: 'location-groups.*'
       parameters:
       - name: id
@@ -8056,7 +8227,7 @@ paths:
       - settings
       operationId: getSettings
       summary: '系统设置'
-      description: '密码类设置只返回 `has_*`。'
+      description: '密码类设置只返回 `has_*`。`registration_policy`、`email_domain_allowlist`、`email_domain_denylist`、`min_version`、`features` 返回有效值：存储值异常时按 spec/03 3.6 的读取总则取有效值，存储值保留，直到运营者显式修改。'
       x-permission: settings.read
       parameters:
       - $ref: '#/components/parameters/IfNoneMatch'
@@ -8116,7 +8287,7 @@ paths:
       operationId: updateSettings
       summary: '修改系统设置'
       description: |-
-        `site_timezone` 与 `currency` 初始化后只读（CONV-26、CONV-08）。关闭免费套餐时全部免费权益以 `admin_adjust` 结束（BIL-15）。
+        `site_timezone` 与 `currency` 初始化后只读（CONV-26、CONV-08）。`free_plan_id` 由空变为非空时授予全部免费账号免费权益（`free_grant`），由非空变为空时结束全部免费权益（BIL-15），执行方式由 M1-05/M1-09 定义；非空时必须引用免费套餐，否则返回 400（`free_plan_id`、`not_allowed`）。
 
         必须携带 `If-Match`：缺少返回 428 `precondition_required`，与当前 ETag 不一致返回 409 `conflict`（CONV-28）。
       x-permission: settings.write
@@ -8176,6 +8347,24 @@ paths:
           headers:
             ETag:
               $ref: '#/components/headers/ETag'
+        '400':
+          description: '参数错误'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+              examples:
+                free_plan_id:
+                  summary: '`free_plan_id` 没有引用免费套餐'
+                  value:
+                    type: 'https://docs.example.invalid/problems/invalid_request'
+                    title: '参数错误'
+                    status: 400
+                    code: invalid_request
+                    request_id: '01927c3f-0b12-7c55-8d10-2f3e4a5b6c7d'
+                    errors:
+                    - field: free_plan_id
+                      code: not_allowed
         '409':
           description: '版本冲突'
           content:
@@ -9632,6 +9821,7 @@ components:
       - is_superadmin
       - has_totp
       - has_passkey
+      - site_currency
       properties:
         account_id:
           type: string
@@ -9653,6 +9843,13 @@ components:
           type: boolean
         has_passkey:
           type: boolean
+        site_currency:
+          type:
+          - string
+          - 'null'
+          pattern: '^[A-Z]{3}$'
+          readOnly: true
+          description: '站点结算货币（ISO 4217，CONV-08），与 `Settings.currency` 相同，供录入价格时使用，不要求 `settings.read`；`null` 表示站点尚未初始化'
     InvitationAcceptance:
       type: object
       required:
@@ -10465,10 +10662,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlanPrice'
-          description: '当前在售的价格行'
+          description: '当前在售的价格行；变化时套餐的 ETag 改变（CON-05）'
         active_entitlement_count:
           type: integer
           format: int32
+          description: '持有该套餐、状态为 `active`、`over_quota`、`suspended` 权益的数量；每个账号至多一个当前权益（BIL-05），因此等于不同账号数。派生计数，不参与 ETag（CON-05）'
         created_at:
           type: string
           format: date-time
@@ -10504,6 +10702,7 @@ components:
           - free
         status:
           type: string
+          default: draft
           enum:
           - draft
           - on_sale
@@ -10558,6 +10757,7 @@ components:
           description: '等级；0 保留给免费套餐'
         kind:
           type: string
+          description: '只在套餐既没有价格行、也没有权益时可以修改，否则返回 409 `invalid_state`（spec/11 BIL-26）'
           enum:
           - recurring
           - one_time
@@ -10724,7 +10924,7 @@ components:
         affected_host_count:
           type: integer
           format: int32
-          description: '需要重新下发配置的节点数'
+          description: '需要重新下发配置的节点数；M2 之前为 0'
         credential_additions:
           type: integer
           format: int32
@@ -10967,8 +11167,10 @@ components:
         host_count:
           type: integer
           format: int32
+          description: '成员数；只随增减成员变化，增减成员使线路组的版本与 ETag 改变，节点状态变化不影响（CON-05）'
         plan_ids:
           type: array
+          description: '关联该线路组的套餐。派生字段，不参与 ETag（CON-05）'
           items:
             type: string
             format: uuid
@@ -13272,7 +13474,7 @@ components:
           - string
           - 'null'
           format: uuid
-          description: '免费套餐；为空表示不启用（BIL-15）'
+          description: '启用的免费套餐；为空表示不启用（BIL-15）。非空时必须引用 `kind = free` 的套餐，否则返回 400 invalid_request（`free_plan_id`、`not_allowed`）。由空变为非空时授予全部免费账号免费权益，由非空变为空时结束全部免费权益；执行方式由 M1-05/M1-09 定义'
         proration_mode:
           type: string
           enum:
@@ -13350,7 +13552,7 @@ components:
         currency:
           type: string
           pattern: '^[A-Z]{3}$'
-          description: '结算货币，初始化后只读（CONV-08）'
+          description: '结算货币，初始化后只读（CONV-08）；没有 `settings.read` 的管理员从 `StaffMe.site_currency` 读取'
           readOnly: true
         smtp:
           type: object
@@ -13410,7 +13612,7 @@ components:
           - string
           - 'null'
           format: uuid
-          description: '免费套餐；为空表示不启用（BIL-15）'
+          description: '启用的免费套餐；为空表示不启用（BIL-15）。非空时必须引用 `kind = free` 的套餐，否则返回 400 invalid_request（`free_plan_id`、`not_allowed`）。由空变为非空时授予全部免费账号免费权益，由非空变为空时结束全部免费权益；执行方式由 M1-05/M1-09 定义'
         proration_mode:
           type: string
           enum:

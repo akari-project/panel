@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: Client API
-  version: 0.7.0
+  version: 0.8.0
   summary: 用户中心与自研客户端共用的接口
   description: |
     面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
@@ -215,7 +215,7 @@ paths:
       operationId: listPlans
       summary: 在售套餐、价格与加购项价格
       description: |
-        只返回 `on_sale` 的套餐与在售价格行，以及在售的加购项价格（spec/11 BIL-21、BIL-24）。
+        只返回 `on_sale` 的套餐与在售价格行，以及在售的加购项价格（spec/11 BIL-21、BIL-24）。不列出免费套餐（BIL-15）与没有在售价格行的套餐。
         列表不分页：在售套餐与加购项由运营者维护，数量上限为 200（超出时服务端只返回按排序的前 200 项）。
         已购用户的续费价格以 `GET /v1/me/entitlements` 的 `locked_price` 与报价结果为准。
       security:
@@ -4344,6 +4344,7 @@ components:
         kind:
           type: string
           enum: [recurring, one_time, free]
+          description: 本接口不返回 `free`：免费套餐不列出（spec/11 BIL-15）
         tier:
           type: integer
           minimum: 0
@@ -4360,7 +4361,7 @@ components:
           enum: [purchase_anchor, calendar_month, never]
         location_count:
           type: integer
-          description: 可访问的地区数
+          description: 可访问的地区数：持有该套餐的用户调用 `GET /v1/locations` 时，`is_accessible` 为真的节点的不同 `region_code` 数（套餐关联的线路组，且套餐 `tier` 不低于线路组的 `min_tier`）；节点在 M2 才存在，此前为 0
         prices:
           type: array
           items:

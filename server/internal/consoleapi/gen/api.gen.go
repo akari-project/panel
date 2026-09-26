@@ -800,7 +800,7 @@ type ImpactPreview struct {
 	// AffectedAccountCount 受影响的账号数（UI-03“将影响 N 名用户”）
 	AffectedAccountCount int32 `json:"affected_account_count"`
 
-	// AffectedHostCount 需要重新下发配置的节点数
+	// AffectedHostCount 需要重新下发配置的节点数；M2 之前为 0
 	AffectedHostCount   int32     `json:"affected_host_count"`
 	ComputedAt          time.Time `json:"computed_at"`
 	CredentialAdditions *int32    `json:"credential_additions,omitempty"`
@@ -842,14 +842,18 @@ type InvitationAcceptance struct {
 type LocationGroup struct {
 	CreatedAt   time.Time                 `json:"created_at"`
 	Description nullable.Nullable[string] `json:"description,omitempty"`
-	HostCount   int32                     `json:"host_count"`
-	Id          openapi_types.UUID        `json:"id"`
+
+	// HostCount 成员数；只随增减成员变化，增减成员使线路组的版本与 ETag 改变，节点状态变化不影响（CON-05）
+	HostCount int32              `json:"host_count"`
+	Id        openapi_types.UUID `json:"id"`
 
 	// MinTier 套餐 tier 低于该值时不下发（ACS-05）
-	MinTier   nullable.Nullable[int] `json:"min_tier,omitempty"`
-	Name      string                 `json:"name"`
-	PlanIds   []openapi_types.UUID   `json:"plan_ids"`
-	UpdatedAt time.Time              `json:"updated_at"`
+	MinTier nullable.Nullable[int] `json:"min_tier,omitempty"`
+	Name    string                 `json:"name"`
+
+	// PlanIds 关联该线路组的套餐。派生字段，不参与 ETag（CON-05）
+	PlanIds   []openapi_types.UUID `json:"plan_ids"`
+	UpdatedAt time.Time            `json:"updated_at"`
 }
 
 // LocationGroupCreate defines model for LocationGroupCreate.
@@ -917,6 +921,7 @@ type Permission string
 
 // Plan defines model for Plan.
 type Plan struct {
+	// ActiveEntitlementCount 持有该套餐、状态为 `active`、`over_quota`、`suspended` 权益的数量；每个账号至多一个当前权益（BIL-05），因此等于不同账号数。派生计数，不参与 ETag（CON-05）
 	ActiveEntitlementCount int32 `json:"active_entitlement_count"`
 
 	// BytesPerCycle 每周期流量；0 表示不限
@@ -932,7 +937,7 @@ type Plan struct {
 	LocationGroupIds     []openapi_types.UUID `json:"location_group_ids"`
 	Name                 string               `json:"name"`
 
-	// Prices 当前在售的价格行
+	// Prices 当前在售的价格行；变化时套餐的 ETag 改变（CON-05）
 	Prices         []PlanPrice            `json:"prices"`
 	ResetPolicy    PlanResetPolicy        `json:"reset_policy"`
 	Sort           int32                  `json:"sort"`
@@ -1041,19 +1046,21 @@ type PlanUpdate struct {
 	DeviceLimit   *int                      `json:"device_limit,omitempty"`
 
 	// IsLegacyRenewAllowed `archived` 时是否允许按锁定价格续费（BIL-21）
-	IsLegacyRenewAllowed *bool                  `json:"is_legacy_renew_allowed,omitempty"`
-	Kind                 *PlanUpdateKind        `json:"kind,omitempty"`
-	Name                 *string                `json:"name,omitempty"`
-	ResetPolicy          *PlanUpdateResetPolicy `json:"reset_policy,omitempty"`
-	Sort                 *int32                 `json:"sort,omitempty"`
-	SpeedLimitMbps       nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
-	Status               *PlanUpdateStatus      `json:"status,omitempty"`
+	IsLegacyRenewAllowed *bool `json:"is_legacy_renew_allowed,omitempty"`
+
+	// Kind 只在套餐既没有价格行、也没有权益时可以修改，否则返回 409 `invalid_state`（spec/11 BIL-26）
+	Kind           *PlanUpdateKind        `json:"kind,omitempty"`
+	Name           *string                `json:"name,omitempty"`
+	ResetPolicy    *PlanUpdateResetPolicy `json:"reset_policy,omitempty"`
+	Sort           *int32                 `json:"sort,omitempty"`
+	SpeedLimitMbps nullable.Nullable[int] `json:"speed_limit_mbps,omitempty"`
+	Status         *PlanUpdateStatus      `json:"status,omitempty"`
 
 	// Tier 等级；0 保留给免费套餐
 	Tier *int `json:"tier,omitempty"`
 }
 
-// PlanUpdateKind defines model for PlanUpdate.Kind.
+// PlanUpdateKind 只在套餐既没有价格行、也没有权益时可以修改，否则返回 409 `invalid_state`（spec/11 BIL-26）
 type PlanUpdateKind string
 
 // PlanUpdateResetPolicy defines model for PlanUpdate.ResetPolicy.
@@ -1184,6 +1191,9 @@ type StaffMe struct {
 	IsSuperadmin bool                `json:"is_superadmin"`
 	Permissions  []Permission        `json:"permissions"`
 	Roles        []string            `json:"roles"`
+
+	// SiteCurrency 站点结算货币（ISO 4217，CONV-08），与 `Settings.currency` 相同，供录入价格时使用，不要求 `settings.read`；`null` 表示站点尚未初始化
+	SiteCurrency nullable.Nullable[string] `json:"site_currency,omitempty"`
 }
 
 // StaffUpdate 变更后吊销该管理员的全部管理会话（AUTH-21）
@@ -4368,6 +4378,34 @@ func (response CreatePlan201JSONResponse) VisitCreatePlanResponse(w http.Respons
 	return err
 }
 
+type CreatePlan400ApplicationProblemPlusJSONResponse Problem
+
+func (response CreatePlan400ApplicationProblemPlusJSONResponse) VisitCreatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlan409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreatePlan409ApplicationProblemPlusJSONResponse) VisitCreatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreatePlandefaultApplicationProblemPlusJSONResponse struct {
 	Body       Problem
 	StatusCode int
@@ -4539,6 +4577,20 @@ func (response UpdatePlan200JSONResponse) VisitUpdatePlanResponse(w http.Respons
 		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
 	}
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePlan400ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdatePlan400ApplicationProblemPlusJSONResponse) VisitUpdatePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -4881,6 +4933,34 @@ func (response CreatePlanPrice201JSONResponse) VisitCreatePlanPriceResponse(w ht
 		w.Header().Set("ETag", fmt.Sprint(*response.Headers.ETag))
 	}
 	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlanPrice400ApplicationProblemPlusJSONResponse Problem
+
+func (response CreatePlanPrice400ApplicationProblemPlusJSONResponse) VisitCreatePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePlanPrice409ApplicationProblemPlusJSONResponse Problem
+
+func (response CreatePlanPrice409ApplicationProblemPlusJSONResponse) VisitCreatePlanPriceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
