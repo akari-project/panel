@@ -2,7 +2,8 @@
   "nav": {
     "overview": "Overview",
     "security": "Security",
-    "plans": "Plans"
+    "plans": "Plans",
+    "devices": "Devices"
   },
   "login": {
     "title": "Sign in",
@@ -110,6 +111,43 @@
       "submit": "Change password",
       "done": "Your password has been changed."
     }
+  },
+  "devices": {
+    "title": "Devices and sessions",
+    "intro": "Devices and browsers signed in to your account. Removing one signs it out and revokes its proxy credential immediately.",
+    "usage": "Device slots: {{used}} of {{limit}} used",
+    "usage_hint": "Browser sign-ins do not use a slot.",
+    "limit_reached": "All device slots are in use. Newly signed-in devices will not receive a proxy credential. Remove a device you no longer use and waiting devices will receive one automatically.",
+    "empty": "No devices are signed in.",
+    "list_label": "Device list",
+    "current": "This device",
+    "unnamed": "Unknown model",
+    "platforms": {
+      "ios": "iOS",
+      "android": "Android",
+      "windows": "Windows",
+      "macos": "macOS",
+      "linux": "Linux",
+      "web": "Browser",
+      "other": "Other"
+    },
+    "platform": "Platform",
+    "app_version": "App version",
+    "last_seen": "Last active",
+    "never": "No record",
+    "signed_in": "First signed in",
+    "ip_prefix": "IP range",
+    "credential": "Proxy credential",
+    "credential_yes": "Issued",
+    "credential_no": "Not issued (slots full)",
+    "credential_web": "Not needed (browser)",
+    "remove": "Remove",
+    "remove_named": "Remove {{name}}",
+    "remove_title": "Remove {{name}}?",
+    "remove_impact": "This device will be signed out and its proxy credential revoked immediately. Active connections will drop.",
+    "remove_impact_web": "This browser will be signed out.",
+    "remove_impact_current": "This is the device you are using. Removing it signs you out and returns you to the sign-in page.",
+    "removed": "Removed {{name}}."
   },
   "plans": {
     "title": "Plans",

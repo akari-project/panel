@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { isProblemError, type ClientApi } from '@panel/sdk';
 import { AppShell, ErrorState, navLinkClass, type PanelConfig } from '@panel/ui';
+import { DevicesPage } from './pages/Devices';
 import { ForgotPasswordPage } from './pages/ForgotPassword';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
@@ -109,6 +110,11 @@ function AppLayout() {
             </Link>
           </li>
           <li>
+            <Link to="/devices" className={navLinkClass}>
+              {t('nav.devices')}
+            </Link>
+          </li>
+          <li>
             <Link to="/security" className={navLinkClass}>
               {t('nav.security')}
             </Link>
@@ -165,6 +171,12 @@ export const plansRoute = createRoute({
   component: PlansPage,
 });
 
+export const devicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'devices',
+  component: DevicesPage,
+});
+
 export const securityRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'security',
@@ -177,7 +189,7 @@ const routeTree = rootRoute.addChildren([
   verifyEmailRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
-  appRoute.addChildren([homeRoute, plansRoute, securityRoute]),
+  appRoute.addChildren([homeRoute, plansRoute, devicesRoute, securityRoute]),
 ]);
 
 export function createAppRouter(context: RouterContext, history?: RouterHistory) {

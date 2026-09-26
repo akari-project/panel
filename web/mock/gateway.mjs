@@ -16,6 +16,8 @@
 //      POST /v1/me/reauthentications 的密码为 wrong-password 时返回 400 incorrect。
 //    - 特定输入返回错误示例：注册邮箱以 closed 开头 → 403 registration_closed；验证码 000000 → 400 invalid_code；
 //      重新发送的邮箱以 limited 开头 → 429（Retry-After）。
+//    - 设备（AUTH-14、AUTH-15）：移除的设备记在 Cookie 中，之后从 GET /v1/me/devices 中去掉，再次移除返回 404；
+//      移除当前设备（is_current）等同登出，清除会话 Cookie。登录邮箱以 full 开头时设备上限改为 1（名额已满）。
 // 4. 管理接口的其余状态（同样保存在本地 Cookie 中）：
 //    - 当前管理员：登录邮箱以 super 开头为 superadmin，以 support 开头为 support，其余为 Prism 示例（operator）；
 //      改写 GET /v1/staff/me 与登录响应中的 staff。
@@ -82,6 +84,10 @@ export function createGateway({ api, upstream, authCookie, app }) {
   const reauthCookie = `${sessionCookie}_reauth`;
   const roleCookie = `${sessionCookie}_role`;
   const enrollCookie = `${sessionCookie}_enroll`;
+  const removedCookie = `${sessionCookie}_removed`;
+  const currentCookie = `${sessionCookie}_current`;
+  const fullCookie = `${sessionCookie}_full`;
+  const removedIds = (cookies) => (cookies[removedCookie] ? cookies[removedCookie].split('.') : []);
   const cookieAttrs = 'Path=/; HttpOnly; SameSite=Strict';
   const setFlag = (name, on, maxAge) =>
     on ? `${name}=1; ${cookieAttrs}${maxAge ? `; Max-Age=${maxAge}` : ''}` : `${name}=; ${cookieAttrs}; Max-Age=0`;
@@ -173,6 +179,11 @@ export function createGateway({ api, upstream, authCookie, app }) {
     if (client && route === 'POST /v1/me/reauthentications' && json?.password === 'wrong-password') {
       headers.prefer = 'code=400, example=incorrect';
     }
+    const removeDevice = client && req.method === 'DELETE' && url.pathname.match(/^\/v1\/me\/devices\/([^/]+)$/)?.[1];
+    if (removeDevice && hasAccess && removedIds(cookies).includes(removeDevice)) {
+      problem(res, 404, { code: 'not_found' });
+      return;
+    }
     if (client && route === 'POST /v1/accounts' && json?.email?.startsWith?.('closed')) headers.prefer = 'code=403';
     if (client && route === 'POST /v1/accounts/verification' && json?.code === '000000') {
       headers.prefer = 'code=400, example=invalid_code';
@@ -194,6 +205,8 @@ export function createGateway({ api, upstream, authCookie, app }) {
           setCookies.push(setFlag(reauthCookie, true, 300));
           setCookies.push(setFlag(mfaCookie, mfaAccount));
           setCookies.push(setFlag(unverifiedCookie, loginEmail?.startsWith('unverified') ?? false));
+          setCookies.push(setFlag(fullCookie, loginEmail?.startsWith('full') ?? false));
+          setCookies.push(`${removedCookie}=; ${cookieAttrs}; Max-Age=0`);
         }
       }
       if (!client && isLogin && status === 401 && loginEmail) {
@@ -201,8 +214,15 @@ export function createGateway({ api, upstream, authCookie, app }) {
         const role = loginEmail.startsWith('super') ? 'superadmin' : loginEmail.startsWith('support') ? 'support' : '';
         setCookies.push(`${roleCookie}=${role}; ${cookieAttrs}`, setFlag(enrollCookie, loginEmail.includes('+new')));
       }
-      if (route === 'DELETE /v1/sessions/current' && status === 204) {
-        for (const name of [sessionCookie, accessCookie, mfaCookie, unverifiedCookie, reauthCookie, roleCookie, enrollCookie]) setCookies.push(setFlag(name, false));
+      const signOut = () => {
+        for (const name of [sessionCookie, accessCookie, mfaCookie, unverifiedCookie, reauthCookie, roleCookie, enrollCookie, fullCookie, currentCookie]) {
+          setCookies.push(setFlag(name, false));
+        }
+      };
+      if (route === 'DELETE /v1/sessions/current' && status === 204) signOut();
+      if (removeDevice && status === 204) {
+        setCookies.push(`${removedCookie}=${[...removedIds(cookies), removeDevice].join('.')}; ${cookieAttrs}`);
+        if (removeDevice === cookies[currentCookie]) signOut();
       }
       if (client && status < 300) {
         if (route === 'POST /v1/me/reauthentications') setCookies.push(setFlag(reauthCookie, true, 300));
@@ -248,6 +268,25 @@ export function createGateway({ api, upstream, authCookie, app }) {
           delete out['transfer-encoding'];
           res.writeHead(status, out);
           res.end(JSON.stringify(next));
+        });
+        return;
+      }
+
+      // GET /v1/me/devices：去掉已移除的设备，记下当前设备；名额已满的账号上限改为 1。
+      if (client && route === 'GET /v1/me/devices' && status === 200) {
+        const chunks = [];
+        up.on('data', (c) => chunks.push(c));
+        up.on('end', () => {
+          const data = parseJson(Buffer.concat(chunks)) ?? {};
+          const removed = removedIds(cookies);
+          const items = (data.items ?? []).filter((d) => !removed.includes(d.id));
+          const current = items.find((d) => d.is_current);
+          if (current) setCookies.push(`${currentCookie}=${current.id}; ${cookieAttrs}`);
+          if (setCookies.length) out['set-cookie'] = setCookies;
+          delete out['content-length'];
+          delete out['transfer-encoding'];
+          res.writeHead(status, out);
+          res.end(JSON.stringify({ ...data, items, ...(cookies[fullCookie] ? { device_limit: 1 } : {}) }));
         });
         return;
       }

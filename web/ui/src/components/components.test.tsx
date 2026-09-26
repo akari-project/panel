@@ -2,7 +2,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { I18nextProvider } from 'react-i18next';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ProblemError, toProblem } from '@panel/sdk';
 import { createI18n } from '../i18n';
@@ -95,6 +95,26 @@ describe('ConfirmDialog', () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('关闭后焦点回到打开前的元素（没有 Dialog.Trigger）', async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>移除设备</button>
+          <ConfirmDialog open={open} onOpenChange={setOpen} title="移除？" description="影响" confirmLabel="移除" onConfirm={() => setOpen(false)} />
+        </>
+      );
+    }
+    render(wrap(<Harness />));
+    const user = userEvent.setup();
+    const opener = screen.getByRole('button', { name: '移除设备' });
+    await user.click(opener);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
   });
 });
 
