@@ -1,7 +1,8 @@
 {
   "nav": {
     "overview": "Overview",
-    "security": "Security"
+    "security": "Security",
+    "plans": "Plans"
   },
   "login": {
     "title": "Sign in",
@@ -109,5 +110,45 @@
       "submit": "Change password",
       "done": "Your password has been changed."
     }
+  },
+  "plans": {
+    "title": "Plans",
+    "intro": "Compare the plans on sale. Data amounts use binary units (1 GiB = 1024 MiB).",
+    "empty": "No plans are on sale right now.",
+    "period_label": "Billing period",
+    "periods": {
+      "month": "Monthly",
+      "quarter": "Quarterly",
+      "half_year": "Half-yearly",
+      "year": "Yearly"
+    },
+    "per": {
+      "month": "/ month",
+      "quarter": "/ quarter",
+      "half_year": "/ half year",
+      "year": "/ year"
+    },
+    "valid_days_one": "valid for {{count}} day",
+    "valid_days_other": "valid for {{count}} days",
+    "lifetime": "no expiry",
+    "free": "Free",
+    "period_unavailable": "Not offered for this period",
+    "data": "Data per cycle",
+    "unlimited": "Unlimited",
+    "reset": "Data reset",
+    "reset_policies": {
+      "purchase_anchor": "Monthly from purchase date",
+      "calendar_month": "Each calendar month",
+      "never": "Never"
+    },
+    "devices": "Devices",
+    "devices_value_one": "Up to {{count}} device",
+    "devices_value_other": "Up to {{count}} devices",
+    "speed": "Speed limit",
+    "speed_value": "{{mbps}} Mbps",
+    "no_speed_limit": "No limit",
+    "locations": "Available regions",
+    "buy": "Buy",
+    "buy_soon": "Online purchase is coming soon"
   }
 }

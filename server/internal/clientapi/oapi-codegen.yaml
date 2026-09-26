@@ -30,4 +30,5 @@ output-options:
     - regenerateRecoveryCodes
     - reauthenticate
     - changePassword
+    - listPlans
 output: internal/clientapi/gen/api.gen.go

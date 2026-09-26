@@ -3,7 +3,9 @@
     "overview": "Overview",
     "staff": "Staff",
     "roles": "Roles",
-    "audit_logs": "Audit log"
+    "audit_logs": "Audit log",
+    "plans": "Plans & prices",
+    "location_groups": "Location groups"
   },
   "login": {
     "title": "Console sign-in"
@@ -164,6 +166,24 @@
         "create": "Role created",
         "update": "Role changed",
         "delete": "Role deleted"
+      },
+      "plan": {
+        "create": "Create plan",
+        "update": "Update plan",
+        "delete": "Delete plan"
+      },
+      "plan_price": {
+        "create": "Create price",
+        "discontinue": "Discontinue price"
+      },
+      "plan_location_group": {
+        "create": "Add location group to plan",
+        "delete": "Remove location group from plan"
+      },
+      "location_group": {
+        "create": "Create location group",
+        "update": "Update location group",
+        "delete": "Delete location group"
       }
     },
     "diff_field": "Field",
@@ -186,5 +206,193 @@
     "expired": "The invitation link has expired. Ask an administrator to invite you again.",
     "invalid_state": "This invitation can't be accepted: the account is suspended or is already a staff member.",
     "password_hint_new": "At least {{min}} characters."
+  },
+  "impact": {
+    "accounts_one": "This will affect {{count}} user.",
+    "accounts_other": "This will affect {{count}} users.",
+    "hosts_one": "{{count}} host needs a configuration update.",
+    "hosts_other": "{{count}} hosts need a configuration update."
+  },
+  "plans": {
+    "title": "Plans & prices",
+    "intro": "Changing a plan does not affect existing users' entitlement snapshots; location group access follows the plan in real time. New plans start as drafts and can go on sale once they have a price.",
+    "create": "New plan",
+    "create_description": "New plans start as drafts. Add prices and location groups on the plan page after creating it.",
+    "create_submit": "Create",
+    "all": "All",
+    "empty": "No plans match.",
+    "back": "Back to plans",
+    "name": "Name",
+    "description": "Description",
+    "kind": "Type",
+    "kind_hint": "The type can only change while the plan has no prices and no entitlements.",
+    "kind_locked": "The plan has prices or entitlements; its type cannot change.",
+    "tier": "Tier",
+    "tier_hint": "0 for free plans, greater than 0 otherwise; used for upgrades, downgrades and location group minimum tiers.",
+    "status": "Status",
+    "status_hint": "Drafts are only visible here; on sale plans can be bought; hidden plans are not listed but can be renewed; archived plans can be renewed only if allowed.",
+    "bytes": "Data per cycle",
+    "bytes_hint": "0 means unlimited. Units are binary (1 GiB = 1024 MiB).",
+    "bytes_unit": "Unit",
+    "device_limit": "Device limit",
+    "speed_limit": "Speed limit (Mbps)",
+    "speed_limit_hint": "Leave empty for no limit.",
+    "reset_policy": "Data reset",
+    "sort": "Sort order",
+    "sort_hint": "Lower values are listed first.",
+    "legacy_renew": "Allow renewals at the locked price after archiving",
+    "legacy_renew_hint": "Only applies while the plan is archived.",
+    "prices_on_sale": "Prices on sale",
+    "active_entitlements": "Active users",
+    "unlimited": "Unlimited",
+    "speed_value": "{{mbps}} Mbps",
+    "no_speed_limit": "No limit",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "lifetime": "No expiry",
+    "periods": {
+      "month": "Monthly",
+      "quarter": "Quarterly",
+      "half_year": "Half-yearly",
+      "year": "Yearly",
+      "one_time": "One-time"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "on_sale": "On sale",
+      "hidden": "Hidden",
+      "archived": "Archived"
+    },
+    "kinds": {
+      "recurring": "Recurring",
+      "one_time": "One-time",
+      "free": "Free"
+    },
+    "reset_policies": {
+      "purchase_anchor": "On purchase date",
+      "calendar_month": "Each calendar month",
+      "never": "Never"
+    },
+    "status_effects": {
+      "draft": "As a draft, users cannot buy or renew it.",
+      "on_sale": "Once on sale, users can buy, renew and switch to this plan.",
+      "hidden": "Hidden plans are not listed; current holders can still renew.",
+      "archived": "Archived plans cannot be bought; renewals depend on the locked-price renewal setting."
+    },
+    "validation": {
+      "integer": "Enter a whole number",
+      "positive_integer": "Enter a positive whole number",
+      "decimal": "Enter a number, e.g. 100 or 1.5",
+      "tier_kind": "Free plans must have tier 0; other plans must have a tier greater than 0"
+    },
+    "field_errors": {
+      "tier": {
+        "out_of_range": "Free plans must have tier 0; other plans must have a tier greater than 0"
+      },
+      "kind": {
+        "not_allowed": "This type is not allowed",
+        "taken": "A free plan already exists; a site can only have one"
+      },
+      "name": {
+        "taken": "This name is already in use"
+      },
+      "period": {
+        "not_allowed": "The period does not match the plan type"
+      },
+      "period_days": {
+        "not_allowed": "Only one-time plans can have a validity in days"
+      },
+      "currency": {
+        "not_allowed": "The currency must be the site currency"
+      }
+    },
+    "summary_one": "{{kind}} · {{status}} · {{count}} active user",
+    "summary_other": "{{kind}} · {{status}} · {{count}} active users",
+    "basic": "Details",
+    "save": "Save",
+    "saved": "Saved.",
+    "no_changes": "Nothing changed.",
+    "confirm_change_title": "Confirm plan change?",
+    "confirm_change": "Confirm",
+    "conflict": "Another admin changed this plan. Reload before editing.",
+    "conflict_reloaded": "Another admin changed this plan. The page has been reloaded; check and try again.",
+    "reload": "Reload",
+    "update_invalid_state": "This change is not allowed now: paid plans need a price on sale before going on sale; plans with entitlements cannot return to draft; plans with prices or entitlements cannot change type.",
+    "delete": "Delete plan",
+    "delete_title": "Delete plan {{name}}?",
+    "delete_description": "Only plans that were never priced and have no entitlements can be deleted. This cannot be undone.",
+    "delete_invalid_state": "This plan has prices or entitlements and cannot be deleted. Archive it instead.",
+    "groups": "Location groups",
+    "groups_intro": "Users on this plan can use the hosts in these groups. Removing a group takes effect immediately and is a sensitive action.",
+    "groups_no_permission": "You cannot view location groups; only their IDs are shown.",
+    "groups_empty": "No location groups linked.",
+    "group_tier_warning": "Plan tier {{tier}} is below this group's minimum tier {{min}}; users will not get its hosts.",
+    "remove_group": "Remove",
+    "remove_group_for": "Remove location group {{name}} from the plan",
+    "remove_group_title": "Remove location group {{name}}?",
+    "remove_group_effect": "Users on this plan lose access to this group immediately.",
+    "add_group_label": "Add location group",
+    "add_group": "Add",
+    "choose_group": "Choose a location group",
+    "no_more_groups": "No groups left to add"
+  },
+  "prices": {
+    "title": "Prices",
+    "intro": "Once created, a price's amount, currency and period cannot change; it can only be discontinued. To change a price, create a new one.",
+    "free_plan": "Free plans have no prices.",
+    "create": "Add price",
+    "create_description": "If the same period already has a price on sale, that price is discontinued at the same time. Prices cannot be edited after creation.",
+    "create_submit": "Create",
+    "filter": "Show",
+    "on_sale": "On sale",
+    "discontinued": "Discontinued",
+    "empty": "No prices.",
+    "period": "Period",
+    "validity": "Validity",
+    "amount": "Amount",
+    "state": "Status",
+    "created_at": "Created",
+    "period_days": "Validity (days)",
+    "period_days_hint": "Leave empty for no expiry.",
+    "amount_in": "Amount ({{currency}})",
+    "amount_hint": "Must be greater than 0.",
+    "amount_format": "Invalid amount or too many decimal places",
+    "amount_positive": "The amount must be greater than 0",
+    "no_currency": "The site currency has not been initialized, so prices cannot be created yet.",
+    "discontinue": "Discontinue",
+    "discontinue_for": "Discontinue {{period}} {{amount}}",
+    "discontinue_title": "Discontinue price?",
+    "discontinue_description": "{{period}} {{amount}} cannot be put back on sale once discontinued; create a new price instead.",
+    "last_on_sale": "This is the last price on sale for a plan that is on sale. Hide or archive the plan first."
+  },
+  "groups": {
+    "title": "Location groups",
+    "intro": "Location groups bundle hosts; plans use them to decide which hosts users can reach. Member management arrives with host management.",
+    "create": "New location group",
+    "create_submit": "Create",
+    "empty": "No location groups yet.",
+    "name": "Name",
+    "description": "Description",
+    "min_tier": "Minimum tier",
+    "min_tier_hint": "Plans below this tier do not receive this group's hosts. Leave empty for no minimum.",
+    "no_min_tier": "None",
+    "min_tier_value": "Minimum tier: {{value}}",
+    "host_count": "Hosts",
+    "plan_count": "Plans",
+    "edit": "Edit",
+    "edit_for": "Edit location group {{name}}",
+    "edit_title": "Edit location group {{name}}",
+    "save": "Save",
+    "form_description": "Name and description are only shown in the console.",
+    "confirm_title": "Confirm minimum tier change?",
+    "confirm": "Confirm",
+    "conflict": "Another admin changed this location group. Reload before editing.",
+    "delete": "Delete",
+    "delete_for": "Delete location group {{name}}",
+    "delete_title": "Delete location group {{name}}?",
+    "delete_description": "This cannot be undone.",
+    "delete_in_use_one": "This group is used by {{count}} plan; remove it from that plan before deleting.",
+    "delete_in_use_other": "This group is used by {{count}} plans; remove it from those plans before deleting.",
+    "delete_invalid_state": "This location group is still used by plans or still has hosts. Remove it from those plans and remove its hosts first."
   }
 }

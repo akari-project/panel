@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package admin 在真实控制面上运行管理后台的 Playwright 测试（backlog M1-02）。
+// Package admin 在真实控制面上运行管理后台的 Playwright 测试（backlog M1-02、M1-04）。
 //
 // 控制面与依赖由 e2e/realpanel 启动；首个超级管理员按生产方式由命令行创建
 // （panel admin create --email <邮箱> --password-stdin，spec/10 AUTH-21），尚未绑定 TOTP，
@@ -12,7 +12,8 @@
 //	ADMIN_EMAIL     超级管理员邮箱
 //	ADMIN_PASSWORD  超级管理员密码
 //
-// PANEL_E2E_ADMIN_SPEC 可以覆盖测试文件过滤（默认 m1-02）。
+// PANEL_E2E_ADMIN_SPEC 可以覆盖 TestM1_02 的测试文件过滤（默认 m1-02）。
+// TestM1_04 另写入种子数据（e2e/realpanel/seed_catalog.sql：站点结算货币与时区、套餐目录），运行 m1-04。
 // 需要先构建前端（pnpm -r build），并设置 PANEL_E2E_PLAYWRIGHT=1；由 make e2e-admin 运行。
 package admin
 
@@ -38,12 +39,30 @@ func TestM1_02_AdminPlaywright(t *testing.T) {
 	if os.Getenv("PANEL_E2E_PLAYWRIGHT") != "1" {
 		t.Skip("set PANEL_E2E_PLAYWRIGHT=1 (make e2e-admin) to run the console Playwright suite against a real control plane")
 	}
-	p := realpanel.Start(t, "../../../web")
-	createSuperadmin(t, p)
-	checkConsoleAPI(t, p)
 	spec := os.Getenv("PANEL_E2E_ADMIN_SPEC")
 	if spec == "" {
 		spec = "m1-02"
+	}
+	runSpec(t, spec, false)
+}
+
+// TestM1_04_AdminPlaywright：线路组、套餐、价格行、上架与影响确认、移除线路组（敏感操作），用户中心列出套餐（M1-04）。
+// 站点初始化在 M1-09 实现，这里以种子数据写入结算货币（CONV-08）。
+func TestM1_04_AdminPlaywright(t *testing.T) {
+	if os.Getenv("PANEL_E2E_PLAYWRIGHT") != "1" {
+		t.Skip("set PANEL_E2E_PLAYWRIGHT=1 (make e2e-admin) to run the console Playwright suite against a real control plane")
+	}
+	runSpec(t, "m1-04", true)
+}
+
+// runSpec 启动控制面、创建首个超级管理员，可选写入种子数据，然后运行 Playwright 测试文件过滤 spec。
+func runSpec(t *testing.T, spec string, seed bool) {
+	t.Helper()
+	p := realpanel.Start(t, "../../../web")
+	createSuperadmin(t, p)
+	checkConsoleAPI(t, p)
+	if seed {
+		realpanel.SeedCatalog(t, p.Pool)
 	}
 	p.Playwright(t, []string{
 		"PORTAL_URL=" + p.PortalURL, "ADMIN_URL=" + p.AdminURL, "MAILPIT_URL=" + p.MailpitURL,

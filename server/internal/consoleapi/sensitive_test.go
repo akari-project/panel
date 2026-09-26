@@ -42,6 +42,17 @@ var sensitiveFixtures = map[string]sensitiveFixture{
 		etag := e.role(t, "viewer", "orders.read")
 		return req{method: "DELETE", path: "/v1/roles/viewer", header: map[string]string{"If-Match": etag, "Audit-Reason": "x"}}
 	},
+	"removePlanLocationGroup": func(t *testing.T, e *env, super *admin) req {
+		var plan, group string
+		if err := e.pool.QueryRow(t.Context(), `WITH p AS (INSERT INTO plans (name, tier, bytes_per_cycle, device_limit) VALUES ('p', 1, 0, 1) RETURNING id),
+			g AS (INSERT INTO location_groups (name) VALUES ('g') RETURNING id),
+			l AS (INSERT INTO plan_groups (plan_id, group_id) SELECT p.id, g.id FROM p, g)
+			SELECT p.id::text, g.id::text FROM p, g`).Scan(&plan, &group); err != nil {
+			t.Fatal(err)
+		}
+		return req{method: "DELETE", path: "/v1/plans/" + plan + "/location-groups/" + group,
+			header: map[string]string{"If-Match": `"1"`, "Audit-Reason": "x"}}
+	},
 }
 
 // isImplemented 报告操作是否已在本二进制中实现。

@@ -169,7 +169,7 @@ func problemCode(t *testing.T, w *httptest.ResponseRecorder) string {
 
 func TestUnknownRoutes(t *testing.T) {
 	e := newEnv(t)
-	for _, path := range []string{"/v1/nope", "/v1/plans"} { // 不存在；存在于契约但尚未实现
+	for _, path := range []string{"/v1/nope", "/v1/locations"} { // 不存在；存在于契约但尚未实现
 		w := e.get(path, nil)
 		if w.Code != 404 || problemCode(t, w) != "not_found" {
 			t.Errorf("%s: %d %s", path, w.Code, w.Body)
@@ -235,7 +235,7 @@ func TestStaleTokenOnPublicAndOptional(t *testing.T) {
 		t.Fatal(err)
 	}
 	login := e.stub("POST /v1/oauth/device_authorization")
-	plans := e.stub("GET /v1/plans")
+	locations := e.stub("GET /v1/locations")
 	cookie := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: AccessCookie, Value: tok}) }
 
 	r := httptest.NewRequest("POST", "/v1/oauth/device_authorization", strings.NewReader(`{}`))
@@ -245,12 +245,12 @@ func TestStaleTokenOnPublicAndOptional(t *testing.T) {
 	if w.Code != 204 || len(*login) != 1 || (*login)[0] {
 		t.Fatalf("public with revoked cookie: %d %s, seen %v", w.Code, w.Body, *login)
 	}
-	if w := e.get("/v1/plans", cookie); w.Code != 204 || len(*plans) != 1 || (*plans)[0] {
-		t.Fatalf("optional with revoked cookie: %d, seen %v", w.Code, *plans)
+	if w := e.get("/v1/locations", cookie); w.Code != 204 || len(*locations) != 1 || (*locations)[0] {
+		t.Fatalf("optional with revoked cookie: %d, seen %v", w.Code, *locations)
 	}
 	valid, _ := e.token(t, id, token.AudienceClient)
-	if w := e.get("/v1/plans", bearerAuth(valid)); w.Code != 204 || !(*plans)[1] {
-		t.Fatalf("optional with valid token: %d, seen %v", w.Code, *plans)
+	if w := e.get("/v1/locations", bearerAuth(valid)); w.Code != 204 || !(*locations)[1] {
+		t.Fatalf("optional with valid token: %d, seen %v", w.Code, *locations)
 	}
 }
 

@@ -275,7 +275,8 @@ func TestPlanPriceRows(t *testing.T) {
 	}
 
 	t.Run("period_days set→null", func(t *testing.T) {
-		p := mustID(t, pool, `INSERT INTO plan_prices (plan_id, period, period_days, amount_minor, currency) VALUES ($1, 'month', 30, 500, 'CNY') RETURNING id`, other)
+		pass := mustID(t, pool, `INSERT INTO plans (name, tier, kind, bytes_per_cycle, device_limit) VALUES ('Pass 30', 1, 'one_time', 0, 1) RETURNING id`)
+		p := mustID(t, pool, `INSERT INTO plan_prices (plan_id, period, period_days, amount_minor, currency) VALUES ($1, 'one_time', 30, 500, 'CNY') RETURNING id`, pass)
 		_, err := pool.Exec(ctx, `UPDATE plan_prices SET period_days = NULL WHERE id = $1`, p)
 		wantSQLState(t, err, sqlstateRestrictViolation)
 	})
@@ -316,6 +317,36 @@ func TestPlanPriceRows(t *testing.T) {
 	t.Run("tier 0 is reserved for the free plan", func(t *testing.T) {
 		_, err := pool.Exec(ctx, `INSERT INTO plans (name, tier, bytes_per_cycle, device_limit) VALUES ('Zero', 0, 0, 1)`)
 		wantSQLState(t, err, sqlstateCheckViolation)
+	})
+
+	// 价格行的周期与套餐类型一致，period_days 只用于 one_time（00006）。
+	t.Run("period must match kind", func(t *testing.T) {
+		for name, stmt := range map[string]string{
+			"one_time on recurring": `INSERT INTO plan_prices (plan_id, period, amount_minor, currency) VALUES ('` + other + `', 'one_time', 100, 'CNY')`,
+			"month on one_time":     `INSERT INTO plan_prices (plan_id, period, amount_minor, currency) VALUES ('` + plan + `', 'month', 100, 'CNY')`,
+			"period_days on month":  `INSERT INTO plan_prices (plan_id, period, period_days, amount_minor, currency) VALUES ('` + other + `', 'quarter', 30, 100, 'CNY')`,
+		} {
+			_, err := pool.Exec(ctx, stmt)
+			if err == nil {
+				t.Errorf("%s: accepted", name)
+				continue
+			}
+			wantSQLState(t, err, sqlstateCheckViolation)
+		}
+	})
+
+	t.Run("kind is fixed once priced", func(t *testing.T) {
+		_, err := pool.Exec(ctx, `UPDATE plans SET kind = 'recurring' WHERE id = $1`, plan)
+		wantSQLState(t, err, sqlstateCheckViolation)
+		bare := mustID(t, pool, `INSERT INTO plans (name, tier, bytes_per_cycle, device_limit) VALUES ('Bare', 3, 0, 1) RETURNING id`)
+		mustExec(t, pool, `UPDATE plans SET kind = 'one_time' WHERE id = $1`, bare)
+	})
+
+	t.Run("at most one free plan", func(t *testing.T) {
+		mustExec(t, pool, `DELETE FROM plans WHERE kind = 'free'`)
+		mustExec(t, pool, `INSERT INTO plans (name, tier, kind, bytes_per_cycle, device_limit) VALUES ('Free A', 0, 'free', 0, 1)`)
+		_, err := pool.Exec(ctx, `INSERT INTO plans (name, tier, kind, bytes_per_cycle, device_limit) VALUES ('Free B', 0, 'free', 0, 1)`)
+		wantSQLState(t, err, "23505")
 	})
 }
 

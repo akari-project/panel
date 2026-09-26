@@ -187,7 +187,7 @@ func TestUnknownAndUnimplemented(t *testing.T) {
 	for _, r := range []req{
 		{method: "GET", path: "/v1/nodes", as: super},
 		{method: "PUT", path: "/v1/staff/me", as: super},
-		{method: "GET", path: "/v1/plans", as: super}, // M1-04 实现
+		{method: "GET", path: "/v1/plans/0192f0c4-1a00-7000-8000-00000000a001/rollouts", as: super}, // M1-05 实现
 	} {
 		if w := e.do(r); w.Code != 404 || problemCode(t, w) != "not_found" {
 			t.Errorf("%s %s: %d %s", r.method, r.path, w.Code, w.Body)
