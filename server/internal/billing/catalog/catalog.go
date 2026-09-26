@@ -171,19 +171,38 @@ func emit(ctx context.Context, q *sqlc.Queries, topic string, payload map[string
 	return err
 }
 
-// siteCurrency 返回站点结算货币 site_currency（CONV-08）。站点尚未初始化结算货币、或取值异常时返回
-// 409 invalid_state（不回退为默认值），warn 日志只记键名。
-func (s *Service) siteCurrency(ctx context.Context, q *sqlc.Queries) (string, error) {
+// SiteCurrency 返回站点结算货币 site_currency（CONV-08）；站点尚未初始化或取值异常时为 nil
+// （不回退为默认值，异常时 warn 日志只记键名）。
+func (s *Service) SiteCurrency(ctx context.Context) (*string, error) {
+	return s.readCurrency(ctx, sqlc.New(s.Pool))
+}
+
+func (s *Service) readCurrency(ctx context.Context, q *sqlc.Queries) (*string, error) {
 	raw, err := q.GetSetting(ctx, "site_currency")
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
 	}
 	var c string
-	if err != nil || json.Unmarshal(raw, &c) != nil || !currencyCode.MatchString(c) {
-		s.log().WarnContext(ctx, "catalog: site setting missing or invalid", "key", "site_currency")
+	if json.Unmarshal(raw, &c) != nil || !currencyCode.MatchString(c) {
+		s.log().WarnContext(ctx, "catalog: site setting invalid", "key", "site_currency")
+		return nil, nil
+	}
+	return &c, nil
+}
+
+// siteCurrency 返回站点结算货币；站点尚未初始化结算货币或取值异常时返回 409 invalid_state（CONV-08）。
+func (s *Service) siteCurrency(ctx context.Context, q *sqlc.Queries) (string, error) {
+	c, err := s.readCurrency(ctx, q)
+	if err != nil {
+		return "", err
+	}
+	if c == nil {
 		return "", apierr.InvalidState
 	}
-	return c, nil
+	return *c, nil
 }
 
 // freePlanID 返回设置 free_plan_id 引用的套餐（spec/03 3.6，BIL-15）；缺键、null 或取值异常时为 nil

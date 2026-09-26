@@ -662,3 +662,32 @@ func TestPriceNeedsSiteCurrency(t *testing.T) {
 		t.Fatalf("price rows = %d", n)
 	}
 }
+
+// GET /v1/staff/me 返回站点结算货币：尚未初始化或取值异常时为 null，字段总是出现（CONV-08）。
+func TestStaffMeSiteCurrency(t *testing.T) {
+	e := newEnv(t)
+	op := e.staff(t, "operator")
+	currency := func() (any, bool) {
+		t.Helper()
+		var me map[string]any
+		e.must(t, req{method: "GET", path: "/v1/staff/me", as: op}, 200, &me)
+		v, ok := me["site_currency"]
+		return v, ok
+	}
+	if v, ok := currency(); !ok || v != nil {
+		t.Fatalf("uninitialized: %v %v", v, ok)
+	}
+	if _, err := e.pool.Exec(context.Background(), `INSERT INTO settings (key, value) VALUES ('site_currency', '42')`); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := currency(); !ok || v != nil {
+		t.Fatalf("malformed: %v %v", v, ok)
+	}
+	e2 := newCatalogEnv(t)
+	op2 := e2.staff(t, "operator")
+	var me map[string]any
+	e2.must(t, req{method: "GET", path: "/v1/staff/me", as: op2}, 200, &me)
+	if me["site_currency"] != "CNY" {
+		t.Fatalf("site_currency = %v", me["site_currency"])
+	}
+}

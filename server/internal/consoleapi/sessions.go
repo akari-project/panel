@@ -39,15 +39,21 @@ func clearTokenCookies(ctx context.Context) {
 	}
 }
 
-func staffMe(s rbac.Staff) gen.StaffMe {
-	perms := make([]gen.Permission, len(s.Permissions))
-	for i, p := range s.Permissions {
+// staffMe 返回当前管理员，含站点结算货币（尚未初始化时为 null，CONV-08）。
+func (s *Server) staffMe(ctx context.Context, st rbac.Staff) (gen.StaffMe, error) {
+	perms := make([]gen.Permission, len(st.Permissions))
+	for i, p := range st.Permissions {
 		perms[i] = gen.Permission(p)
 	}
-	return gen.StaffMe{
-		AccountId: s.AccountID, Email: openapi_types.Email(s.Email), Roles: s.Roles, Permissions: perms,
-		IsSuperadmin: s.IsSuperadmin(), HasTotp: s.HasTOTP, HasPasskey: s.HasPasskey,
+	currency, err := s.catalog.SiteCurrency(ctx)
+	if err != nil {
+		return gen.StaffMe{}, err
 	}
+	return gen.StaffMe{
+		AccountId: st.AccountID, Email: openapi_types.Email(st.Email), Roles: st.Roles, Permissions: perms,
+		IsSuperadmin: st.IsSuperadmin(), HasTotp: st.HasTOTP, HasPasskey: st.HasPasskey,
+		SiteCurrency: nullableString(currency),
+	}, nil
 }
 
 // CreateSession 是管理员两步登录（AUTH-20、AUTH-21）。第一步总是以错误结束（成功时为 401 mfa_required）；
@@ -103,9 +109,13 @@ func (s *Server) secondStep(ctx context.Context, raw []byte) (gen.CreateSessionR
 	if err != nil {
 		return nil, err
 	}
+	me, err := s.staffMe(ctx, st)
+	if err != nil {
+		return nil, err
+	}
 	setTokenCookies(ctx, res.Tokens, s.d.Clock.Now())
 	out := gen.ConsoleSession{
-		SessionId: res.SessionID, AccessExpiresAt: res.AccessExpires, RefreshExpiresAt: res.AbsoluteExpires, Staff: staffMe(st),
+		SessionId: res.SessionID, AccessExpiresAt: res.AccessExpires, RefreshExpiresAt: res.AbsoluteExpires, Staff: me,
 	}
 	if res.RecoveryCodes != nil {
 		out.RecoveryCodes = &res.RecoveryCodes
@@ -155,7 +165,11 @@ func (s *Server) RefreshToken(ctx context.Context, req gen.RefreshTokenRequestOb
 
 // GetCurrentStaff 返回当前管理员的角色与展开后的权限（AUTH-17）。
 func (s *Server) GetCurrentStaff(ctx context.Context, _ gen.GetCurrentStaffRequestObject) (gen.GetCurrentStaffResponseObject, error) {
-	return gen.GetCurrentStaff200JSONResponse(staffMe(staff(ctx))), nil
+	me, err := s.staffMe(ctx, staff(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return gen.GetCurrentStaff200JSONResponse(me), nil
 }
 
 // CreateStepUp 以 TOTP 完成重新验证，返回 5 分钟有效的 Mfa-Assertion（AUTH-19）。恢复码与 Passkey（M4 前）不可用。
