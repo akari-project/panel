@@ -2,7 +2,8 @@
   "nav": {
     "overview": "概览",
     "security": "账号安全",
-    "plans": "套餐"
+    "plans": "套餐",
+    "devices": "设备"
   },
   "login": {
     "title": "登录",
@@ -110,6 +111,43 @@
       "submit": "修改密码",
       "done": "密码已修改。"
     }
+  },
+  "devices": {
+    "title": "设备与登录会话",
+    "intro": "登录过账号的设备与浏览器。移除后该设备退出登录，代理凭据立即失效。",
+    "usage": "设备名额：已用 {{used}} / {{limit}}",
+    "usage_hint": "浏览器登录不占用名额。",
+    "limit_reached": "设备名额已用完，新登录的设备不会获得代理凭据。移除不再使用的设备后，未获得凭据的设备会自动获得。",
+    "empty": "没有登录中的设备。",
+    "list_label": "设备列表",
+    "current": "当前设备",
+    "unnamed": "未知型号",
+    "platforms": {
+      "ios": "iOS",
+      "android": "Android",
+      "windows": "Windows",
+      "macos": "macOS",
+      "linux": "Linux",
+      "web": "浏览器",
+      "other": "其他"
+    },
+    "platform": "平台",
+    "app_version": "应用版本",
+    "last_seen": "最后活跃",
+    "never": "暂无记录",
+    "signed_in": "首次登录",
+    "ip_prefix": "IP 段",
+    "credential": "代理凭据",
+    "credential_yes": "已下发",
+    "credential_no": "未下发（名额已满）",
+    "credential_web": "不需要（浏览器）",
+    "remove": "移除",
+    "remove_named": "移除 {{name}}",
+    "remove_title": "移除 {{name}}？",
+    "remove_impact": "该设备将退出登录，代理凭据立即吊销，正在使用的连接会断开。",
+    "remove_impact_web": "该浏览器将退出登录。",
+    "remove_impact_current": "这是你正在使用的设备，移除后将退出登录并回到登录页。",
+    "removed": "已移除 {{name}}。"
   },
   "plans": {
     "title": "套餐",
