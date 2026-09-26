@@ -38,7 +38,7 @@ test('创建线路组', async () => {
   await dialog.getByLabel('最低等级').fill('1');
   await dialog.getByRole('button', { name: '创建' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByRole('cell', { name: GROUP })).toBeVisible();
+  await expect(page.getByRole('cell', { name: GROUP, exact: true })).toBeVisible();
 });
 
 test('创建套餐，流量按 1024 进位保存（CONV-33、BIL-26）', async () => {
@@ -73,12 +73,12 @@ test('关联线路组，新增价格，上架前确认影响（BIL-04、BIL-01�
   await dialog.getByLabel(/^金额（/).fill('30');
   await dialog.getByRole('button', { name: '创建' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(prices.getByRole('cell', { name: /30\.00/ })).toBeVisible();
+  await expect(prices.getByRole('cell', { name: '¥30.00', exact: true })).toBeVisible();
   // 价格行没有编辑入口（BIL-01）。
   await expect(prices.getByRole('button', { name: /编辑/ })).toHaveCount(0);
 
   const basic = page.getByRole('region', { name: '基本信息' });
-  await basic.getByLabel('状态').selectOption('on_sale');
+  await basic.getByLabel('状态', { exact: true }).selectOption('on_sale');
   await basic.getByRole('button', { name: '保存' }).click();
   const confirm = page.getByRole('dialog', { name: '确认修改套餐？' });
   await expect(confirm).toContainText('将影响 0 名用户。');
