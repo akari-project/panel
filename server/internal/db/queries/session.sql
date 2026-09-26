@@ -27,11 +27,6 @@ WHERE account_id = sqlc.arg(account_id) AND platform = 'web' AND revoked_at IS N
 ORDER BY last_seen_at ASC NULLS FIRST, id ASC
 OFFSET sqlc.arg(keep)::int;
 
--- name: CountActiveDevices :one
--- 设备上限只统计未吊销的非 web 设备（AUTH-14）。
-SELECT count(*) FROM devices
-WHERE account_id = sqlc.arg(account_id) AND platform <> 'web' AND revoked_at IS NULL AND id <> sqlc.arg(exclude);
-
 -- name: RevokeDevice :exec
 UPDATE devices SET revoked_at = sqlc.arg(now) WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
 
@@ -103,8 +98,10 @@ RETURNING id;
 SELECT device_id FROM sessions WHERE id = sqlc.arg(id) AND account_id = sqlc.arg(account_id);
 
 -- name: LockAccount :one
--- 串行化同一账号的设备凭据下发，使设备上限的计数与插入之间不会并发超额（AUTH-14）。
-SELECT id FROM accounts WHERE id = sqlc.arg(id) FOR UPDATE;
+-- 串行化同一账号的设备凭据分配，使设备上限的计数与插入之间不会并发超额（AUTH-14）。锁的顺序：先账号行，再设备行。
+-- 用 FOR NO KEY UPDATE 而不是 FOR UPDATE：前者不阻塞外键检查的 FOR KEY SHARE，持有会话行锁的刷新（AUTH-07）
+-- 插入子会话时不必等待本锁，移除设备与登出在本锁之下吊销会话时就不会与之形成死锁。
+SELECT id FROM accounts WHERE id = sqlc.arg(id) FOR NO KEY UPDATE;
 
 -- name: ActiveDeviceKeyExists :one
 -- 同一账号未吊销的设备公钥不得重复（AUTH-10）。

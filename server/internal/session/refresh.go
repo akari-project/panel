@@ -128,6 +128,12 @@ func (s *Service) refresh(ctx context.Context, aud token.Audience, refresh, ipPr
 		if err := q.MarkSessionUsed(ctx, sqlc.MarkSessionUsedParams{ID: sess.ID, Now: &now}); err != nil {
 			return err
 		}
+		if device != uuid.Nil {
+			// 设备最近活跃时间（AUTH-14 的排序依据，设备列表显示）。
+			if err := q.TouchDeviceSeen(ctx, sqlc.TouchDeviceSeenParams{ID: device, Now: &now}); err != nil {
+				return err
+			}
+		}
 		parent = sess.ID
 		out, err = s.newSession(ctx, q, sess.AccountID, device, aud, &sess.ID, ua, ipPrefix, idle, absolute, amr)
 		if err != nil {
@@ -222,12 +228,16 @@ func (s *Service) cachedRetry(ctx context.Context, oldHash string) (Tokens, erro
 	return Tokens(c), nil
 }
 
-// Logout 吊销当前会话所在的会话链，并吊销本设备及其代理凭据，释放设备名额（AUTH-10）。
+// Logout 吊销当前会话所在的会话链，并吊销本设备及其代理凭据，释放设备名额（AUTH-10）；
+// 因上限等待凭据的设备随即取得空出的名额（AUTH-14）。
 func (s *Service) Logout(ctx context.Context, p auth.Principal) error {
 	var revoked []uuid.UUID
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
 		now := s.Clock.Now()
+		if _, err := q.LockAccount(ctx, p.AccountID); err != nil {
+			return err
+		}
 		device, err := q.SessionDevice(ctx, sqlc.SessionDeviceParams{ID: p.SessionID, AccountID: p.AccountID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return apierr.Unauthenticated
@@ -258,7 +268,7 @@ func (s *Service) Logout(ctx context.Context, p auth.Principal) error {
 				return err
 			}
 		}
-		return nil
+		return account.ReconcileCredentials(ctx, q, s.Keys, p.AccountID, now)
 	})
 	if err != nil {
 		return err

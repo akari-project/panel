@@ -167,12 +167,16 @@ func (s *Service) complete(ctx context.Context, acct uuid.UUID, in Login, pubKey
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
 		now := s.Clock.Now()
+		// 先锁账号行，再注册或锁定设备行（与移除设备、凭据分配相同的加锁顺序）。
+		if _, err := q.LockAccount(ctx, acct); err != nil {
+			return err
+		}
 		device, err := s.registerDevice(ctx, q, acct, in, pubKey, reuse)
 		if err != nil {
 			return err
 		}
 		if res.IsWeb {
-			res.CredentialStatus = "web_device"
+			res.CredentialStatus = account.StatusWebDevice
 			// 超出 50 个的 web 设备连同其会话吊销（AUTH-10）。
 			over, err := q.ActiveWebDevicesOverLimit(ctx, sqlc.ActiveWebDevicesOverLimitParams{AccountID: acct, Keep: MaxWebDevices})
 			if err != nil {
@@ -188,8 +192,14 @@ func (s *Service) complete(ctx context.Context, acct uuid.UUID, in Login, pubKey
 				}
 				revoked = append(revoked, ids...)
 			}
-		} else if res.CredentialStatus, err = s.issueCredential(ctx, q, acct, device); err != nil {
-			return err
+		} else {
+			// 新设备只能取得空闲名额，不抢占已持有凭据的设备（AUTH-14）。
+			if err := account.ReconcileCredentials(ctx, q, s.Keys, acct, now); err != nil {
+				return err
+			}
+			if res.CredentialStatus, err = account.DeviceCredentialStatus(ctx, q, acct, device); err != nil {
+				return err
+			}
 		}
 		res.Tokens, err = s.newSession(ctx, q, acct, device, token.AudienceClient, nil, in.UserAgent, in.IPPrefix,
 			ClientIdle, now.Add(ClientAbsolute), amr)
@@ -250,44 +260,6 @@ func verifyProof(pub []byte, device uuid.UUID, p *Proof) bool {
 		return false
 	}
 	return ed25519.Verify(ed25519.PublicKey(pub), ProofMessage(device, p.Nonce), sig)
-}
-
-// issueCredential 决定非 web 设备的凭据状态，必要时生成凭据（AUTH-13、AUTH-14）。
-// 设备上限只统计未吊销的非 web 设备；免费账号的上限取设置项 free_device_limit（默认 1），
-// 但没有生效中的权益时不下发凭据（spec/30 CredentialStatus）。
-func (s *Service) issueCredential(ctx context.Context, q *sqlc.Queries, acct, device uuid.UUID) (string, error) {
-	if _, err := q.LockAccount(ctx, acct); err != nil {
-		return "", err
-	}
-	if _, err := q.DeviceCredential(ctx, &device); err == nil {
-		return "issued", nil
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return "", err
-	}
-	e, err := q.CredentialEntitlement(ctx, acct)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && e.Status != "active") {
-		return "entitlement_inactive", nil
-	}
-	if err != nil {
-		return "", err
-	}
-	others, err := q.CountActiveDevices(ctx, sqlc.CountActiveDevicesParams{AccountID: acct, Exclude: device})
-	if err != nil {
-		return "", err
-	}
-	if others >= int64(e.DeviceLimit) {
-		return "device_limit_reached", nil
-	}
-	secret := uuid.New()
-	enc, err := s.Keys.Seal(secret[:], account.CredentialSecretAD)
-	if err != nil {
-		return "", err
-	}
-	id, err := q.CreateDeviceCredential(ctx, sqlc.CreateDeviceCredentialParams{AccountID: acct, DeviceID: &device, SecretEnc: enc})
-	if err != nil {
-		return "", err
-	}
-	return "issued", account.CredentialChanged(ctx, q, acct, id, "created")
 }
 
 // NewNonce 生成设备复用 nonce（AUTH-10）：32 字节随机值，60 秒有效，只能使用一次。
