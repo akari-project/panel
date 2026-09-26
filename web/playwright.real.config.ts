@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// 真实控制面上的用户中心端到端测试（backlog M1-01 验收 4）。不启动 webServer：
+// 真实控制面上的端到端测试（M1-01 用户中心、M1-02 与 M1-04 管理后台）。不启动 webServer：
 // 由 server/e2e/portal（make e2e-portal）启动 PostgreSQL、Valkey、Mailpit 与控制面后，以环境变量传入地址：
 //   PORTAL_URL   用户中心地址，例如 http://localhost:8080/（__Host- Cookie 要求安全上下文，本机用 localhost）
 //   MAILPIT_URL  Mailpit 的 HTTP 地址，例如 http://localhost:8025
