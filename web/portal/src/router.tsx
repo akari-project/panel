@@ -20,6 +20,7 @@ import { ForgotPasswordPage } from './pages/ForgotPassword';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
 import { NotFoundPage } from './pages/NotFound';
+import { PlansPage } from './pages/Plans';
 import { RegisterPage } from './pages/Register';
 import { ResetPasswordPage } from './pages/ResetPassword';
 import { SecurityPage } from './pages/Security';
@@ -103,6 +104,11 @@ function AppLayout() {
             </Link>
           </li>
           <li>
+            <Link to="/plans" className={navLinkClass}>
+              {t('nav.plans')}
+            </Link>
+          </li>
+          <li>
             <Link to="/security" className={navLinkClass}>
               {t('nav.security')}
             </Link>
@@ -153,6 +159,12 @@ export const homeRoute = createRoute({
   component: HomePage,
 });
 
+export const plansRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'plans',
+  component: PlansPage,
+});
+
 export const securityRoute = createRoute({
   getParentRoute: () => appRoute,
   path: 'security',
@@ -165,7 +177,7 @@ const routeTree = rootRoute.addChildren([
   verifyEmailRoute,
   forgotPasswordRoute,
   resetPasswordRoute,
-  appRoute.addChildren([homeRoute, securityRoute]),
+  appRoute.addChildren([homeRoute, plansRoute, securityRoute]),
 ]);
 
 export function createAppRouter(context: RouterContext, history?: RouterHistory) {

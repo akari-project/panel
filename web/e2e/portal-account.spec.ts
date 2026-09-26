@@ -107,6 +107,8 @@ test('启用 TOTP 并保存恢复码', async ({ page }) => {
 
 /** 登录时获得的重新验证窗口（AUTH-23）过期。 */
 async function expireReauth(page: Page) {
+  // 先等登录完成离开登录页，否则登录响应的 Set-Cookie 可能晚于清除而重新写入窗口。
+  await page.waitForURL((u) => !u.pathname.endsWith('/login'));
   await page.context().clearCookies({ name: 'panel_mock_client_reauth' });
 }
 

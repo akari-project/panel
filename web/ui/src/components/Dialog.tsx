@@ -62,8 +62,7 @@ export function ConfirmDialog({ open, onOpenChange, title, description, confirmL
           {t('cancel')}
         </Button>
         <Button
-          variant="primary"
-          className={danger ? 'bg-danger text-white hover:bg-danger/90 dark:text-bg' : undefined}
+          variant={danger ? 'danger' : 'primary'}
           loading={busy}
           onClick={() => void confirm()}
         >
