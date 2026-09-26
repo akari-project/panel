@@ -367,6 +367,8 @@ func (s *Service) UpdatePlan(ctx context.Context, id uuid.UUID, ifMatch string, 
 			out, err = getPlan(ctx, q, id)
 			return err
 		}
+		// 权益的有无只由套餐行锁保护：M1-05 新建权益（写 entitlements.plan_id）时必须以 FOR KEY SHARE 或
+		// FOR SHARE 锁定该套餐行，才能与这里的 FOR UPDATE 互斥，避免检查之后并发产生权益。
 		usage, err := q.PlanUsage(ctx, id)
 		if err != nil {
 			return err
@@ -428,6 +430,8 @@ func (s *Service) DeletePlan(ctx context.Context, id uuid.UUID, ifMatch string) 
 		if err != nil {
 			return err
 		}
+		// 权益的有无只由套餐行锁保护：M1-05 新建权益（写 entitlements.plan_id）时必须以 FOR KEY SHARE 或
+		// FOR SHARE 锁定该套餐行，才能与这里的 FOR UPDATE 互斥，避免检查之后并发产生权益。
 		usage, err := q.PlanUsage(ctx, id)
 		if err != nil {
 			return err
