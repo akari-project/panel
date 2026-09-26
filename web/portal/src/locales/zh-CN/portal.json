@@ -1,7 +1,8 @@
 {
   "nav": {
     "overview": "概览",
-    "security": "账号安全"
+    "security": "账号安全",
+    "plans": "套餐"
   },
   "login": {
     "title": "登录",
@@ -109,5 +110,45 @@
       "submit": "修改密码",
       "done": "密码已修改。"
     }
+  },
+  "plans": {
+    "title": "套餐",
+    "intro": "比较在售套餐。流量按 1024 进位（1 GiB = 1024 MiB）。",
+    "empty": "暂无在售套餐。",
+    "period_label": "付费周期",
+    "periods": {
+      "month": "月付",
+      "quarter": "季付",
+      "half_year": "半年付",
+      "year": "年付"
+    },
+    "per": {
+      "month": "/ 月",
+      "quarter": "/ 季",
+      "half_year": "/ 半年",
+      "year": "/ 年"
+    },
+    "valid_days_one": "有效 {{count}} 天",
+    "valid_days_other": "有效 {{count}} 天",
+    "lifetime": "长期有效",
+    "free": "免费",
+    "period_unavailable": "该周期暂不提供",
+    "data": "每周期流量",
+    "unlimited": "不限",
+    "reset": "流量重置",
+    "reset_policies": {
+      "purchase_anchor": "按购买日每月重置",
+      "calendar_month": "每自然月重置",
+      "never": "不重置"
+    },
+    "devices": "设备数",
+    "devices_value_one": "最多 {{count}} 台",
+    "devices_value_other": "最多 {{count}} 台",
+    "speed": "限速",
+    "speed_value": "{{mbps}} Mbps",
+    "no_speed_limit": "不限速",
+    "locations": "可访问地区数",
+    "buy": "购买",
+    "buy_soon": "在线购买即将开放"
   }
 }
