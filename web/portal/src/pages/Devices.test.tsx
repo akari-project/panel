@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // 设备与登录会话：列表字段、设备名额与已满提示（AUTH-14）、移除设备与移除当前设备即登出（AUTH-15）、错误状态（UI-02）。
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { fakeServer, json, me, noContent, problem, renderPortal } from '../test/harness';
@@ -39,9 +39,9 @@ const LAPTOP = {
   has_credential: false,
 };
 
-function server(items: unknown[], limit: number, routes: Parameters<typeof fakeServer>[0] = {}) {
+function server(items: unknown[], limit: number, routes: Parameters<typeof fakeServer>[0] = {}, entitlement = 'active') {
   return fakeServer({
-    'GET /v1/me': () => json(200, me()),
+    'GET /v1/me': () => json(200, me({ entitlement_status: entitlement })),
     'GET /v1/me/devices': () => json(200, { device_limit: limit, items }),
     ...routes,
   });
@@ -76,6 +76,15 @@ describe('设备列表', () => {
     expect(laptop).toHaveTextContent('Last activeNo record');
     expect(screen.getByText('Device slots: 1 of 1 used')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('All device slots are in use');
+  });
+
+  it('没有生效的权益时，未获得凭据的设备不是名额问题，不提示已满', async () => {
+    for (const entitlement of ['none', 'over_quota', 'suspended']) {
+      renderPortal(server([PHONE, LAPTOP, BROWSER], 1, {}, entitlement), '/devices', 'en');
+      await screen.findByRole('article', { name: 'macOS' });
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      cleanup();
+    }
   });
 
   it('加载失败时按 code 显示错误与 request_id，可以重试', async () => {

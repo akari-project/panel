@@ -31,8 +31,8 @@ export function DevicesPage() {
       await unwrap(api.DELETE('/v1/me/devices/{id}', { params: { path: { id: target.id } } }));
     } catch (e) {
       if (!isProblemError(e)) throw e;
-      // 已在别处移除（404）：刷新列表即可，不提示错误。取消重新验证（mfa_required）同样不提示。
-      if (e.problem.code !== 'not_found' && e.problem.code !== 'mfa_required') setProblem(e.problem);
+      // 已在别处移除（404）：刷新列表即可，不提示错误。
+      if (e.problem.code !== 'not_found') setProblem(e.problem);
       setTarget(null);
       void q.refetch();
       return;
@@ -60,7 +60,11 @@ export function DevicesPage() {
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <>
-          <Usage items={q.data.items} limit={q.data.device_limit} />
+          <Usage
+            items={q.data.items}
+            limit={q.data.device_limit}
+            entitled={me.entitlement_status === 'active' || me.entitlement_status === 'free'}
+          />
           <ProblemAlert problem={problem} />
           <div aria-live="polite" className="text-sm empty:hidden">
             {removed && <p>{t('devices.removed', { name: removed })}</p>}
@@ -102,11 +106,12 @@ function useDeviceName() {
   return (d: Device) => d.model || t(`devices.platforms.${d.platform}`);
 }
 
-function Usage({ items, limit }: { items: Device[]; limit: number }) {
+function Usage({ items, limit, entitled }: { items: Device[]; limit: number; entitled: boolean }) {
   const { t } = useTranslation();
   const used = items.filter((d) => d.has_credential).length;
-  const waiting = items.some((d) => d.platform !== 'web' && !d.has_credential);
-  const full = used >= limit || waiting;
+  // 只有权益生效（active，含免费套餐）时，没有凭据的非 web 设备才是因名额不足而等待（AUTH-14）；
+  // 没有权益或权益为 over_quota、suspended 时不下发凭据，与名额无关。
+  const full = entitled && items.some((d) => d.platform !== 'web' && !d.has_credential);
   return (
     <div className="flex flex-col gap-2">
       <p>
