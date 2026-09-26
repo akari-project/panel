@@ -12,6 +12,31 @@ import (
 	"github.com/google/uuid"
 )
 
+const backfillExportToken = `-- name: BackfillExportToken :exec
+INSERT INTO export_tokens (account_id, token_hash, token_enc, rotated_at)
+SELECT a.id, $1, $2, $3
+FROM accounts a WHERE a.id = $4 AND a.status IN ('active', 'suspended')
+ON CONFLICT (account_id) DO NOTHING
+`
+
+type BackfillExportTokenParams struct {
+	TokenHash string
+	TokenEnc  []byte
+	Now       time.Time
+	AccountID uuid.UUID
+}
+
+// 读取导入链接时补建缺失的令牌：只为正常或暂停的账号补建，正在注销与已注销的账号不补建（AUTH-05）。
+func (q *Queries) BackfillExportToken(ctx context.Context, arg BackfillExportTokenParams) error {
+	_, err := q.db.Exec(ctx, backfillExportToken,
+		arg.TokenHash,
+		arg.TokenEnc,
+		arg.Now,
+		arg.AccountID,
+	)
+	return err
+}
+
 const exportToken = `-- name: ExportToken :one
 SELECT token_enc, rotated_at FROM export_tokens WHERE account_id = $1
 `

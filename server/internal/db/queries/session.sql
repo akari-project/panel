@@ -14,7 +14,7 @@ RETURNING id;
 -- name: DeviceForReuse :one
 SELECT id, platform, public_key FROM devices
 WHERE id = sqlc.arg(id) AND account_id = sqlc.arg(account_id) AND revoked_at IS NULL
-FOR UPDATE;
+FOR NO KEY UPDATE;
 
 -- name: TouchDevice :exec
 UPDATE devices SET model = sqlc.narg(model), app_version = sqlc.narg(app_version), last_seen_at = sqlc.arg(now)

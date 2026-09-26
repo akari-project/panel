@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/akari-project/panel/server/internal/apierr"
 	"github.com/akari-project/panel/server/internal/db/sqlc"
 	"github.com/akari-project/panel/server/internal/secretbox"
 )
@@ -46,15 +47,22 @@ func CreateExportToken(ctx context.Context, q *sqlc.Queries, keys *secretbox.Key
 }
 
 // ExportToken 返回账号当前的导出令牌（GET /v1/me/export-link）。没有令牌时（AUTH-22 的凭据重置会删除）补建：
-// 并发的补建只有一条生效，之后重新读取。
+// 并发的补建只有一条生效，之后重新读取。只为正常或暂停的账号补建；正在注销与已注销的账号返回 404。
 func (s *Service) ExportToken(ctx context.Context, acct uuid.UUID) (ExportToken, error) {
 	q := sqlc.New(s.Pool)
 	row, err := q.ExportToken(ctx, acct)
 	if errors.Is(err, pgx.ErrNoRows) {
-		if err := CreateExportToken(ctx, q, s.Keys, acct, s.Clock.Now()); err != nil {
+		_, hash, enc, nerr := newExportToken(s.Keys)
+		if nerr != nil {
+			return ExportToken{}, nerr
+		}
+		if err := q.BackfillExportToken(ctx, sqlc.BackfillExportTokenParams{AccountID: acct, TokenHash: hash, TokenEnc: enc, Now: s.Clock.Now()}); err != nil {
 			return ExportToken{}, err
 		}
 		row, err = q.ExportToken(ctx, acct)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ExportToken{}, apierr.NotFound
+		}
 	}
 	if err != nil {
 		return ExportToken{}, err
@@ -75,6 +83,12 @@ func (s *Service) RotateExportToken(ctx context.Context, acct uuid.UUID) (Export
 		now := s.Clock.Now()
 		if _, err := q.LockAccount(ctx, acct); err != nil {
 			return err
+		}
+		// 正在注销与已注销的账号不再生成令牌与共用凭据（AUTH-05）。
+		if a, err := q.AccountByID(ctx, acct); err != nil {
+			return err
+		} else if a.Status != "active" && a.Status != "suspended" {
+			return apierr.InvalidState
 		}
 		plain, hash, enc, err := newExportToken(s.Keys)
 		if err != nil {

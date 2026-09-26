@@ -160,3 +160,25 @@ func TestRotateExportLinkBackfills(t *testing.T) {
 		t.Fatalf("rotate without a token row: %d %s", w.Code, w.Body)
 	}
 }
+
+// 正在注销的账号不补建导出令牌，也不能重置（AUTH-05）。
+func TestExportLinkDeletingAccount(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "gone@example.com", "correct horse battery")
+	s := e.appLogin(t, "gone@example.com", "correct horse battery")
+	if _, err := e.pool.Exec(context.Background(), `DELETE FROM export_tokens`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(context.Background(), `UPDATE accounts SET status = 'deleting' WHERE email = 'gone@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	if w := e.get("/v1/me/export-link", bearerAuth(s.AccessToken)); w.Code != 404 {
+		t.Fatalf("GET for a deleting account: %d %s", w.Code, w.Body)
+	}
+	if w := e.do(req{method: "POST", path: "/v1/me/export-link/rotation", bearer: s.AccessToken}); w.Code != 409 || problemCode(t, w) != "invalid_state" {
+		t.Fatalf("rotate for a deleting account: %d %s", w.Code, w.Body)
+	}
+	if n := e.count(t, `SELECT count(*) FROM export_tokens`); n != 0 {
+		t.Fatalf("%d export tokens created for a deleting account", n)
+	}
+}

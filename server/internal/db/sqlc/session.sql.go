@@ -132,7 +132,7 @@ func (q *Queries) DeviceCredential(ctx context.Context, deviceID *uuid.UUID) (uu
 const deviceForReuse = `-- name: DeviceForReuse :one
 SELECT id, platform, public_key FROM devices
 WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL
-FOR UPDATE
+FOR NO KEY UPDATE
 `
 
 type DeviceForReuseParams struct {

@@ -211,6 +211,10 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	if portalURL == "" {
 		return nil, errors.New("api: ui.portal.public_url is required when ui.portal.hosts is not a single host (links in emails, spec/10 AUTH-04)")
 	}
+	// 导入链接必须是绝对地址（AUTH-16），不取自请求的 Host。
+	if primaryAPI(d.Config) == "" {
+		return nil, errors.New("api: ui.portal.api_base_url or ui.portal.public_url is required (import links, spec/10 AUTH-16)")
+	}
 	limiter := ratelimit.Limiter{KV: d.KV}
 	revocations := auth.Revocations{KV: d.KV}
 	outbox := notify.Outbox{Keys: d.Keys, Clock: d.Clock}

@@ -7,6 +7,13 @@ INSERT INTO export_tokens (account_id, token_hash, token_enc, rotated_at)
 VALUES (sqlc.arg(account_id), sqlc.arg(token_hash), sqlc.arg(token_enc), sqlc.arg(now))
 ON CONFLICT (account_id) DO NOTHING;
 
+-- name: BackfillExportToken :exec
+-- 读取导入链接时补建缺失的令牌：只为正常或暂停的账号补建，正在注销与已注销的账号不补建（AUTH-05）。
+INSERT INTO export_tokens (account_id, token_hash, token_enc, rotated_at)
+SELECT a.id, sqlc.arg(token_hash), sqlc.arg(token_enc), sqlc.arg(now)
+FROM accounts a WHERE a.id = sqlc.arg(account_id) AND a.status IN ('active', 'suspended')
+ON CONFLICT (account_id) DO NOTHING;
+
 -- name: ExportToken :one
 SELECT token_enc, rotated_at FROM export_tokens WHERE account_id = sqlc.arg(account_id);
 

@@ -70,7 +70,7 @@ SELECT d.id, d.platform, d.model, d.app_version, d.created_at, d.last_seen_at,
        (SELECT s.ip_prefix FROM sessions s
         WHERE s.account_id = d.account_id AND s.device_id = d.id AND s.revoked_at IS NULL
         ORDER BY s.id DESC LIMIT 1) AS ip_prefix,
-       (d.id IS NOT DISTINCT FROM (SELECT s.device_id FROM sessions s WHERE s.id = $1))::bool AS is_current,
+       (d.id IS NOT DISTINCT FROM (SELECT s.device_id FROM sessions s WHERE s.id = $1 AND s.account_id = d.account_id))::bool AS is_current,
        EXISTS (SELECT 1 FROM proxy_credentials c WHERE c.device_id = d.id AND c.revoked_at IS NULL)::bool AS has_credential
 FROM devices d
 WHERE d.account_id = $2 AND d.revoked_at IS NULL
