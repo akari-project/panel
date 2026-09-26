@@ -87,7 +87,11 @@ describe('ConfirmDialog', () => {
     const dialog = screen.getByRole('dialog', { name: '停用？' });
     expect(dialog).toHaveAccessibleDescription('将影响 3 台设备');
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: '停用' }));
+    // 危险操作的确认按钮只带危险色，不同时带主色（两者同为 bg-*，同时存在时取决于样式表顺序）。
+    const confirm = screen.getByRole('button', { name: '停用' });
+    expect(confirm).toHaveClass('bg-danger');
+    expect(confirm).not.toHaveClass('bg-primary');
+    await user.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '取消' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);

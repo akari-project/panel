@@ -6,8 +6,6 @@ import { useTranslation } from 'react-i18next';
 import { isProblemError, type Problem } from '@panel/sdk';
 import { Button, Modal, ProblemAlert } from '@panel/ui';
 
-export const dangerClass = 'bg-danger text-white hover:bg-danger/90 dark:text-bg';
-
 export interface ActionConfirmProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -60,7 +58,7 @@ function ConfirmBody({
         <Button variant="secondary" onClick={onClose} disabled={busy}>
           {tc('cancel')}
         </Button>
-        <Button className={danger ? dangerClass : undefined} loading={busy} onClick={() => void confirm()}>
+        <Button variant={danger ? 'danger' : 'primary'} loading={busy} onClick={() => void confirm()}>
           {confirmLabel}
         </Button>
       </div>
@@ -92,7 +90,7 @@ export function useAsk(): [ReactNode, (o: AskOptions) => Promise<boolean>] {
         <Button variant="secondary" onClick={() => close(false)}>
           {tc('cancel')}
         </Button>
-        <Button className={state?.danger ? dangerClass : undefined} onClick={() => close(true)}>
+        <Button variant={state?.danger ? 'danger' : 'primary'} onClick={() => close(true)}>
           {state?.confirmLabel}
         </Button>
       </div>

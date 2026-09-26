@@ -145,7 +145,7 @@ function ConfirmForm({
         <Button variant="secondary" onClick={onClose} disabled={formState.isSubmitting}>
           {tc('cancel')}
         </Button>
-        <Button type="submit" className="bg-danger text-white hover:bg-danger/90 dark:text-bg" loading={formState.isSubmitting}>
+        <Button type="submit" variant="danger" loading={formState.isSubmitting}>
           {confirmLabel}
         </Button>
       </div>
