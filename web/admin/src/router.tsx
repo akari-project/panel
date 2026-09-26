@@ -23,8 +23,11 @@ import { AppShell, ErrorState, navLinkClass, type PanelConfig } from '@panel/ui'
 import { AcceptInvitationPage } from './pages/AcceptInvitation';
 import { AuditLogsPage, validateAuditSearch } from './pages/AuditLogs';
 import { HomePage } from './pages/Home';
+import { LocationGroupsPage } from './pages/LocationGroups';
 import { LoginPage } from './pages/Login';
 import { NotFoundPage } from './pages/NotFound';
+import { PlanDetailPage } from './pages/PlanDetail';
+import { PlansPage } from './pages/Plans';
 import { RolesPage } from './pages/Roles';
 import { InvitationsPage, StaffPage } from './pages/Staff';
 import { staffMeQuery } from './queries';
@@ -66,6 +69,8 @@ export const acceptInvitationRoute = createRoute({
 
 /** 菜单项：页面路径与决定是否显示的接口操作。 */
 const navItems = [
+  { to: '/plans', label: 'nav.plans', op: 'GET /v1/plans' },
+  { to: '/location-groups', label: 'nav.location_groups', op: 'GET /v1/location-groups' },
   { to: '/staff', label: 'nav.staff', op: 'GET /v1/staff' },
   { to: '/roles', label: 'nav.roles', op: 'GET /v1/roles' },
   { to: '/audit-logs', label: 'nav.audit_logs', op: 'GET /v1/audit-logs' },
@@ -187,10 +192,40 @@ export const auditLogsRoute = createRoute({
   component: guarded('GET /v1/audit-logs', AuditLogsPage),
 });
 
+export const plansRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'plans',
+  component: guarded('GET /v1/plans', PlansPage),
+});
+
+export const planDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'plans/$planId',
+  component: guarded('GET /v1/plans/{id}', function PlanDetailRoute() {
+    const { planId } = planDetailRoute.useParams();
+    return <PlanDetailPage planId={planId} />;
+  }),
+});
+
+export const locationGroupsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: 'location-groups',
+  component: guarded('GET /v1/location-groups', LocationGroupsPage),
+});
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   acceptInvitationRoute,
-  appRoute.addChildren([homeRoute, staffRoute, invitationsRoute, rolesRoute, auditLogsRoute]),
+  appRoute.addChildren([
+    homeRoute,
+    plansRoute,
+    planDetailRoute,
+    locationGroupsRoute,
+    staffRoute,
+    invitationsRoute,
+    rolesRoute,
+    auditLogsRoute,
+  ]),
 ]);
 
 export function createAppRouter(context: RouterContext, history?: RouterHistory) {

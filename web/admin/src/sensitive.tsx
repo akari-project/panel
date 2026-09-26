@@ -88,13 +88,22 @@ export interface SensitiveConfirmProps {
   confirmLabel: ReactNode;
   /** 执行操作；抛出的 ProblemError 显示在对话框中。成功后关闭。 */
   onConfirm: (reason: string) => Promise<void>;
+  /** 按错误给出更具体的文案；返回 undefined 时按 code 显示通用文案。 */
+  problemMessage?: (p: Problem) => string | undefined;
 }
 
 /** 没有其他输入项的敏感操作（移除、撤销、删除）：二次确认 + 原因。 */
-export function SensitiveConfirm({ open, onOpenChange, title, description, confirmLabel, onConfirm }: SensitiveConfirmProps) {
+export function SensitiveConfirm({ open, onOpenChange, title, description, confirmLabel, onConfirm, problemMessage }: SensitiveConfirmProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={title} description={description}>
-      {open && <ConfirmForm confirmLabel={confirmLabel} onConfirm={onConfirm} onClose={() => onOpenChange(false)} />}
+      {open && (
+        <ConfirmForm
+          confirmLabel={confirmLabel}
+          onConfirm={onConfirm}
+          onClose={() => onOpenChange(false)}
+          problemMessage={problemMessage}
+        />
+      )}
     </Modal>
   );
 }
@@ -103,10 +112,12 @@ function ConfirmForm({
   confirmLabel,
   onConfirm,
   onClose,
+  problemMessage,
 }: {
   confirmLabel: ReactNode;
   onConfirm: (reason: string) => Promise<void>;
   onClose: () => void;
+  problemMessage?: ((p: Problem) => string | undefined) | undefined;
 }) {
   const tc = useTranslation('common').t;
   const [problem, setProblem] = useState<Problem | null>(null);
@@ -129,7 +140,7 @@ function ConfirmForm({
         error={formState.errors.reason?.message && tc(formState.errors.reason.message)}
         {...register('reason')}
       />
-      <ProblemAlert problem={problem} />
+      <ProblemAlert problem={problem} message={problem ? problemMessage?.(problem) : undefined} />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" onClick={onClose} disabled={formState.isSubmitting}>
           {tc('cancel')}

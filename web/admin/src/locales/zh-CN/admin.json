@@ -3,7 +3,9 @@
     "overview": "概览",
     "staff": "管理员",
     "roles": "角色",
-    "audit_logs": "审计日志"
+    "audit_logs": "审计日志",
+    "plans": "套餐与价格",
+    "location_groups": "线路组"
   },
   "login": {
     "title": "管理后台登录"
@@ -164,6 +166,24 @@
         "create": "创建角色",
         "update": "修改角色",
         "delete": "删除角色"
+      },
+      "plan": {
+        "create": "创建套餐",
+        "update": "修改套餐",
+        "delete": "删除套餐"
+      },
+      "plan_price": {
+        "create": "新建价格",
+        "discontinue": "停售价格"
+      },
+      "plan_location_group": {
+        "create": "为套餐添加线路组",
+        "delete": "从套餐移除线路组"
+      },
+      "location_group": {
+        "create": "创建线路组",
+        "update": "修改线路组",
+        "delete": "删除线路组"
       }
     },
     "diff_field": "字段",
@@ -186,5 +206,193 @@
     "expired": "邀请链接已过期，请联系管理员重新邀请。",
     "invalid_state": "无法接受此邀请：账号已暂停，或已经是管理员。",
     "password_hint_new": "至少 {{min}} 位。"
+  },
+  "impact": {
+    "accounts_one": "将影响 {{count}} 名用户。",
+    "accounts_other": "将影响 {{count}} 名用户。",
+    "hosts_one": "{{count}} 个节点需要重新下发配置。",
+    "hosts_other": "{{count}} 个节点需要重新下发配置。"
+  },
+  "plans": {
+    "title": "套餐与价格",
+    "intro": "修改套餐不影响已购用户的权益快照；线路组访问关系实时跟随套餐。新建的套餐为草稿，添加在售价格后才能上架。",
+    "create": "新建套餐",
+    "create_description": "新建的套餐为草稿。创建后在详情页添加价格与线路组。",
+    "create_submit": "创建",
+    "all": "全部",
+    "empty": "没有符合条件的套餐。",
+    "back": "返回套餐列表",
+    "name": "名称",
+    "description": "说明",
+    "kind": "类型",
+    "kind_hint": "只有既没有价格行也没有权益的套餐可以修改类型。",
+    "kind_locked": "已有价格行或权益，类型不能修改。",
+    "tier": "等级",
+    "tier_hint": "免费套餐为 0，其他套餐大于 0；用于升降级判断与线路组的最低等级。",
+    "status": "状态",
+    "status_hint": "草稿仅后台可见；在售时用户可购买；隐藏后不再列出但可续费；下架后仅在允许时可续费。",
+    "bytes": "每周期流量",
+    "bytes_hint": "0 表示不限。按 1024 进位（1 GiB = 1024 MiB）。",
+    "bytes_unit": "单位",
+    "device_limit": "设备上限",
+    "speed_limit": "限速（Mbps）",
+    "speed_limit_hint": "留空表示不限速。",
+    "reset_policy": "流量重置",
+    "sort": "排序",
+    "sort_hint": "数值小的排在前面。",
+    "legacy_renew": "下架后允许按锁定价格续费",
+    "legacy_renew_hint": "只在套餐状态为“已下架”时生效。",
+    "prices_on_sale": "在售价格",
+    "active_entitlements": "生效中的用户",
+    "unlimited": "不限",
+    "speed_value": "{{mbps}} Mbps",
+    "no_speed_limit": "不限速",
+    "days_one": "{{count}} 天",
+    "days_other": "{{count}} 天",
+    "lifetime": "长期有效",
+    "periods": {
+      "month": "月付",
+      "quarter": "季付",
+      "half_year": "半年付",
+      "year": "年付",
+      "one_time": "一次性"
+    },
+    "statuses": {
+      "draft": "草稿",
+      "on_sale": "在售",
+      "hidden": "隐藏",
+      "archived": "已下架"
+    },
+    "kinds": {
+      "recurring": "周期",
+      "one_time": "一次性",
+      "free": "免费"
+    },
+    "reset_policies": {
+      "purchase_anchor": "按购买日",
+      "calendar_month": "每自然月",
+      "never": "不重置"
+    },
+    "status_effects": {
+      "draft": "改为草稿后用户不能购买与续费。",
+      "on_sale": "上架后用户可以新购、续费与升降级到此套餐。",
+      "hidden": "隐藏后不再列出，已持有的用户仍可续费。",
+      "archived": "下架后不能新购；是否允许续费取决于“下架后允许按锁定价格续费”。"
+    },
+    "validation": {
+      "integer": "请输入整数",
+      "positive_integer": "请输入正整数",
+      "decimal": "请输入数字，例如 100 或 1.5",
+      "tier_kind": "免费套餐的等级必须为 0，其他套餐的等级必须大于 0"
+    },
+    "field_errors": {
+      "tier": {
+        "out_of_range": "免费套餐的等级必须为 0，其他套餐的等级必须大于 0"
+      },
+      "kind": {
+        "not_allowed": "该类型不被允许"
+      },
+      "name": {
+        "taken": "名称已被使用"
+      },
+      "period": {
+        "not_allowed": "周期与套餐类型不匹配"
+      },
+      "period_days": {
+        "not_allowed": "只有一次性套餐可以设置有效天数"
+      },
+      "currency": {
+        "not_allowed": "币种必须是站点结算货币"
+      }
+    },
+    "summary_one": "{{kind}} · {{status}} · {{count}} 名用户生效中",
+    "summary_other": "{{kind}} · {{status}} · {{count}} 名用户生效中",
+    "basic": "基本信息",
+    "save": "保存",
+    "saved": "已保存。",
+    "no_changes": "没有修改。",
+    "confirm_change_title": "确认修改套餐？",
+    "confirm_change": "确认修改",
+    "conflict": "套餐已被其他管理员修改，请重新加载后再修改。",
+    "conflict_reloaded": "套餐已被其他管理员修改，页面已重新加载，请确认后重试。",
+    "reload": "重新加载",
+    "update_invalid_state": "当前状态不允许此修改：非免费套餐上架前需要至少一个在售价格；已有权益的套餐不能改回草稿；已有价格行或权益的套餐不能修改类型。",
+    "delete": "删除套餐",
+    "delete_title": "删除套餐 {{name}}？",
+    "delete_description": "只有从未定价、也没有权益的套餐可以删除，删除后不可恢复。",
+    "delete_invalid_state": "该套餐已有价格行或权益，不能删除，请改为“已下架”。",
+    "groups": "线路组",
+    "groups_intro": "持有此套餐的用户可以使用这些线路组中的节点。移除线路组会立即生效，属于敏感操作。",
+    "groups_no_permission": "没有查看线路组的权限，只显示线路组 ID。",
+    "groups_empty": "尚未关联线路组。",
+    "group_tier_warning": "套餐等级 {{tier}} 低于该组的最低等级 {{min}}，用户不会获得该组的节点。",
+    "remove_group": "移除",
+    "remove_group_for": "从套餐移除线路组 {{name}}",
+    "remove_group_title": "移除线路组 {{name}}？",
+    "remove_group_effect": "持有此套餐的用户将立即失去该线路组的访问。",
+    "add_group_label": "添加线路组",
+    "add_group": "添加",
+    "choose_group": "选择线路组",
+    "no_more_groups": "没有可添加的线路组"
+  },
+  "prices": {
+    "title": "价格",
+    "intro": "价格行创建后金额、币种与周期都不可修改，只能停售；改价即新建一行。",
+    "free_plan": "免费套餐不设价格。",
+    "create": "新增价格",
+    "create_description": "同一周期已有在售价格时，旧价格会同时停售。价格创建后不可修改。",
+    "create_submit": "创建",
+    "filter": "显示",
+    "on_sale": "在售",
+    "discontinued": "已停售",
+    "empty": "没有价格。",
+    "period": "周期",
+    "validity": "有效期",
+    "amount": "金额",
+    "state": "状态",
+    "created_at": "创建时间",
+    "period_days": "有效天数",
+    "period_days_hint": "留空表示长期有效。",
+    "amount_in": "金额（{{currency}}）",
+    "amount_hint": "必须大于 0。",
+    "amount_format": "金额格式不正确或小数位过多",
+    "amount_positive": "金额必须大于 0",
+    "no_currency": "无法确定站点结算货币：需要“查看系统设置”权限，或先由有权限的管理员创建一个价格。",
+    "create_invalid_state": "免费套餐不设价格。",
+    "discontinue": "停售",
+    "discontinue_for": "停售 {{period}} {{amount}}",
+    "discontinue_title": "停售价格？",
+    "discontinue_description": "停售 {{period}} {{amount}} 后不能重新开售，如需恢复请新建价格。",
+    "last_on_sale": "这是在售套餐的最后一个在售价格，请先把套餐改为“隐藏”或“已下架”。"
+  },
+  "groups": {
+    "title": "线路组",
+    "intro": "线路组把节点编组，套餐通过线路组决定用户可用的节点。成员管理在节点功能上线后提供。",
+    "create": "新建线路组",
+    "create_submit": "创建",
+    "empty": "还没有线路组。",
+    "name": "名称",
+    "description": "说明",
+    "min_tier": "最低等级",
+    "min_tier_hint": "等级低于该值的套餐不下发此组的节点；留空表示不限。",
+    "no_min_tier": "不限",
+    "min_tier_value": "最低等级：{{value}}",
+    "host_count": "节点数",
+    "plan_count": "关联套餐数",
+    "edit": "编辑",
+    "edit_for": "编辑线路组 {{name}}",
+    "edit_title": "编辑线路组 {{name}}",
+    "save": "保存",
+    "form_description": "名称与说明只在管理后台显示。",
+    "confirm_title": "确认修改最低等级？",
+    "confirm": "确认修改",
+    "conflict": "线路组已被其他管理员修改，请重新加载后再修改。",
+    "delete": "删除",
+    "delete_for": "删除线路组 {{name}}",
+    "delete_title": "删除线路组 {{name}}？",
+    "delete_description": "删除后不可恢复。",
+    "delete_in_use_one": "该线路组仍被 {{count}} 个套餐使用，需先从这些套餐中移除才能删除。",
+    "delete_in_use_other": "该线路组仍被 {{count}} 个套餐使用，需先从这些套餐中移除才能删除。",
+    "delete_invalid_state": "线路组仍被套餐使用，请先从相关套餐中移除。"
   }
 }
