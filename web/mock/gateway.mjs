@@ -17,7 +17,7 @@
 //    - 特定输入返回错误示例：注册邮箱以 closed 开头 → 403 registration_closed；验证码 000000 → 400 invalid_code；
 //      重新发送的邮箱以 limited 开头 → 429（Retry-After）。
 //    - 设备（AUTH-14、AUTH-15）：移除的设备记在 Cookie 中，之后从 GET /v1/me/devices 中去掉，再次移除返回 404；
-//      移除当前设备（is_current）等同登出，清除会话 Cookie。登录邮箱以 full 开头时设备上限改为 1（名额已满）。
+//      移除当前设备（is_current）等同登出，清除会话 Cookie。登录邮箱以 full 开头时设备上限改为 1（名额已满），GET /v1/me 的权益为 active。
 // 4. 管理接口的其余状态（同样保存在本地 Cookie 中）：
 //    - 当前管理员：登录邮箱以 super 开头为 superadmin，以 support 开头为 support，其余为 Prism 示例（operator）；
 //      改写 GET /v1/staff/me 与登录响应中的 staff。
@@ -272,7 +272,7 @@ export function createGateway({ api, upstream, authCookie, app }) {
         return;
       }
 
-      // GET /v1/me/devices：去掉已移除的设备，记下当前设备；名额已满的账号上限改为 1。
+      // GET /v1/me/devices：去掉已移除的设备，记下当前设备；名额已满的账号上限改为 1，另有一台等待凭据的非 web 设备。
       if (client && route === 'GET /v1/me/devices' && status === 200) {
         const chunks = [];
         up.on('data', (c) => chunks.push(c));
@@ -286,12 +286,25 @@ export function createGateway({ api, upstream, authCookie, app }) {
           delete out['content-length'];
           delete out['transfer-encoding'];
           res.writeHead(status, out);
+          if (cookies[fullCookie]) {
+            items.push({
+              id: '0192f0c4-4a00-7000-8000-00000000f0ff',
+              platform: 'android',
+              model: 'Pixel 9',
+              app_version: '1.4.0',
+              created_at: '2026-10-01T09:30:00+08:00',
+              last_seen_at: '2026-10-01T09:30:00+08:00',
+              ip_prefix: '203.0.113.0/24',
+              is_current: false,
+              has_credential: false,
+            });
+          }
           res.end(JSON.stringify({ ...data, items, ...(cookies[fullCookie] ? { device_limit: 1 } : {}) }));
         });
         return;
       }
 
-      // GET /v1/me：按本地状态改写二次验证与邮箱验证字段。
+      // GET /v1/me：按本地状态改写二次验证、邮箱验证字段与名额已满账号的权益。
       if (client && route === 'GET /v1/me' && status === 200) {
         const chunks = [];
         up.on('data', (c) => chunks.push(c));
@@ -303,6 +316,8 @@ export function createGateway({ api, upstream, authCookie, app }) {
             is_mfa_enabled: mfa,
             mfa_methods: mfa ? ['totp', 'recovery_code'] : [],
             is_email_verified: !cookies[unverifiedCookie],
+            // 名额已满的账号有生效中的权益：只有权益生效时，未获得凭据的设备才是名额不足（AUTH-14）。
+            ...(cookies[fullCookie] ? { entitlement_status: 'active', device_limit: 1 } : {}),
           });
           delete out['content-length'];
           delete out['transfer-encoding'];
