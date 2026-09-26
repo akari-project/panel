@@ -193,12 +193,34 @@ func (s *Service) cachePair(ctx context.Context, oldHash string, t Tokens) error
 	return s.KV.Do(ctx, s.KV.B().Set().Key(retryKey(oldHash)).Value(string(ct)).Px(RetryWindow).Build()).Error()
 }
 
-// revokeChain 吊销会话所在的整条链。与之并发的轮换可能在语句快照之后插入子会话，
-// 因此重复执行直到没有新吊销的行。
+// revokeChain 吊销会话所在的整条链。
 func revokeChain(ctx context.Context, q *sqlc.Queries, id uuid.UUID, now time.Time) ([]uuid.UUID, error) {
+	return untilStable(func() ([]uuid.UUID, error) {
+		return q.RevokeSessionChain(ctx, sqlc.RevokeSessionChainParams{ID: id, Now: &now})
+	})
+}
+
+// RevokeDeviceSessions 吊销设备的全部会话。
+func RevokeDeviceSessions(ctx context.Context, q *sqlc.Queries, device uuid.UUID, now time.Time) ([]uuid.UUID, error) {
+	return untilStable(func() ([]uuid.UUID, error) {
+		return q.RevokeDeviceSessions(ctx, sqlc.RevokeDeviceSessionsParams{DeviceID: &device, Now: &now})
+	})
+}
+
+// RevokeAccountSessions 吊销账号的全部会话（找回密码、AUTH-22 的凭据重置）。
+func RevokeAccountSessions(ctx context.Context, q *sqlc.Queries, account uuid.UUID, now time.Time) ([]uuid.UUID, error) {
+	return untilStable(func() ([]uuid.UUID, error) {
+		return q.RevokeAccountSessions(ctx, sqlc.RevokeAccountSessionsParams{AccountID: account, Now: &now})
+	})
+}
+
+// untilStable 重复执行吊销语句，直到没有新吊销的行。进行中的刷新（AUTH-07）持有会话行锁时，吊销语句等待它提交后
+// 只重新检查已选中的行，看不到它刚插入的子会话（READ COMMITTED 的语句快照），再执行一次才能吊销。
+// 之后开始的刷新会在已吊销的会话行上等待本事务，提交后判为 invalid_grant。
+func untilStable(revoke func() ([]uuid.UUID, error)) ([]uuid.UUID, error) {
 	var all []uuid.UUID
 	for range 10 {
-		ids, err := q.RevokeSessionChain(ctx, sqlc.RevokeSessionChainParams{ID: id, Now: &now})
+		ids, err := revoke()
 		if err != nil {
 			return nil, err
 		}
@@ -254,7 +276,7 @@ func (s *Service) Logout(ctx context.Context, p auth.Principal) error {
 		if err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{ID: *device, Now: &now}); err != nil {
 			return err
 		}
-		more, err := q.RevokeDeviceSessions(ctx, sqlc.RevokeDeviceSessionsParams{DeviceID: device, Now: &now})
+		more, err := RevokeDeviceSessions(ctx, q, *device, now)
 		if err != nil {
 			return err
 		}

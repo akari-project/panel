@@ -8,7 +8,7 @@ FROM devices d
 LEFT JOIN proxy_credentials c ON c.device_id = d.id AND c.revoked_at IS NULL
 WHERE d.account_id = sqlc.arg(account_id) AND d.platform <> 'web' AND d.revoked_at IS NULL
 ORDER BY d.last_seen_at DESC NULLS LAST, d.id
-FOR UPDATE OF d;
+FOR NO KEY UPDATE OF d;
 
 -- name: RevokeCredential :exec
 UPDATE proxy_credentials SET revoked_at = sqlc.arg(now) WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
@@ -17,7 +17,7 @@ UPDATE proxy_credentials SET revoked_at = sqlc.arg(now) WHERE id = sqlc.arg(id) 
 -- 刷新令牌时记录设备最近活跃时间（AUTH-14 的排序依据）。设备行正被移除或分配凭据时跳过，
 -- 不在持有会话行锁时等待设备行锁（移除设备先锁设备、再吊销会话）。
 UPDATE devices SET last_seen_at = sqlc.arg(now)
-WHERE id = (SELECT id FROM devices WHERE devices.id = sqlc.arg(id) AND revoked_at IS NULL FOR UPDATE SKIP LOCKED);
+WHERE id = (SELECT id FROM devices WHERE devices.id = sqlc.arg(id) AND revoked_at IS NULL FOR NO KEY UPDATE SKIP LOCKED);
 
 -- name: ListDevices :many
 -- 未吊销的设备（含 web 设备）。ip_prefix 取该设备最近的未吊销会话；is_current 为发起请求的会话所属的设备。
@@ -40,4 +40,5 @@ SELECT COALESCE(
 
 -- name: LockOwnDevice :one
 -- 移除设备（AUTH-15）：只锁定本账号未吊销的设备；他人的设备与不存在的设备同样找不到（CONV-15）。
-SELECT id FROM devices WHERE id = sqlc.arg(id) AND account_id = sqlc.arg(account_id) AND revoked_at IS NULL FOR UPDATE;
+-- 设备行一律取 FOR NO KEY UPDATE：刷新令牌插入子会话时对设备行取 FOR KEY SHARE（外键），两者不冲突。
+SELECT id FROM devices WHERE id = sqlc.arg(id) AND account_id = sqlc.arg(account_id) AND revoked_at IS NULL FOR NO KEY UPDATE;

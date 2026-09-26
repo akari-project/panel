@@ -163,7 +163,7 @@ func (s *Service) revokeAfterCommit(ctx context.Context, sids []uuid.UUID) error
 // 调用方提交事务后调用 AfterRevoke。
 func (s *Service) RevokeAccount(ctx context.Context, tx pgx.Tx, account uuid.UUID) ([]uuid.UUID, error) {
 	now := s.Clock.Now()
-	return sqlc.New(tx).RevokeAccountSessions(ctx, sqlc.RevokeAccountSessionsParams{AccountID: account, Now: &now})
+	return RevokeAccountSessions(ctx, sqlc.New(tx), account, now)
 }
 
 // AfterRevoke 把会话写入吊销集合。

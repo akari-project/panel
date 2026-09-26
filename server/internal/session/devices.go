@@ -43,7 +43,7 @@ func (s *Service) RemoveDevice(ctx context.Context, p auth.Principal, device uui
 		if err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{ID: device, Now: &now}); err != nil {
 			return err
 		}
-		if revoked, err = q.RevokeDeviceSessions(ctx, sqlc.RevokeDeviceSessionsParams{DeviceID: &device, Now: &now}); err != nil {
+		if revoked, err = RevokeDeviceSessions(ctx, q, device, now); err != nil {
 			return err
 		}
 		creds, err := q.RevokeDeviceCredentials(ctx, sqlc.RevokeDeviceCredentialsParams{DeviceID: &device, Now: &now})

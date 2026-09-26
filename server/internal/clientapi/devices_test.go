@@ -4,6 +4,8 @@ package clientapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/netip"
@@ -17,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/akari-project/panel/server/internal/httpx"
+	"github.com/akari-project/panel/server/internal/testdb"
 )
 
 // entitle 为账号设置 active 权益，快照 device_limit 为 limit。
@@ -301,5 +304,26 @@ func TestConcurrentLoginAndRemoval(t *testing.T) {
 	wg.Wait()
 	if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE device_id IS NOT NULL AND revoked_at IS NULL`); n != 2 {
 		t.Fatalf("%d device credentials after concurrent logins and removals, want exactly the limit of 2", n)
+	}
+}
+
+// 移除设备与进行中的刷新并发：移除先锁账号行与设备行再吊销会话，刷新持有会话行并插入子会话。
+// 两者都能完成（不形成死锁），刷新插入的子会话同样被吊销。
+func TestRemoveDeviceConcurrentWithRefresh(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "inflight@example.com", "correct horse battery")
+	e.entitle(t, "inflight@example.com", 2)
+	a := e.appLogin(t, "inflight@example.com", "correct horse battery")
+	b := e.appLogin(t, "inflight@example.com", "correct horse battery")
+	sum := sha256.Sum256([]byte(a.RefreshToken))
+	var code int
+	if err := testdb.InFlightRefresh(t, e.pool, hex.EncodeToString(sum[:]), func() error {
+		code = e.removeDevice(b.AccessToken, a.DeviceID)
+		return nil
+	}); err != nil || code != 204 {
+		t.Fatalf("remove during refresh: %d %v", code, err)
+	}
+	if n := e.count(t, `SELECT count(*) FROM sessions WHERE device_id = $1 AND revoked_at IS NULL`, a.DeviceID); n != 0 {
+		t.Fatalf("%d sessions of the removed device left unrevoked", n)
 	}
 }

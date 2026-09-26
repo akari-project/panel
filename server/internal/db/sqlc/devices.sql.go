@@ -19,7 +19,7 @@ FROM devices d
 LEFT JOIN proxy_credentials c ON c.device_id = d.id AND c.revoked_at IS NULL
 WHERE d.account_id = $1 AND d.platform <> 'web' AND d.revoked_at IS NULL
 ORDER BY d.last_seen_at DESC NULLS LAST, d.id
-FOR UPDATE OF d
+FOR NO KEY UPDATE OF d
 `
 
 type CredentialSlotsRow struct {
@@ -126,7 +126,7 @@ func (q *Queries) ListDevices(ctx context.Context, arg ListDevicesParams) ([]Lis
 }
 
 const lockOwnDevice = `-- name: LockOwnDevice :one
-SELECT id FROM devices WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL FOR UPDATE
+SELECT id FROM devices WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL FOR NO KEY UPDATE
 `
 
 type LockOwnDeviceParams struct {
@@ -135,6 +135,7 @@ type LockOwnDeviceParams struct {
 }
 
 // 移除设备（AUTH-15）：只锁定本账号未吊销的设备；他人的设备与不存在的设备同样找不到（CONV-15）。
+// 设备行一律取 FOR NO KEY UPDATE：刷新令牌插入子会话时对设备行取 FOR KEY SHARE（外键），两者不冲突。
 func (q *Queries) LockOwnDevice(ctx context.Context, arg LockOwnDeviceParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, lockOwnDevice, arg.ID, arg.AccountID)
 	var id uuid.UUID
@@ -158,7 +159,7 @@ func (q *Queries) RevokeCredential(ctx context.Context, arg RevokeCredentialPara
 
 const touchDeviceSeen = `-- name: TouchDeviceSeen :exec
 UPDATE devices SET last_seen_at = $1
-WHERE id = (SELECT id FROM devices WHERE devices.id = $2 AND revoked_at IS NULL FOR UPDATE SKIP LOCKED)
+WHERE id = (SELECT id FROM devices WHERE devices.id = $2 AND revoked_at IS NULL FOR NO KEY UPDATE SKIP LOCKED)
 `
 
 type TouchDeviceSeenParams struct {

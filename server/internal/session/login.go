@@ -186,7 +186,7 @@ func (s *Service) complete(ctx context.Context, acct uuid.UUID, in Login, pubKey
 				if err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{ID: d, Now: &now}); err != nil {
 					return err
 				}
-				ids, err := q.RevokeDeviceSessions(ctx, sqlc.RevokeDeviceSessionsParams{DeviceID: &d, Now: &now})
+				ids, err := RevokeDeviceSessions(ctx, q, d, now)
 				if err != nil {
 					return err
 				}
