@@ -3,9 +3,11 @@
 package consoleapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"net/url"
 	"strings"
 	"unicode/utf8"
@@ -84,19 +86,27 @@ func encodeCursor(v any) *string {
 	return &s
 }
 
-// decodeCursor 解码游标；非法游标返回 400 invalid_request（CONV-11）。
+// decodeCursor 解码游标；非法游标返回 400 invalid_request（CONV-11）。游标必须恰好是一个 JSON 对象：
+// null、其他类型与对象之后的多余内容都是非法游标。
 func decodeCursor(c *string, v any) (bool, error) {
 	if c == nil || *c == "" {
 		return false, nil
 	}
+	invalid := apierr.Invalid(apierr.Field("cursor", "invalid_format"))
 	b, err := base64.RawURLEncoding.DecodeString(*c)
 	if err != nil {
-		return false, apierr.Invalid(apierr.Field("cursor", "invalid_format"))
+		return false, invalid
 	}
-	dec := json.NewDecoder(strings.NewReader(string(b)))
+	if t := bytes.TrimSpace(b); len(t) == 0 || t[0] != '{' {
+		return false, invalid
+	}
+	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return false, apierr.Invalid(apierr.Field("cursor", "invalid_format"))
+		return false, invalid
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return false, invalid
 	}
 	return true, nil
 }
