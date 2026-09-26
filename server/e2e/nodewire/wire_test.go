@@ -11,7 +11,7 @@ import (
 
 	nodev1 "github.com/akari-project/panel-spec/gen/go/node/v1"
 
-	"github.com/akari-project/panel/server/e2e/internal/specdata"
+	"github.com/akari-project/panel/server/internal/specdata"
 )
 
 // TestVectors 按 panel-spec testdata/node-v1-vectors.json 逐项核对字节级实现（spec/20 20.6）。

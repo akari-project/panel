@@ -18,10 +18,10 @@ import (
 
 	nodev1 "github.com/akari-project/panel-spec/gen/go/node/v1"
 
-	"github.com/akari-project/panel/server/e2e/internal/specdata"
 	"github.com/akari-project/panel/server/e2e/nodewire"
 	"github.com/akari-project/panel/server/e2e/testgateway"
 	"github.com/akari-project/panel/server/internal/clock"
+	"github.com/akari-project/panel/server/internal/specdata"
 )
 
 // TestHandshakeVectors 让模拟 Agent 以测试向量的输入握手：Hello 的 MAC、HelloAck 的校验、
