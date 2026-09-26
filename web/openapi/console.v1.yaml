@@ -2,7 +2,7 @@
 openapi: '3.1.0'
 info:
   title: 'Console API'
-  version: '0.7.0'
+  version: '0.9.0'
   description: |-
     管理后台（admin）使用的管理接口。规则见 spec/31，命名、分页、错误等通用约定见 spec/02 与 spec/30 API-01。
 
@@ -13469,6 +13469,7 @@ components:
         free_device_limit:
           type: integer
           minimum: 0
+          description: 没有任何权益的账号显示的设备上限；这类账号不下发设备凭据。持有免费套餐权益时取权益快照（AUTH-14）
         free_plan_id:
           type:
           - string
@@ -13607,6 +13608,7 @@ components:
         free_device_limit:
           type: integer
           minimum: 0
+          description: 没有任何权益的账号显示的设备上限；这类账号不下发设备凭据。持有免费套餐权益时取权益快照（AUTH-14）
         free_plan_id:
           type:
           - string

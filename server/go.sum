@@ -17,6 +17,8 @@ github.com/akari-project/panel-spec v0.7.0 h1:4mEO+HuUnI/K3CNuRHrFpKtsJhAOcfFLZp
 github.com/akari-project/panel-spec v0.7.0/go.mod h1:luSBbwHRo0NtzVPHrvRASoZzVT+UwNeoRLpQLAKKG+o=
 github.com/akari-project/panel-spec v0.8.0 h1:tCt07k89YorgBFxwJykHHJursciypFHnYQcsnY1izqE=
 github.com/akari-project/panel-spec v0.8.0/go.mod h1:luSBbwHRo0NtzVPHrvRASoZzVT+UwNeoRLpQLAKKG+o=
+github.com/akari-project/panel-spec v0.9.0 h1:qTfBouEPCeOTLJ37PbcxMrF0IMqIOdJY29v/dtNCAlk=
+github.com/akari-project/panel-spec v0.9.0/go.mod h1:luSBbwHRo0NtzVPHrvRASoZzVT+UwNeoRLpQLAKKG+o=
 github.com/andybalholm/brotli v1.2.3 h1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=
 github.com/andybalholm/brotli v1.2.3/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=

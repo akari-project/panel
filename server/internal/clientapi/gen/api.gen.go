@@ -469,7 +469,10 @@ type CookieTokenRefresh struct {
 }
 
 // CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
-// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+// `entitlement_inactive` 没有状态为 `active` 的权益（没有权益，或权益为 `over_quota`、`suspended`）；权益状态优先于凭据：
+// 设备已有凭据但权益不是 `active` 时同样为 `entitlement_inactive`，凭据不吊销，由节点侧停止下发（spec/11 ACS-01）；
+// `web_device` web 设备不生成凭据。只有 `issued` 时下发凭据。持有 `active` 的免费套餐权益时按免费套餐的设备上限
+// 下发凭据（AUTH-14）。
 type CredentialStatus string
 
 // Currency ISO 4217 货币代码
@@ -523,8 +526,12 @@ type EntitlementStatus string
 
 // ExportLink defines model for ExportLink.
 type ExportLink struct {
+	// CreatedAt 当前令牌生成或最近一次重置的时刻
 	CreatedAt time.Time `json:"created_at"`
-	Url       string    `json:"url"`
+
+	// Url 接口根地址加 `/v1/configurations/<令牌>`。接口根地址与 `GET /v1/config` 的 `api_endpoints` 主地址相同（spec/30 API-11），
+	// 不取自请求的 Host。
+	Url string `json:"url"`
 }
 
 // FieldErrorCode `errors[].code`，取值见 spec/02 CONV-16
@@ -534,8 +541,10 @@ type FieldErrorCode string
 type Me struct {
 	CreatedAt           time.Time                    `json:"created_at"`
 	DeletionScheduledAt nullable.Nullable[time.Time] `json:"deletion_scheduled_at,omitempty"`
-	DeviceLimit         int                          `json:"device_limit"`
-	Email               openapi_types.Email          `json:"email"`
+
+	// DeviceLimit 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
+	DeviceLimit int                 `json:"device_limit"`
+	Email       openapi_types.Email `json:"email"`
 
 	// EntitlementStatus `none` 无权益；`free` 持有免费套餐权益；其余为付费权益的状态（spec/11 11.1）
 	EntitlementStatus EntitlementStatus  `json:"entitlement_status"`
@@ -718,7 +727,10 @@ type Session struct {
 	AccessToken *string `json:"access_token,omitempty"`
 
 	// CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
-	// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+	// `entitlement_inactive` 没有状态为 `active` 的权益（没有权益，或权益为 `over_quota`、`suspended`）；权益状态优先于凭据：
+	// 设备已有凭据但权益不是 `active` 时同样为 `entitlement_inactive`，凭据不吊销，由节点侧停止下发（spec/11 ACS-01）；
+	// `web_device` web 设备不生成凭据。只有 `issued` 时下发凭据。持有 `active` 的免费套餐权益时按免费套餐的设备上限
+	// 下发凭据（AUTH-14）。
 	CredentialStatus CredentialStatus   `json:"credential_status"`
 	DeviceId         openapi_types.UUID `json:"device_id"`
 
@@ -2517,7 +2529,7 @@ type ListDevicesResponseObject interface {
 }
 
 type ListDevices200JSONResponse struct {
-	// DeviceLimit 当前设备上限（含额外设备名额）
+	// DeviceLimit 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
 	DeviceLimit int      `json:"device_limit"`
 	Items       []Device `json:"items"`
 }
@@ -2575,10 +2587,18 @@ type RemoveDeviceResponseObject interface {
 	VisitRemoveDeviceResponse(w http.ResponseWriter) error
 }
 
+type RemoveDevice204ResponseHeaders struct {
+	SetCookie *string
+}
+
 type RemoveDevice204Response struct {
+	Headers RemoveDevice204ResponseHeaders
 }
 
 func (response RemoveDevice204Response) VisitRemoveDeviceResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
 	w.WriteHeader(204)
 	return nil
 }
