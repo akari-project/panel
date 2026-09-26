@@ -29,11 +29,13 @@ SELECT id, name, description, tier, kind, status, bytes_per_cycle, device_limit,
 FROM plans WHERE id = sqlc.arg(id) FOR UPDATE;
 
 -- name: ListOnSalePlans :many
--- 客户端接口的在售套餐（不含免费套餐），按 (sort, id)，至多 max_rows 项（spec/30 listPlans）。
-SELECT id, name, description, tier, kind, bytes_per_cycle, device_limit, speed_limit_mbps, reset_policy
-FROM plans
-WHERE status = 'on_sale' AND kind <> 'free'
-ORDER BY sort, id
+-- 客户端接口的在售套餐：不含免费套餐与没有在售价格行的套餐，按 (sort, id)，至多 max_rows 项
+-- （spec/30 listPlans，spec/11 BIL-15、BIL-21）。
+SELECT p.id, p.name, p.description, p.tier, p.kind, p.bytes_per_cycle, p.device_limit, p.speed_limit_mbps, p.reset_policy
+FROM plans p
+WHERE p.status = 'on_sale' AND p.kind <> 'free'
+  AND EXISTS (SELECT 1 FROM plan_prices pp WHERE pp.plan_id = p.id AND pp.on_sale)
+ORDER BY p.sort, p.id
 LIMIT sqlc.arg(max_rows);
 
 -- name: InsertPlan :one
@@ -76,13 +78,13 @@ INSERT INTO plan_groups (plan_id, group_id) VALUES (sqlc.arg(plan_id), sqlc.arg(
 DELETE FROM plan_groups WHERE plan_id = sqlc.arg(plan_id) AND group_id = sqlc.arg(group_id);
 
 -- name: OnSalePrices :many
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE plan_id = ANY(sqlc.arg(plan_ids)::uuid[]) AND on_sale
 ORDER BY plan_id, id;
 
 -- name: ListPlanPrices :many
 -- 按 id（UUIDv7，即创建顺序）倒序的游标分页（CONV-11）。
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices
 WHERE plan_id = sqlc.arg(plan_id)
   AND (sqlc.narg(on_sale)::boolean IS NULL OR on_sale = sqlc.narg(on_sale)::boolean)
@@ -91,20 +93,21 @@ ORDER BY id DESC
 LIMIT sqlc.arg(max_rows);
 
 -- name: GetPlanPrice :one
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE id = sqlc.arg(id) AND plan_id = sqlc.arg(plan_id);
 
 -- name: LockPlanPrice :one
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE id = sqlc.arg(id) AND plan_id = sqlc.arg(plan_id) FOR UPDATE;
 
 -- name: InsertPlanPrice :one
 INSERT INTO plan_prices (plan_id, period, period_days, amount_minor, currency)
 VALUES (sqlc.arg(plan_id), sqlc.arg(period), sqlc.narg(period_days), sqlc.arg(amount_minor), sqlc.arg(currency))
-RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at;
+RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at;
 
--- name: DiscontinuePlanPrice :exec
-UPDATE plan_prices SET on_sale = false WHERE id = sqlc.arg(id) AND on_sale;
+-- name: DiscontinuePlanPrice :one
+UPDATE plan_prices SET on_sale = false WHERE id = sqlc.arg(id) AND on_sale
+RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at;
 
 -- name: DiscontinuePeriodPrice :many
 -- 停售同一周期的在售行（改价，BIL-01），返回被停售的行。
@@ -113,12 +116,13 @@ WHERE plan_id = sqlc.arg(plan_id) AND period = sqlc.arg(period) AND on_sale
 RETURNING id;
 
 -- name: ListLocationGroups :many
--- 按 id 的游标分页（CONV-11）。
+-- 按 (created_at, id) 升序的游标分页（CONV-11）；created_at 只用于排序展示，不参与业务判断（CONV-27）。
 SELECT g.id, g.name, g.description, g.min_tier, g.version, g.created_at, g.updated_at,
        (SELECT count(*) FROM node_group_members m WHERE m.group_id = g.id)::int AS host_count
 FROM location_groups g
-WHERE sqlc.narg(after)::uuid IS NULL OR g.id > sqlc.narg(after)::uuid
-ORDER BY g.id
+WHERE sqlc.narg(cursor_at)::timestamptz IS NULL
+   OR (g.created_at, g.id) > (sqlc.narg(cursor_at)::timestamptz, sqlc.narg(cursor_id)::uuid)
+ORDER BY g.created_at, g.id
 LIMIT sqlc.arg(max_rows);
 
 -- name: GetLocationGroup :one
@@ -145,9 +149,6 @@ RETURNING id;
 UPDATE location_groups SET name = sqlc.arg(name), description = sqlc.narg(description), min_tier = sqlc.narg(min_tier),
        version = version + 1
 WHERE id = sqlc.arg(id);
-
--- name: BumpLocationGroupVersion :exec
-UPDATE location_groups SET version = version + 1 WHERE id = sqlc.arg(id);
 
 -- name: DeleteLocationGroup :exec
 DELETE FROM location_groups WHERE id = sqlc.arg(id);

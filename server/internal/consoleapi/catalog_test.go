@@ -41,6 +41,17 @@ type groupOut struct {
 	PlanIDs   []string `json:"plan_ids"`
 }
 
+// newCatalogEnv 是站点已初始化结算货币与时区的测试环境（站点初始化见 M1-09，CONV-08、CONV-26）。
+func newCatalogEnv(t *testing.T) *env {
+	t.Helper()
+	e := newEnv(t)
+	if _, err := e.pool.Exec(context.Background(),
+		`INSERT INTO settings (key, value) VALUES ('site_currency', '"CNY"'), ('site_timezone', '"Asia/Shanghai"')`); err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
 // must 执行请求并要求状态码为 want，out 非空时解码响应体。
 func (e *env) must(t *testing.T, r req, want int, out any) *httptest.ResponseRecorder {
 	t.Helper()
@@ -132,7 +143,7 @@ func (e *env) events(t *testing.T, topic, key, id string) int {
 
 // 套餐的创建、读取、修改与强 ETag（CONV-13、CONV-28）；tier 变化写 plan.access_changed（ACS-05）。
 func TestPlanLifecycle(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	g, _ := e.createGroup(t, op, "Asia", nil)
 	p, etag := e.createPlan(t, op, map[string]any{"location_group_ids": []string{g.ID}, "description": "d"})
@@ -184,7 +195,7 @@ func TestPlanLifecycle(t *testing.T) {
 
 // 套餐字段与状态规则（spec/11 11.1、BIL-15、BIL-21）。
 func TestPlanRules(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	for name, c := range map[string]struct {
 		body              map[string]any
@@ -217,10 +228,32 @@ func TestPlanRules(t *testing.T) {
 	wantError(t, e.do(req{method: "POST", path: "/v1/plans", as: op,
 		body: map[string]any{"name": "Free 2", "kind": "free", "tier": 0, "bytes_per_cycle": 0, "device_limit": 1}}),
 		400, "invalid_request", "kind", "taken")
-	wantError(t, e.do(req{method: "PATCH", path: "/v1/plans/" + free.ID, as: op, body: map[string]any{"status": "on_sale"},
-		header: map[string]string{"If-Match": freeTag}}), 409, "invalid_state", "", "")
 	wantError(t, e.do(req{method: "POST", path: "/v1/plans/" + free.ID + "/prices", as: op,
 		body: map[string]any{"period": "month", "amount_minor": 100, "currency": "CNY"}}), 409, "invalid_state", "", "")
+	// 免费套餐的状态不受限制（BIL-15）；改为非免费类型后按修改后的状态检查在售价格行（BIL-26）。
+	w := e.must(t, req{method: "PATCH", path: "/v1/plans/" + free.ID, as: op, body: map[string]any{"status": "on_sale"},
+		header: map[string]string{"If-Match": freeTag}}, 200, &free)
+	freeTag = w.Header().Get("ETag")
+	if free.Status != "on_sale" {
+		t.Fatalf("free status = %s", free.Status)
+	}
+	wantError(t, e.do(req{method: "PATCH", path: "/v1/plans/" + free.ID, as: op, body: map[string]any{"kind": "recurring", "tier": 1},
+		header: map[string]string{"If-Match": freeTag}}), 409, "invalid_state", "", "")
+	// 被 free_plan_id 引用的套餐不能修改类型、不能删除。
+	w = e.must(t, req{method: "PATCH", path: "/v1/plans/" + free.ID, as: op, body: map[string]any{"status": "draft"},
+		header: map[string]string{"If-Match": freeTag}}, 200, nil)
+	freeTag = w.Header().Get("ETag")
+	if _, err := e.pool.Exec(context.Background(), `INSERT INTO settings (key, value) VALUES ('free_plan_id', to_jsonb($1::text))`, free.ID); err != nil {
+		t.Fatal(err)
+	}
+	wantError(t, e.do(req{method: "PATCH", path: "/v1/plans/" + free.ID, as: op, body: map[string]any{"kind": "recurring", "tier": 1},
+		header: map[string]string{"If-Match": freeTag}}), 409, "invalid_state", "", "")
+	wantError(t, e.do(req{method: "DELETE", path: "/v1/plans/" + free.ID, as: op,
+		header: map[string]string{"If-Match": freeTag}}), 409, "invalid_state", "", "")
+	if _, err := e.pool.Exec(context.Background(), `UPDATE settings SET value = 'null' WHERE key = 'free_plan_id'`); err != nil {
+		t.Fatal(err)
+	}
+	e.must(t, req{method: "DELETE", path: "/v1/plans/" + free.ID, as: op, header: map[string]string{"If-Match": freeTag}}, 204, nil)
 
 	// 上架需要在售价格行；有价格行后不能修改类型。
 	p, etag := e.createPlan(t, op, nil)
@@ -238,7 +271,7 @@ func TestPlanRules(t *testing.T) {
 		header: map[string]string{"If-Match": etag}}), 409, "invalid_state", "", "")
 	wantError(t, e.do(req{method: "PATCH", path: path, as: op, body: map[string]any{"kind": "free", "tier": 0},
 		header: map[string]string{"If-Match": etag}}), 409, "invalid_state", "", "")
-	w := e.must(t, req{method: "PATCH", path: path, as: op, body: map[string]any{"status": "on_sale"},
+	w = e.must(t, req{method: "PATCH", path: path, as: op, body: map[string]any{"status": "on_sale"},
 		header: map[string]string{"If-Match": etag}}, 200, &p)
 	if p.Status != "on_sale" {
 		t.Fatalf("status = %s", p.Status)
@@ -257,12 +290,12 @@ func TestPlanRules(t *testing.T) {
 
 // 删除：只能删除没有价格行与权益的套餐（契约 deletePlan）；关联的线路组随之解除。
 func TestDeletePlan(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	g, gTag := e.createGroup(t, op, "Asia", nil)
 	p, etag := e.createPlan(t, op, map[string]any{"location_group_ids": []string{g.ID}})
-	if g2 := e.must(t, req{method: "GET", path: "/v1/location-groups/" + g.ID, as: op}, 200, nil).Header().Get("ETag"); g2 == gTag {
-		t.Fatal("linking a plan did not change the group ETag")
+	if g2 := e.must(t, req{method: "GET", path: "/v1/location-groups/" + g.ID, as: op}, 200, nil).Header().Get("ETag"); g2 != gTag {
+		t.Fatal("linking a plan changed the group ETag (plan_ids is derived, CON-05)")
 	}
 	wantError(t, e.do(req{method: "DELETE", path: "/v1/plans/" + p.ID, as: op}), 428, "precondition_required", "", "")
 	e.must(t, req{method: "DELETE", path: "/v1/plans/" + p.ID, as: op, header: map[string]string{"If-Match": etag}}, 204, nil)
@@ -288,7 +321,7 @@ func TestDeletePlan(t *testing.T) {
 
 // 价格行只新建与停售（BIL-01，M1-04 验收 1）：改价即新建，旧行在同一事务中停售；周期与类型一致；币种为站点货币。
 func TestPlanPrices(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	p, etag := e.createPlan(t, op, nil)
 	prices := "/v1/plans/" + p.ID + "/prices"
@@ -316,12 +349,14 @@ func TestPlanPrices(t *testing.T) {
 	if etag2 == etag {
 		t.Fatal("new price did not change the plan ETag")
 	}
+	firstTag := e.must(t, req{method: "GET", path: prices + "/" + first.ID, as: op}, 200, nil).Header().Get("ETag")
 	second := e.createPrice(t, op, p.ID, "month", 3500)
 	var got priceOut
 	w := e.must(t, req{method: "GET", path: prices + "/" + first.ID, as: op}, 200, &got)
-	if got.IsOnSale || w.Header().Get("ETag") != `"2"` {
+	if got.IsOnSale || w.Header().Get("ETag") == firstTag {
 		t.Fatalf("old row after re-pricing: %+v %s", got, w.Header().Get("ETag"))
 	}
+	e.must(t, req{method: "GET", path: prices + "/" + first.ID, as: op, header: map[string]string{"If-None-Match": w.Header().Get("ETag")}}, 304, nil)
 	var diff string
 	if err := e.pool.QueryRow(context.Background(), `SELECT diff->>'discontinued_price_id' FROM audit_logs
 		WHERE action = 'plan_price.create' AND target_id = $1`, second.ID).Scan(&diff); err != nil || diff != first.ID {
@@ -351,23 +386,25 @@ func TestPlanPrices(t *testing.T) {
 
 	// 停售：只接受 false；已停售 409；在售套餐的最后一个在售价格行不能停售。
 	yearPath := prices + "/" + year.ID
+	yearTag := e.must(t, req{method: "GET", path: yearPath, as: op}, 200, nil).Header().Get("ETag")
 	wantError(t, e.do(req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": true},
-		header: map[string]string{"If-Match": `"1"`}}), 400, "invalid_request", "is_on_sale", "not_allowed")
+		header: map[string]string{"If-Match": yearTag}}), 400, "invalid_request", "is_on_sale", "not_allowed")
 	wantError(t, e.do(req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": false}}),
 		428, "precondition_required", "", "")
 	wantError(t, e.do(req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": false},
-		header: map[string]string{"If-Match": `"2"`}}), 409, "conflict", "", "")
-	e.must(t, req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": false},
-		header: map[string]string{"If-Match": `"1"`}}, 200, &got)
-	if got.IsOnSale {
-		t.Fatal("still on sale")
+		header: map[string]string{"If-Match": `"stale"`}}), 409, "conflict", "", "")
+	w = e.must(t, req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": false},
+		header: map[string]string{"If-Match": yearTag}}, 200, &got)
+	if got.IsOnSale || w.Header().Get("ETag") == yearTag {
+		t.Fatalf("after discontinue: %+v %s", got, w.Header().Get("ETag"))
 	}
 	wantError(t, e.do(req{method: "PATCH", path: yearPath, as: op, body: map[string]any{"is_on_sale": false},
-		header: map[string]string{"If-Match": `"2"`}}), 409, "invalid_state", "", "")
+		header: map[string]string{"If-Match": w.Header().Get("ETag")}}), 409, "invalid_state", "", "")
 	e.must(t, req{method: "PATCH", path: "/v1/plans/" + p.ID, as: op, body: map[string]any{"status": "on_sale"},
 		header: map[string]string{"If-Match": e.planETag(t, op, p.ID)}}, 200, nil)
+	secondTag := e.must(t, req{method: "GET", path: prices + "/" + second.ID, as: op}, 200, nil).Header().Get("ETag")
 	wantError(t, e.do(req{method: "PATCH", path: prices + "/" + second.ID, as: op, body: map[string]any{"is_on_sale": false},
-		header: map[string]string{"If-Match": `"1"`}}), 409, "invalid_state", "", "")
+		header: map[string]string{"If-Match": secondTag}}), 409, "invalid_state", "", "")
 	if n := e.count(t, `SELECT count(*) FROM audit_logs WHERE action = 'plan_price.discontinue' AND target_type = 'plan_price'`); n != 1 {
 		t.Fatalf("plan_price.discontinue audits = %d", n)
 	}
@@ -375,7 +412,7 @@ func TestPlanPrices(t *testing.T) {
 
 // 并发新建同一周期的价格行：按套餐行串行化，最后只有一行在售（BIL-01）。
 func TestConcurrentPriceCreate(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	p, _ := e.createPlan(t, op, nil)
 	const n = 8
@@ -404,7 +441,7 @@ func TestConcurrentPriceCreate(t *testing.T) {
 
 // 线路组关联（BIL-04）：添加幂等；移除为敏感操作（原因 400、step-up 401）；两者写 plan.access_changed。
 func TestPlanLocationGroupLinks(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	g, _ := e.createGroup(t, op, "Asia", nil)
 	p, etag := e.createPlan(t, op, nil)
@@ -452,7 +489,7 @@ func TestPlanLocationGroupLinks(t *testing.T) {
 
 // 线路组（ACS-05、ACS-06）：名称唯一；min_tier 变化写 location_group.changed；分页；有节点时不能删除。
 func TestLocationGroups(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	two := 2
 	g, etag := e.createGroup(t, op, "Asia", &two)
@@ -508,7 +545,7 @@ func TestLocationGroups(t *testing.T) {
 
 // 套餐列表按 (sort, id) 分页，可按状态与类型筛选（CONV-11）。
 func TestListPlans(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	var ids []string
 	for i, s := range []int{20, 10, 10} {
@@ -540,7 +577,7 @@ func TestListPlans(t *testing.T) {
 
 // 影响预览（CON-07，M1-04 验收 2）：只计算，不产生副作用。
 func TestImpactPreview(t *testing.T) {
-	e := newEnv(t)
+	e := newCatalogEnv(t)
 	op := e.staff(t, "operator")
 	three := 3
 	asia, _ := e.createGroup(t, op, "Asia", nil)
@@ -572,9 +609,9 @@ func TestImpactPreview(t *testing.T) {
 		accounts, hosts int
 	}{
 		"remove asia":    {map[string]any{"location_group_ids": []string{premium.ID}}, 2, 2},
-		"same groups":    {map[string]any{"location_group_ids": []string{premium.ID, asia.ID}}, 0, 0},
+		"same groups":    {map[string]any{"location_group_ids": []string{premium.ID, asia.ID}}, 2, 0},
 		"tier unlocks":   {map[string]any{"tier": 3}, 2, 1},
-		"tier no effect": {map[string]any{"tier": 1}, 0, 0},
+		"tier no effect": {map[string]any{"tier": 1}, 2, 0},
 		"status":         {map[string]any{"status": "hidden"}, 2, 0},
 		"rollout":        {map[string]any{"rollout_fields": []string{"device_limit"}}, 2, 0},
 	} {
@@ -600,12 +637,28 @@ func TestImpactPreview(t *testing.T) {
 	if got := preview("/v1/location-groups/"+asia.ID+"/impact", map[string]any{"min_tier": 2}); got.Accounts != 1 || got.Hosts != 2 {
 		t.Fatalf("min_tier cuts the tier-1 plan: %+v", got)
 	}
-	if got := preview("/v1/location-groups/"+asia.ID+"/impact", map[string]any{"is_deletion": true}); got.Accounts != 3 || got.Hosts != 2 {
+	if got := preview("/v1/location-groups/"+asia.ID+"/impact", map[string]any{"is_deletion": true}); got.Accounts != 0 || got.Hosts != 0 {
 		t.Fatalf("deletion: %+v", got)
 	}
 	wantError(t, e.do(req{method: "POST", path: groupPath, as: op, body: map[string]any{"add_host_ids": []string{uuid.NewString()}}}),
 		400, "invalid_request", "add_host_ids", "not_allowed")
 	if after := e.count(t, `SELECT count(*) FROM outbox`) + e.count(t, `SELECT count(*) FROM audit_logs`); after != before {
 		t.Fatal("impact preview had side effects")
+	}
+}
+
+// 站点尚未初始化结算货币时不能定价（CONV-08）：409 invalid_state，不写入价格行。
+func TestPriceNeedsSiteCurrency(t *testing.T) {
+	e := newEnv(t)
+	op := e.staff(t, "operator")
+	p, _ := e.createPlan(t, op, nil)
+	body := map[string]any{"period": "month", "amount_minor": 100, "currency": "CNY"}
+	wantError(t, e.do(req{method: "POST", path: "/v1/plans/" + p.ID + "/prices", as: op, body: body}), 409, "invalid_state", "", "")
+	if _, err := e.pool.Exec(context.Background(), `INSERT INTO settings (key, value) VALUES ('site_currency', '"cny"')`); err != nil {
+		t.Fatal(err)
+	}
+	wantError(t, e.do(req{method: "POST", path: "/v1/plans/" + p.ID + "/prices", as: op, body: body}), 409, "invalid_state", "", "")
+	if n := e.count(t, `SELECT count(*) FROM plan_prices`); n != 0 {
+		t.Fatalf("price rows = %d", n)
 	}
 }

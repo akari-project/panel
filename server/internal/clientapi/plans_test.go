@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// 在售套餐（spec/11 BIL-21）：只列出 on_sale 的非免费套餐与在售价格行；location_count 为满足 min_tier 的
+// 在售套餐（spec/11 BIL-15、BIL-21）：只列出有在售价格行的 on_sale 非免费套餐与在售价格行；location_count 为满足 min_tier 的
 // 线路组中节点的地区数；不需要登录。
 func TestListPlans(t *testing.T) {
 	e := newEnv(t)
@@ -40,7 +40,10 @@ func TestListPlans(t *testing.T) {
 	pro := plan("Pro", 3, 10, "on_sale")
 	plan("Hidden", 1, 0, "hidden")
 	plan("Draft", 1, 0, "draft")
-	exec(`INSERT INTO plans (name, tier, kind, status, bytes_per_cycle, device_limit) VALUES ('Free', 0, 'free', 'draft', 0, 1)`)
+	// 免费套餐无论状态都不列出；没有在售价格行的套餐不列出。
+	exec(`INSERT INTO plans (name, tier, kind, status, bytes_per_cycle, device_limit) VALUES ('Free', 0, 'free', 'on_sale', 0, 1)`)
+	unpriced := plan("Unpriced", 1, 0, "on_sale")
+	exec(`UPDATE plan_prices SET on_sale = false WHERE plan_id = $1`, unpriced)
 	exec(`UPDATE plan_prices SET on_sale = false WHERE plan_id = $1`, pro)
 	exec(`INSERT INTO plan_prices (plan_id, period, amount_minor, currency) VALUES ($1, 'month', 2000, 'CNY'), ($1, 'year', 20000, 'CNY')`, pro)
 

@@ -2,9 +2,11 @@
 -- 开发与端到端测试用的套餐目录（M1-04）：1 个免费套餐、2 个在售付费套餐（含价格行）、2 个线路组。
 -- 可重复执行（固定 ID，ON CONFLICT DO NOTHING）。也可以直接用于本地开发库：
 --   psql "$PANEL_DATABASE_URL" -f server/e2e/realpanel/seed_catalog.sql
--- 结算货币写入 site_currency = "CNY"（CONV-08，已设定时不变）。免费套餐保持 draft：M1-04 中免费套餐不能上架。
+-- 站点初始化（M1-09）之前，由这里写入结算货币 site_currency = "CNY" 与站点时区 site_timezone = "Asia/Shanghai"
+-- （CONV-08、CONV-26，已设定时不变）。免费套餐不设置 free_plan_id，即不启用（BIL-15）。
 
-INSERT INTO settings (key, value) VALUES ('site_currency', '"CNY"') ON CONFLICT (key) DO NOTHING;
+INSERT INTO settings (key, value) VALUES ('site_currency', '"CNY"'), ('site_timezone', '"Asia/Shanghai"')
+ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO location_groups (id, name, description, min_tier) VALUES
   ('0192f0c4-1a00-7000-8000-00000000b001', '亚太标准', '香港、日本、新加坡', NULL),

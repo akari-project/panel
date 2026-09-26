@@ -4,9 +4,8 @@
 //
 //   - 每个写操作在一个事务中完成：锁定所属套餐或线路组的行，比较 If-Match（CONV-28），修改数据，
 //     写审计日志（spec/31 CON-09）与 outbox 事件（CONV-22、CONV-34）。
-//   - 强 ETag 由版本列生成（CONV-13）：套餐与线路组的 version 由本包加 1；价格行、线路组关联的变更同样使
-//     所属套餐的版本加 1，线路组关联的变更同时使该线路组的版本加 1。派生的计数（当前权益数、节点数）不参与 ETag。
-//   - 取锁顺序：套餐，然后线路组（按 ID 升序）。
+//   - 强 ETag 由版本列生成（spec/31 CON-05）：套餐与线路组的 version 由本包加 1；价格行、线路组关联的变更同样使
+//     所属套餐的版本加 1。派生字段（当前权益数、节点数、plan_ids）不参与 ETag。价格行的 ETag 由 updated_at 生成。
 //   - 只在访问关系确实变化时写事件：套餐 tier 变化或线路组关联增删写 plan.access_changed，
 //     线路组 min_tier 变化写 location_group.changed（ACS-05、BIL-04）。
 //
@@ -18,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"regexp"
 	"slices"
@@ -51,15 +51,13 @@ const MaxName = 100
 // MaxPublicPlans 是客户端接口在售套餐列表的上限（spec/30 listPlans，CONV-11）。
 const MaxPublicPlans = 200
 
-// DefaultCurrency 是 settings 中尚未设定 site_currency 时的结算货币（CONV-08）。
-const DefaultCurrency = "CNY"
-
 var currencyCode = regexp.MustCompile(`^[A-Z]{3}$`)
 
 // Service 提供套餐、价格行与线路组的读写。
 type Service struct {
 	Pool  *pgxpool.Pool
 	Clock clock.Clock
+	Log   *slog.Logger
 }
 
 // Opt 是可选字段：Set 为假表示请求中没有该字段。
@@ -81,13 +79,9 @@ func (o Opt[T]) or(d T) T {
 // ETag 是套餐或线路组的强 ETag（CONV-13），由版本列生成。
 func ETag(version int64) string { return `"` + strconv.FormatInt(version, 10) + `"` }
 
-// PriceETag 是价格行的强 ETag。价格行只有 on_sale 可以改变，且只能由真变假一次（BIL-01），
-// 因此在售为版本 1，停售为版本 2。
+// PriceETag 是价格行的强 ETag，由 updated_at 生成。价格行只有 on_sale 可以改变，且只能由真变假一次（BIL-01）。
 func PriceETag(p Price) string {
-	if p.OnSale {
-		return ETag(1)
-	}
-	return ETag(2)
+	return `"` + strconv.FormatInt(p.UpdatedAt.UnixMicro(), 36) + `"`
 }
 
 // fields 收集参数错误，最后一并返回。
@@ -177,32 +171,52 @@ func emit(ctx context.Context, q *sqlc.Queries, topic string, payload map[string
 	return err
 }
 
-// siteCurrency 返回站点结算货币 site_currency（CONV-08）；尚未设定时为 DefaultCurrency。
-func siteCurrency(ctx context.Context, q *sqlc.Queries) (string, error) {
+// siteCurrency 返回站点结算货币 site_currency（CONV-08）。站点尚未初始化结算货币、或取值异常时返回
+// 409 invalid_state（不回退为默认值），warn 日志只记键名。
+func (s *Service) siteCurrency(ctx context.Context, q *sqlc.Queries) (string, error) {
 	raw, err := q.GetSetting(ctx, "site_currency")
-	if errors.Is(err, pgx.ErrNoRows) {
-		return DefaultCurrency, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
 	}
 	var c string
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return "", err
+	if err != nil || json.Unmarshal(raw, &c) != nil || !currencyCode.MatchString(c) {
+		s.log().WarnContext(ctx, "catalog: site setting missing or invalid", "key", "site_currency")
+		return "", apierr.InvalidState
 	}
 	return c, nil
 }
 
-// lockGroups 按 ID 升序使线路组的版本加 1（同时锁定这些行），用于线路组关联的变更。
-func lockGroups(ctx context.Context, q *sqlc.Queries, ids []uuid.UUID) error {
-	sorted := slices.Clone(ids)
-	slices.SortFunc(sorted, func(a, b uuid.UUID) int { return slices.Compare(a[:], b[:]) })
-	for _, id := range sorted {
-		if err := q.BumpLocationGroupVersion(ctx, id); err != nil {
-			return err
-		}
+// freePlanID 返回设置 free_plan_id 引用的套餐（spec/03 3.6，BIL-15）；缺键、null 或取值异常时为 nil
+// （按不启用处理，异常时 warn 日志只记键名）。
+func (s *Service) freePlanID(ctx context.Context, q *sqlc.Queries) (*uuid.UUID, error) {
+	raw, err := q.GetSetting(ctx, "free_plan_id")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
 	}
-	return nil
+	if err != nil {
+		return nil, err
+	}
+	var v *string
+	if json.Unmarshal(raw, &v) != nil {
+		s.log().WarnContext(ctx, "catalog: site setting invalid", "key", "free_plan_id")
+		return nil, nil
+	}
+	if v == nil {
+		return nil, nil
+	}
+	id, err := uuid.Parse(*v)
+	if err != nil {
+		s.log().WarnContext(ctx, "catalog: site setting invalid", "key", "free_plan_id")
+		return nil, nil
+	}
+	return &id, nil
+}
+
+func (s *Service) log() *slog.Logger {
+	if s.Log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return s.Log
 }
 
 func (s *Service) now() time.Time { return s.Clock.Now() }

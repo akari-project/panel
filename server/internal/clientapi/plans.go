@@ -14,7 +14,7 @@ import (
 // ListPlans 返回在售的非免费套餐与在售价格行（spec/11 BIL-21），不分页，至多 200 项（CONV-11）。
 // 加购项价格在 M4 实现，目前为空列表（BIL-24）。
 func (s *Server) ListPlans(ctx context.Context, _ gen.ListPlansRequestObject) (gen.ListPlansResponseObject, error) {
-	plans, err := (&catalog.Service{Pool: s.d.Pool, Clock: s.d.Clock}).OnSale(ctx)
+	plans, err := (&catalog.Service{Pool: s.d.Pool, Clock: s.d.Clock, Log: s.d.Log}).OnSale(ctx)
 	if err != nil {
 		return nil, err
 	}

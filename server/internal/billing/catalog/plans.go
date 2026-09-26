@@ -261,8 +261,8 @@ func freeTaken(err error) error {
 	return err
 }
 
-// CreatePlan 创建套餐（默认 draft）并关联线路组。新建时没有价格行，不能直接上架（409 invalid_state）；
-// 已有免费套餐时再建免费套餐返回 400 kind taken。
+// CreatePlan 创建套餐（默认 draft）并关联线路组（可以不关联）。新建时没有价格行，非免费套餐不能直接上架
+// （409 invalid_state，BIL-26）；已有免费套餐时再建免费套餐返回 400 kind taken（BIL-15）。
 func (s *Service) CreatePlan(ctx context.Context, in PlanFields, groupIDs []uuid.UUID) (Plan, error) {
 	var f fields
 	for name, set := range map[string]bool{"name": in.Name.Set, "tier": in.Tier.Set, "kind": in.Kind.Set,
@@ -295,8 +295,7 @@ func (s *Service) CreatePlan(ctx context.Context, in PlanFields, groupIDs []uuid
 				return apierr.Invalid(apierr.Field("kind", "taken"))
 			}
 		}
-		// 非免费套餐上架需要在售价格行，新建时没有；免费套餐的上架由 M1-05 的授予流程处理（BIL-15）。
-		if st.Status == "on_sale" {
+		if st.Kind != "free" && st.Status == "on_sale" {
 			return apierr.InvalidState
 		}
 		id, err := q.InsertPlan(ctx, sqlc.InsertPlanParams{Name: st.Name, Description: st.Description, Tier: st.Tier,
@@ -305,11 +304,11 @@ func (s *Service) CreatePlan(ctx context.Context, in PlanFields, groupIDs []uuid
 		if err != nil {
 			return freeTaken(err)
 		}
-		if err := lockGroups(ctx, q, groupIDs); err != nil {
-			return err
-		}
 		for _, g := range groupIDs {
 			if _, err := q.InsertPlanGroup(ctx, sqlc.InsertPlanGroupParams{PlanID: id, GroupID: g}); err != nil {
+				if code, _ := pgCode(err); code == "23503" { // 线路组已被并发删除
+					return apierr.Invalid(apierr.Field("location_group_ids", "not_allowed"))
+				}
 				return err
 			}
 		}
@@ -334,10 +333,12 @@ func lockPlan(ctx context.Context, q *sqlc.Queries, id uuid.UUID, ifMatch string
 	return r, checkIfMatch(ifMatch, ETag(r.Version))
 }
 
-// UpdatePlan 修改套餐（BIL-02：不影响已有权益的快照）。规则：
-//   - kind 只能在没有价格行与权益时修改，否则 409 invalid_state；kind 与 tier 不一致为 400 tier out_of_range；
-//   - 上架（on_sale）需要至少一个在售价格行；免费套餐在 M1-04 中不能上架或下架；有权益的套餐不能改回 draft；
-//   - tier 变化写 plan.access_changed（ACS-05）。
+// UpdatePlan 修改套餐（BIL-02：不影响已有权益的快照）。规则（BIL-26）：
+//   - kind 只能在没有价格行与权益、且未被设置 free_plan_id 引用时修改，否则 409 invalid_state；
+//     kind 与 tier 不一致为 400 tier out_of_range；
+//   - 按修改后的状态检查：非免费套餐处于 on_sale 时必须至少有一个在售价格行，否则 409 invalid_state；
+//     免费套餐的状态不受限制（BIL-15）；有权益的套餐不能改回 draft；
+//   - tier 变化写 plan.access_changed（ACS-05）；状态变化不写事件。
 //
 // 没有实际变化时不修改版本、不写审计。
 func (s *Service) UpdatePlan(ctx context.Context, id uuid.UUID, ifMatch string, in PlanFields) (Plan, error) {
@@ -374,6 +375,13 @@ func (s *Service) UpdatePlan(ctx context.Context, id uuid.UUID, ifMatch string, 
 			if usage.HasPrices || usage.HasEntitlements {
 				return apierr.InvalidState
 			}
+			free, err := s.freePlanID(ctx, q)
+			if err != nil {
+				return err
+			}
+			if free != nil && *free == id {
+				return apierr.InvalidState
+			}
 			if after.Kind == "free" {
 				taken, err := q.FreePlanExists(ctx, id)
 				if err != nil {
@@ -384,15 +392,11 @@ func (s *Service) UpdatePlan(ctx context.Context, id uuid.UUID, ifMatch string, 
 				}
 			}
 		}
-		if after.Status != before.Status {
-			switch {
-			case (after.Kind == "free" || before.Kind == "free") && (after.Status == "on_sale" || before.Status == "on_sale"):
-				return apierr.InvalidState
-			case after.Status == "on_sale" && usage.OnSalePrices == 0:
-				return apierr.InvalidState
-			case after.Status == "draft" && usage.HasEntitlements:
-				return apierr.InvalidState
-			}
+		if after.Kind != "free" && after.Status == "on_sale" && usage.OnSalePrices == 0 {
+			return apierr.InvalidState
+		}
+		if after.Status == "draft" && before.Status != "draft" && usage.HasEntitlements {
+			return apierr.InvalidState
 		}
 		if err := q.UpdatePlan(ctx, sqlc.UpdatePlanParams{ID: id, Name: after.Name, Description: after.Description,
 			Tier: after.Tier, Kind: after.Kind, Status: after.Status, BytesPerCycle: after.BytesPerCycle,
@@ -415,8 +419,8 @@ func (s *Service) UpdatePlan(ctx context.Context, id uuid.UUID, ifMatch string, 
 	return out, err
 }
 
-// DeletePlan 删除没有价格行与权益的套餐（契约 deletePlan：否则 409 invalid_state，应改为 archived）。
-// 线路组关联随之删除，这些线路组的版本加 1。
+// DeletePlan 删除没有价格行与权益、且未被设置 free_plan_id 引用的套餐（BIL-26：否则 409 invalid_state，
+// 应改为 archived）。线路组关联随之删除。
 func (s *Service) DeletePlan(ctx context.Context, id uuid.UUID, ifMatch string) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
@@ -431,24 +435,18 @@ func (s *Service) DeletePlan(ctx context.Context, id uuid.UUID, ifMatch string) 
 		if usage.HasPrices || usage.HasEntitlements {
 			return apierr.InvalidState
 		}
-		links, err := q.PlanGroupIDs(ctx, []uuid.UUID{id})
+		free, err := s.freePlanID(ctx, q)
 		if err != nil {
 			return err
 		}
-		groups := make([]uuid.UUID, len(links))
-		for i, l := range links {
-			groups[i] = l.GroupID
-		}
-		if err := lockGroups(ctx, q, groups); err != nil {
-			return err
+		if free != nil && *free == id {
+			return apierr.InvalidState
 		}
 		if err := q.DeletePlan(ctx, id); err != nil {
 			return err
 		}
-		values := lockedState(cur).audit()
-		values["location_group_ids"] = groups
 		return audit.Record(ctx, q, audit.Entry{Action: "plan.delete", TargetType: "plan", TargetID: id.String(),
-			Diff: audit.Values(values)})
+			Diff: audit.Values(map[string]any{"name": cur.Name, "kind": cur.Kind, "tier": cur.Tier})})
 	})
 }
 
@@ -460,10 +458,10 @@ func (s *Service) AddPlanGroup(ctx context.Context, id, group uuid.UUID, ifMatch
 		if _, err := lockPlan(ctx, q, id, ifMatch); err != nil {
 			return err
 		}
-		if _, err := q.LockLocationGroup(ctx, group); err != nil {
-			return notFound(err)
-		}
 		n, err := q.InsertPlanGroup(ctx, sqlc.InsertPlanGroupParams{PlanID: id, GroupID: group})
+		if code, _ := pgCode(err); code == "23503" {
+			return apierr.NotFound
+		}
 		if err != nil {
 			return err
 		}
@@ -502,12 +500,10 @@ func (s *Service) RemovePlanGroup(ctx context.Context, id, group uuid.UUID, ifMa
 	return out, err
 }
 
-// linkChanged 在线路组关联增删后：两者的版本加 1，写 plan.access_changed 与审计（目标为套餐）。
+// linkChanged 在线路组关联增删后：套餐的版本加 1（线路组的 plan_ids 是派生字段，版本不变，CON-05），
+// 写 plan.access_changed 与审计（目标为套餐）。
 func linkChanged(ctx context.Context, q *sqlc.Queries, plan, group uuid.UUID, action, reason string) error {
 	if err := q.BumpPlanVersion(ctx, plan); err != nil {
-		return err
-	}
-	if err := q.BumpLocationGroupVersion(ctx, group); err != nil {
 		return err
 	}
 	if err := emit(ctx, q, "plan.access_changed", map[string]any{"plan_id": plan}); err != nil {

@@ -4,6 +4,7 @@ package consoleapi
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -23,20 +24,21 @@ func groupETag(g catalog.Group) *string {
 	return &e
 }
 
-// ListLocationGroups 按 ID 分页列出线路组（CONV-11）。
+// ListLocationGroups 按 (created_at, id) 分页列出线路组（CONV-11）。
 func (s *Server) ListLocationGroups(ctx context.Context, req gen.ListLocationGroupsRequestObject) (gen.ListLocationGroupsResponseObject, error) {
 	limit, err := pageLimit(req.Params.Limit)
 	if err != nil {
 		return nil, err
 	}
 	var cur struct {
-		ID uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"t"`
+		ID        uuid.UUID `json:"id"`
 	}
-	var after *uuid.UUID
+	var after *catalog.GroupKey
 	if ok, err := decodeCursor(req.Params.Cursor, &cur); err != nil {
 		return nil, err
 	} else if ok {
-		after = &cur.ID
+		after = &catalog.GroupKey{CreatedAt: cur.CreatedAt, ID: cur.ID}
 	}
 	groups, err := s.catalog.ListGroups(ctx, after, limit+1)
 	if err != nil {
@@ -45,7 +47,8 @@ func (s *Server) ListLocationGroups(ctx context.Context, req gen.ListLocationGro
 	var next *string
 	if len(groups) > int(limit) {
 		groups = groups[:limit]
-		next = encodeCursor(map[string]any{"id": groups[len(groups)-1].ID})
+		last := groups[len(groups)-1]
+		next = encodeCursor(map[string]any{"t": last.CreatedAt, "id": last.ID})
 	}
 	resp := gen.ListLocationGroups200JSONResponse{Items: make([]gen.LocationGroup, len(groups)), NextCursor: nullableString(next)}
 	for i, g := range groups {

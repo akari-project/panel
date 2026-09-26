@@ -83,10 +83,20 @@ func getGroup(ctx context.Context, q *sqlc.Queries, id uuid.UUID) (Group, error)
 	return out[0], nil
 }
 
-// ListGroups 按 ID 列出线路组，after 为上一页最后一项的 ID。
-func (s *Service) ListGroups(ctx context.Context, after *uuid.UUID, max int32) ([]Group, error) {
+// GroupKey 是线路组列表的游标键（CONV-11）。
+type GroupKey struct {
+	CreatedAt time.Time
+	ID        uuid.UUID
+}
+
+// ListGroups 按 (created_at, id) 列出线路组，after 为上一页最后一项的键。
+func (s *Service) ListGroups(ctx context.Context, after *GroupKey, max int32) ([]Group, error) {
 	q := sqlc.New(s.Pool)
-	rows, err := q.ListLocationGroups(ctx, sqlc.ListLocationGroupsParams{After: after, MaxRows: max})
+	params := sqlc.ListLocationGroupsParams{MaxRows: max}
+	if after != nil {
+		params.CursorAt, params.CursorID = &after.CreatedAt, &after.ID
+	}
+	rows, err := q.ListLocationGroups(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +203,7 @@ func (s *Service) UpdateGroup(ctx context.Context, id uuid.UUID, ifMatch string,
 	return out, err
 }
 
-// DeleteGroup 删除线路组。仍被套餐引用或仍有节点时返回 409 invalid_state（ACS-06）。
+// DeleteGroup 删除线路组。仍被套餐引用或仍有节点成员时返回 409 invalid_state（ACS-06）。
 func (s *Service) DeleteGroup(ctx context.Context, id uuid.UUID, ifMatch string) error {
 	return pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		q := sqlc.New(tx)
@@ -216,6 +226,6 @@ func (s *Service) DeleteGroup(ctx context.Context, id uuid.UUID, ifMatch string)
 			return err
 		}
 		return audit.Record(ctx, q, audit.Entry{Action: "location_group.delete", TargetType: "location_group",
-			TargetID: id.String(), Diff: audit.Values(groupAudit(cur.Name, cur.Description, cur.MinTier))})
+			TargetID: id.String(), Diff: audit.Values(map[string]any{"name": cur.Name, "min_tier": cur.MinTier})})
 	})
 }

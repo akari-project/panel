@@ -10,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// SeedCatalogSQL 是开发与端到端测试用的套餐目录（seed_catalog.sql）：1 个免费套餐、2 个在售付费套餐、2 个线路组。
+// SeedCatalogSQL 是开发与端到端测试用的站点设置与套餐目录（seed_catalog.sql）：结算货币与时区、
+// 1 个免费套餐、2 个在售付费套餐、2 个线路组。
 //
 //go:embed seed_catalog.sql
 var SeedCatalogSQL string

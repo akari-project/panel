@@ -32,9 +32,11 @@ type PlanProposal struct {
 // eligible 报告等级为 tier 的套餐能否访问 min_tier 的线路组（ACS-05）。
 func eligible(tier int32, minTier *int32) bool { return minTier == nil || tier >= *minTier }
 
-// PreviewPlan 计算套餐拟议变更的影响：
-//   - 访问关系变化的线路组：关联增删，或 tier 变化使可访问性改变的线路组；节点数为这些线路组的成员节点去重；
-//   - 账号数：访问关系、状态有变化或选择了“应用到现有用户”的字段时，为持有该套餐当前权益的账号数，否则为 0。
+// PreviewPlan 计算套餐拟议变更的影响（CON-07）：
+//   - 账号数：持有该套餐当前权益（active、over_quota、suspended）的不同账号数，与 active_entitlement_count
+//     口径相同（BIL-26）；
+//   - 节点数：访问关系变化的线路组（关联增删，或 tier 变化使可访问性改变）的成员节点去重。节点在 M2 才存在，
+//     M1 中为 0。
 func (s *Service) PreviewPlan(ctx context.Context, id uuid.UUID, in PlanProposal) (Impact, error) {
 	var f fields
 	if in.GroupIDs == nil && in.Tier == nil && in.Status == nil && len(in.RolloutFields) == 0 {
@@ -95,11 +97,8 @@ func (s *Service) PreviewPlan(ctx context.Context, id uuid.UUID, in PlanProposal
 		}
 	}
 	out := Impact{ComputedAt: s.now()}
-	statusChanged := in.Status != nil && *in.Status != p.Status
-	if len(changed) > 0 || statusChanged || len(in.RolloutFields) > 0 {
-		if out.AccountCount, err = q.CountPlanHolders(ctx, id); err != nil {
-			return Impact{}, err
-		}
+	if out.AccountCount, err = q.CountPlanHolders(ctx, id); err != nil {
+		return Impact{}, err
 	}
 	if len(changed) > 0 {
 		if out.HostCount, err = q.CountGroupHosts(ctx, changed); err != nil {
@@ -117,10 +116,11 @@ type GroupProposal struct {
 	IsDeletion  bool
 }
 
-// PreviewGroup 计算线路组拟议变更的影响：
-//   - 账号数：只改 min_tier 时，为可访问性因此改变的账号；增删节点或删除时，为在变更前后任一 min_tier 下
-//     可访问该线路组的账号；
-//   - 节点数：访问关系有变化（min_tier 影响了账号或删除）时为全部成员节点，加上增删的节点，去重。
+// PreviewGroup 计算线路组拟议变更的影响（CON-07）：
+//   - 删除：恒为 0（仍被引用或仍有节点时删除返回 409）；
+//   - 账号数：只改 min_tier 时，为关联该线路组、tier 在新旧 min_tier 之间跨越的套餐的持有者；增删节点时，
+//     为在变更前后任一 min_tier 下可访问该线路组的持有者；
+//   - 节点数：min_tier 影响了账号时为全部成员节点，加上增删的节点，去重。节点在 M2 才存在，M1 中为 0。
 func (s *Service) PreviewGroup(ctx context.Context, id uuid.UUID, in GroupProposal) (Impact, error) {
 	if !in.MinTier.Set && len(in.AddHosts) == 0 && len(in.RemoveHosts) == 0 && !in.IsDeletion {
 		return Impact{}, apierr.Invalid()
@@ -151,18 +151,21 @@ func (s *Service) PreviewGroup(ctx context.Context, id uuid.UUID, in GroupPropos
 			return Impact{}, apierr.Invalid(apierr.Field(field, "not_allowed"))
 		}
 	}
+	out := Impact{ComputedAt: s.now()}
+	if in.IsDeletion {
+		return out, nil
+	}
 	newMin := g.MinTier
 	if in.MinTier.Set {
 		newMin = ptr32(in.MinTier.V)
 	}
-	hostsChange := len(in.AddHosts) > 0 || len(in.RemoveHosts) > 0 || in.IsDeletion
-	out := Impact{ComputedAt: s.now()}
+	hostsChange := len(in.AddHosts) > 0 || len(in.RemoveHosts) > 0
 	if out.AccountCount, err = q.CountGroupHolders(ctx, sqlc.CountGroupHoldersParams{GroupID: id, OnlyChanged: !hostsChange,
 		OldMin: g.MinTier, NewMin: newMin}); err != nil {
 		return Impact{}, err
 	}
 	hosts := map[uuid.UUID]bool{}
-	if out.AccountCount > 0 || in.IsDeletion {
+	if out.AccountCount > 0 {
 		members, err := q.GroupMemberIDs(ctx, id)
 		if err != nil {
 			return Impact{}, err

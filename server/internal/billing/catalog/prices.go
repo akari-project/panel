@@ -24,6 +24,7 @@ type Price struct {
 	Currency    string
 	OnSale      bool
 	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // PriceFields 是新建价格行时提交的字段。
@@ -71,7 +72,7 @@ func (s *Service) GetPrice(ctx context.Context, plan, id uuid.UUID) (Price, erro
 //   - 免费套餐不设价格行：409 invalid_state；
 //   - 周期必须与套餐类型一致（recurring 用 month、quarter、half_year、year，one_time 用 one_time），
 //     period_days 只用于 one_time：否则 400 not_allowed；
-//   - 币种必须等于站点结算货币（CONV-08）：否则 400 currency not_allowed。
+//   - 币种必须等于站点结算货币（CONV-08）：否则 400 currency not_allowed；站点尚未初始化结算货币时 409 invalid_state。
 //
 // 套餐的版本加 1；审计 plan_price.create 的差异中 discontinued_price_id 为被停售的旧行。
 func (s *Service) CreatePrice(ctx context.Context, plan uuid.UUID, in PriceFields) (Price, error) {
@@ -106,7 +107,7 @@ func (s *Service) CreatePrice(ctx context.Context, plan uuid.UUID, in PriceField
 		if in.PeriodDays != nil && in.Period != "one_time" {
 			f.add("period_days", "not_allowed")
 		}
-		cur, err := siteCurrency(ctx, q)
+		cur, err := s.siteCurrency(ctx, q)
 		if err != nil {
 			return err
 		}
@@ -170,15 +171,16 @@ func (s *Service) DiscontinuePrice(ctx context.Context, plan, id uuid.UUID, ifMa
 				return apierr.InvalidState
 			}
 		}
-		if err := q.DiscontinuePlanPrice(ctx, id); err != nil {
+		updated, err := q.DiscontinuePlanPrice(ctx, id)
+		if err != nil {
 			return err
 		}
-		out.OnSale = false
+		out = Price(updated)
 		if err := q.BumpPlanVersion(ctx, plan); err != nil {
 			return err
 		}
 		return audit.Record(ctx, q, audit.Entry{Action: "plan_price.discontinue", TargetType: "plan_price", TargetID: id.String(),
-			Diff: audit.Changes(map[string]any{"is_on_sale": true}, map[string]any{"is_on_sale": false})})
+			Diff: audit.Values(map[string]any{"plan_id": plan, "period": out.Period, "amount_minor": out.AmountMinor})})
 	})
 	return out, err
 }

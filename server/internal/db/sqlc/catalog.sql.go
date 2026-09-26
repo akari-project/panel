@@ -12,15 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const bumpLocationGroupVersion = `-- name: BumpLocationGroupVersion :exec
-UPDATE location_groups SET version = version + 1 WHERE id = $1
-`
-
-func (q *Queries) BumpLocationGroupVersion(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, bumpLocationGroupVersion, id)
-	return err
-}
-
 const bumpPlanVersion = `-- name: BumpPlanVersion :exec
 UPDATE plans SET version = version + 1 WHERE id = $1
 `
@@ -158,13 +149,26 @@ func (q *Queries) DiscontinuePeriodPrice(ctx context.Context, arg DiscontinuePer
 	return items, nil
 }
 
-const discontinuePlanPrice = `-- name: DiscontinuePlanPrice :exec
+const discontinuePlanPrice = `-- name: DiscontinuePlanPrice :one
 UPDATE plan_prices SET on_sale = false WHERE id = $1 AND on_sale
+RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 `
 
-func (q *Queries) DiscontinuePlanPrice(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, discontinuePlanPrice, id)
-	return err
+func (q *Queries) DiscontinuePlanPrice(ctx context.Context, id uuid.UUID) (PlanPrice, error) {
+	row := q.db.QueryRow(ctx, discontinuePlanPrice, id)
+	var i PlanPrice
+	err := row.Scan(
+		&i.ID,
+		&i.PlanID,
+		&i.Period,
+		&i.PeriodDays,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.OnSale,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const existingNodeIDs = `-- name: ExistingNodeIDs :many
@@ -289,7 +293,7 @@ func (q *Queries) GetPlan(ctx context.Context, id uuid.UUID) (GetPlanRow, error)
 }
 
 const getPlanPrice = `-- name: GetPlanPrice :one
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE id = $1 AND plan_id = $2
 `
 
@@ -298,20 +302,9 @@ type GetPlanPriceParams struct {
 	PlanID uuid.UUID
 }
 
-type GetPlanPriceRow struct {
-	ID          uuid.UUID
-	PlanID      uuid.UUID
-	Period      string
-	PeriodDays  *int32
-	AmountMinor int64
-	Currency    string
-	OnSale      bool
-	CreatedAt   time.Time
-}
-
-func (q *Queries) GetPlanPrice(ctx context.Context, arg GetPlanPriceParams) (GetPlanPriceRow, error) {
+func (q *Queries) GetPlanPrice(ctx context.Context, arg GetPlanPriceParams) (PlanPrice, error) {
 	row := q.db.QueryRow(ctx, getPlanPrice, arg.ID, arg.PlanID)
-	var i GetPlanPriceRow
+	var i PlanPrice
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
@@ -321,6 +314,7 @@ func (q *Queries) GetPlanPrice(ctx context.Context, arg GetPlanPriceParams) (Get
 		&i.Currency,
 		&i.OnSale,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -457,7 +451,7 @@ func (q *Queries) InsertPlanGroup(ctx context.Context, arg InsertPlanGroupParams
 const insertPlanPrice = `-- name: InsertPlanPrice :one
 INSERT INTO plan_prices (plan_id, period, period_days, amount_minor, currency)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+RETURNING id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 `
 
 type InsertPlanPriceParams struct {
@@ -468,18 +462,7 @@ type InsertPlanPriceParams struct {
 	Currency    string
 }
 
-type InsertPlanPriceRow struct {
-	ID          uuid.UUID
-	PlanID      uuid.UUID
-	Period      string
-	PeriodDays  *int32
-	AmountMinor int64
-	Currency    string
-	OnSale      bool
-	CreatedAt   time.Time
-}
-
-func (q *Queries) InsertPlanPrice(ctx context.Context, arg InsertPlanPriceParams) (InsertPlanPriceRow, error) {
+func (q *Queries) InsertPlanPrice(ctx context.Context, arg InsertPlanPriceParams) (PlanPrice, error) {
 	row := q.db.QueryRow(ctx, insertPlanPrice,
 		arg.PlanID,
 		arg.Period,
@@ -487,7 +470,7 @@ func (q *Queries) InsertPlanPrice(ctx context.Context, arg InsertPlanPriceParams
 		arg.AmountMinor,
 		arg.Currency,
 	)
-	var i InsertPlanPriceRow
+	var i PlanPrice
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
@@ -497,6 +480,7 @@ func (q *Queries) InsertPlanPrice(ctx context.Context, arg InsertPlanPriceParams
 		&i.Currency,
 		&i.OnSale,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -505,14 +489,16 @@ const listLocationGroups = `-- name: ListLocationGroups :many
 SELECT g.id, g.name, g.description, g.min_tier, g.version, g.created_at, g.updated_at,
        (SELECT count(*) FROM node_group_members m WHERE m.group_id = g.id)::int AS host_count
 FROM location_groups g
-WHERE $1::uuid IS NULL OR g.id > $1::uuid
-ORDER BY g.id
-LIMIT $2
+WHERE $1::timestamptz IS NULL
+   OR (g.created_at, g.id) > ($1::timestamptz, $2::uuid)
+ORDER BY g.created_at, g.id
+LIMIT $3
 `
 
 type ListLocationGroupsParams struct {
-	After   *uuid.UUID
-	MaxRows int32
+	CursorAt *time.Time
+	CursorID *uuid.UUID
+	MaxRows  int32
 }
 
 type ListLocationGroupsRow struct {
@@ -526,9 +512,9 @@ type ListLocationGroupsRow struct {
 	HostCount   int32
 }
 
-// 按 id 的游标分页（CONV-11）。
+// 按 (created_at, id) 升序的游标分页（CONV-11）；created_at 只用于排序展示，不参与业务判断（CONV-27）。
 func (q *Queries) ListLocationGroups(ctx context.Context, arg ListLocationGroupsParams) ([]ListLocationGroupsRow, error) {
-	rows, err := q.db.Query(ctx, listLocationGroups, arg.After, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listLocationGroups, arg.CursorAt, arg.CursorID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -557,10 +543,11 @@ func (q *Queries) ListLocationGroups(ctx context.Context, arg ListLocationGroups
 }
 
 const listOnSalePlans = `-- name: ListOnSalePlans :many
-SELECT id, name, description, tier, kind, bytes_per_cycle, device_limit, speed_limit_mbps, reset_policy
-FROM plans
-WHERE status = 'on_sale' AND kind <> 'free'
-ORDER BY sort, id
+SELECT p.id, p.name, p.description, p.tier, p.kind, p.bytes_per_cycle, p.device_limit, p.speed_limit_mbps, p.reset_policy
+FROM plans p
+WHERE p.status = 'on_sale' AND p.kind <> 'free'
+  AND EXISTS (SELECT 1 FROM plan_prices pp WHERE pp.plan_id = p.id AND pp.on_sale)
+ORDER BY p.sort, p.id
 LIMIT $1
 `
 
@@ -576,7 +563,8 @@ type ListOnSalePlansRow struct {
 	ResetPolicy    string
 }
 
-// 客户端接口的在售套餐（不含免费套餐），按 (sort, id)，至多 max_rows 项（spec/30 listPlans）。
+// 客户端接口的在售套餐：不含免费套餐与没有在售价格行的套餐，按 (sort, id)，至多 max_rows 项
+// （spec/30 listPlans，spec/11 BIL-15、BIL-21）。
 func (q *Queries) ListOnSalePlans(ctx context.Context, maxRows int32) ([]ListOnSalePlansRow, error) {
 	rows, err := q.db.Query(ctx, listOnSalePlans, maxRows)
 	if err != nil {
@@ -608,7 +596,7 @@ func (q *Queries) ListOnSalePlans(ctx context.Context, maxRows int32) ([]ListOnS
 }
 
 const listPlanPrices = `-- name: ListPlanPrices :many
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices
 WHERE plan_id = $1
   AND ($2::boolean IS NULL OR on_sale = $2::boolean)
@@ -624,19 +612,8 @@ type ListPlanPricesParams struct {
 	MaxRows int32
 }
 
-type ListPlanPricesRow struct {
-	ID          uuid.UUID
-	PlanID      uuid.UUID
-	Period      string
-	PeriodDays  *int32
-	AmountMinor int64
-	Currency    string
-	OnSale      bool
-	CreatedAt   time.Time
-}
-
 // 按 id（UUIDv7，即创建顺序）倒序的游标分页（CONV-11）。
-func (q *Queries) ListPlanPrices(ctx context.Context, arg ListPlanPricesParams) ([]ListPlanPricesRow, error) {
+func (q *Queries) ListPlanPrices(ctx context.Context, arg ListPlanPricesParams) ([]PlanPrice, error) {
 	rows, err := q.db.Query(ctx, listPlanPrices,
 		arg.PlanID,
 		arg.OnSale,
@@ -647,9 +624,9 @@ func (q *Queries) ListPlanPrices(ctx context.Context, arg ListPlanPricesParams) 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListPlanPricesRow
+	var items []PlanPrice
 	for rows.Next() {
-		var i ListPlanPricesRow
+		var i PlanPrice
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
@@ -659,6 +636,7 @@ func (q *Queries) ListPlanPrices(ctx context.Context, arg ListPlanPricesParams) 
 			&i.Currency,
 			&i.OnSale,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -870,7 +848,7 @@ func (q *Queries) LockPlan(ctx context.Context, id uuid.UUID) (LockPlanRow, erro
 }
 
 const lockPlanPrice = `-- name: LockPlanPrice :one
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE id = $1 AND plan_id = $2 FOR UPDATE
 `
 
@@ -879,20 +857,9 @@ type LockPlanPriceParams struct {
 	PlanID uuid.UUID
 }
 
-type LockPlanPriceRow struct {
-	ID          uuid.UUID
-	PlanID      uuid.UUID
-	Period      string
-	PeriodDays  *int32
-	AmountMinor int64
-	Currency    string
-	OnSale      bool
-	CreatedAt   time.Time
-}
-
-func (q *Queries) LockPlanPrice(ctx context.Context, arg LockPlanPriceParams) (LockPlanPriceRow, error) {
+func (q *Queries) LockPlanPrice(ctx context.Context, arg LockPlanPriceParams) (PlanPrice, error) {
 	row := q.db.QueryRow(ctx, lockPlanPrice, arg.ID, arg.PlanID)
-	var i LockPlanPriceRow
+	var i PlanPrice
 	err := row.Scan(
 		&i.ID,
 		&i.PlanID,
@@ -902,36 +869,26 @@ func (q *Queries) LockPlanPrice(ctx context.Context, arg LockPlanPriceParams) (L
 		&i.Currency,
 		&i.OnSale,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const onSalePrices = `-- name: OnSalePrices :many
-SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at
+SELECT id, plan_id, period, period_days, amount_minor, currency, on_sale, created_at, updated_at
 FROM plan_prices WHERE plan_id = ANY($1::uuid[]) AND on_sale
 ORDER BY plan_id, id
 `
 
-type OnSalePricesRow struct {
-	ID          uuid.UUID
-	PlanID      uuid.UUID
-	Period      string
-	PeriodDays  *int32
-	AmountMinor int64
-	Currency    string
-	OnSale      bool
-	CreatedAt   time.Time
-}
-
-func (q *Queries) OnSalePrices(ctx context.Context, planIds []uuid.UUID) ([]OnSalePricesRow, error) {
+func (q *Queries) OnSalePrices(ctx context.Context, planIds []uuid.UUID) ([]PlanPrice, error) {
 	rows, err := q.db.Query(ctx, onSalePrices, planIds)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []OnSalePricesRow
+	var items []PlanPrice
 	for rows.Next() {
-		var i OnSalePricesRow
+		var i PlanPrice
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlanID,
@@ -941,6 +898,7 @@ func (q *Queries) OnSalePrices(ctx context.Context, planIds []uuid.UUID) ([]OnSa
 			&i.Currency,
 			&i.OnSale,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
