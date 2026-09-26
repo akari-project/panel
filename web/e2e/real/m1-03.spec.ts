@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// M1-03 验收 4（未经验证的草稿，驱动由后端补上）：在真实控制面上注册 → 两个浏览器上下文分别登录 →
+// M1-03 验收 4（server/e2e/portal TestM1_03_PortalPlaywright 驱动，make e2e-portal）：在真实控制面上注册 → 两个浏览器上下文分别登录 →
 // 设备列表中看到两条浏览器登录 → 移除另一个 → 被移除的会话回到登录页 → 移除当前设备即登出。
 // 两个上下文都是浏览器登录（web 设备），不占用设备名额；名额与凭据的验收由后端测试覆盖。
 import { randomBytes } from 'node:crypto';
