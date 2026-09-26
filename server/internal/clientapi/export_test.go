@@ -133,4 +133,30 @@ func TestExportLink(t *testing.T) {
 	if exportToken(t, recreated.URL) == newTok || !recreated.CreatedAt.Equal(later) {
 		t.Fatalf("recreated link = %+v", recreated)
 	}
+	// 日志（访问日志与处理器日志）不含链接与令牌（CONV-24）。
+	logs := e.logs.String()
+	if !strings.Contains(logs, "/v1/me/export-link") {
+		t.Fatal("access log not captured")
+	}
+	for _, secret := range []string{tok, newTok, exportToken(t, recreated.URL), "/v1/configurations/"} {
+		if strings.Contains(logs, secret) {
+			t.Fatalf("log contains %q", secret)
+		}
+	}
+}
+
+// AUTH-22 的凭据重置删除导出令牌后，重置同样补建新令牌。
+func TestRotateExportLinkBackfills(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "fill@example.com", "correct horse battery")
+	s := e.appLogin(t, "fill@example.com", "correct horse battery")
+	if _, err := e.pool.Exec(context.Background(), `DELETE FROM export_tokens`); err != nil {
+		t.Fatal(err)
+	}
+	w := e.do(req{method: "POST", path: "/v1/me/export-link/rotation", bearer: s.AccessToken})
+	var l exportLink
+	_ = json.Unmarshal(w.Body.Bytes(), &l)
+	if w.Code != 200 || e.count(t, `SELECT count(*) FROM export_tokens WHERE token_hash = $1`, hashOf(exportToken(t, l.URL))) != 1 {
+		t.Fatalf("rotate without a token row: %d %s", w.Code, w.Body)
+	}
 }

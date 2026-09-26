@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -233,5 +235,71 @@ func TestListDevicesFields(t *testing.T) {
 	}
 	if l := e.devices(t, m["access_token"].(string)); l.DeviceLimit != 3 {
 		t.Fatalf("device_limit = %d, want 3", l.DeviceLimit)
+	}
+}
+
+// M1-03 验收 3：免费套餐的 active 权益在其设备上限内下发凭据；没有权益时为 entitlement_inactive。
+func TestFreePlanEntitlementIssues(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "free@example.com", "correct horse battery")
+	none := e.appLogin(t, "free@example.com", "correct horse battery")
+	if none.CredentialStatus != "entitlement_inactive" {
+		t.Fatalf("no entitlement: %s", none.CredentialStatus)
+	}
+	if _, err := e.pool.Exec(context.Background(), `
+		WITH p AS (INSERT INTO plans (name, tier, kind, status, bytes_per_cycle, device_limit) VALUES ('Free', 0, 'free', 'on_sale', 0, 2) RETURNING id)
+		INSERT INTO entitlements (account_id, plan_id, status, starts_at, cycle_start, bytes_limit, device_limit, reset_policy)
+		SELECT a.id, p.id, 'active', $1, $1, 0, 2, 'never' FROM accounts a, p WHERE a.email = 'free@example.com'`, t0); err != nil {
+		t.Fatal(err)
+	}
+	if w := e.get("/v1/me", bearerAuth(none.AccessToken)); !strings.Contains(w.Body.String(), `"entitlement_status":"free"`) {
+		t.Fatalf("me: %s", w.Body)
+	}
+	a := e.appLogin(t, "free@example.com", "correct horse battery")
+	b := e.appLogin(t, "free@example.com", "correct horse battery")
+	if a.CredentialStatus != "issued" || b.CredentialStatus != "device_limit_reached" {
+		t.Fatalf("free plan statuses = %s, %s", a.CredentialStatus, b.CredentialStatus)
+	}
+	// 没有权益时登录的第一台设备在 a 登录时的分配中取得另一个名额，两个名额已满，b 等待。
+	if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE device_id IS NOT NULL AND revoked_at IS NULL`); n != 2 {
+		t.Fatalf("%d device credentials, want 2 (limit of the free plan)", n)
+	}
+	if l := e.devices(t, a.AccessToken); l.DeviceLimit != 2 {
+		t.Fatalf("device_limit = %d, want the free plan's 2", l.DeviceLimit)
+	}
+}
+
+// M1-03 验收 2：并发的登录与移除不超出上限（-race 下运行）。
+func TestConcurrentLoginAndRemoval(t *testing.T) {
+	e := newEnv(t)
+	e.register(t, "race@example.com", "correct horse battery")
+	e.entitle(t, "race@example.com", 2)
+	a := e.appLogin(t, "race@example.com", "correct horse battery")
+	b := e.appLogin(t, "race@example.com", "correct horse battery")
+	var wg sync.WaitGroup
+	for i := range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d, _ := appDevice(t)
+			w := e.do(req{method: "POST", path: "/v1/sessions", ip: "10.9.0." + strconv.Itoa(i+1),
+				body: jsonBody(map[string]any{"email": "race@example.com", "password": "correct horse battery", "device": d})})
+			if w.Code != 201 {
+				t.Errorf("login: %d %s", w.Code, w.Body)
+			}
+		}()
+	}
+	for _, s := range []sessionBody{a, b} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if code := e.removeDevice(s.AccessToken, s.DeviceID); code != 204 {
+				t.Errorf("remove: %d", code)
+			}
+		}()
+	}
+	wg.Wait()
+	if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE device_id IS NOT NULL AND revoked_at IS NULL`); n != 2 {
+		t.Fatalf("%d device credentials after concurrent logins and removals, want exactly the limit of 2", n)
 	}
 }
