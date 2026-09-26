@@ -271,6 +271,7 @@ type LocationGroup struct {
 	MinTier     *int32
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	Version     int64
 }
 
 type Machine struct {
@@ -462,6 +463,7 @@ type Plan struct {
 	Sort             int32
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	Version          int64
 }
 
 type PlanGroup struct {
