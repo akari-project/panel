@@ -100,9 +100,12 @@ func (c *Creator) Create(ctx context.Context, email, pw string) (Result, error) 
 		if err := q.GrantRole(ctx, sqlc.GrantRoleParams{AccountID: res.AccountID, Role: SuperadminRole}); err != nil {
 			return err
 		}
-		// 共用凭据与 credential.changed 事件（AUTH-13、CONV-34）。
+		// 共用凭据与 credential.changed 事件（AUTH-13、CONV-34），以及导出令牌（AUTH-16）。
 		res.CredentialID, err = account.CreateSharedCredential(ctx, q, c.Keys, res.AccountID)
 		if err != nil {
+			return err
+		}
+		if err := account.CreateExportToken(ctx, q, c.Keys, res.AccountID, now); err != nil {
 			return err
 		}
 		// 审计记录不含邮箱明文；原因写入 reason_texts，审计日志只引用其 ID（CONV-29）。

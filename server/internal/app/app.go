@@ -211,6 +211,10 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 	if portalURL == "" {
 		return nil, errors.New("api: ui.portal.public_url is required when ui.portal.hosts is not a single host (links in emails, spec/10 AUTH-04)")
 	}
+	// 导入链接必须是绝对地址（AUTH-16），不取自请求的 Host。
+	if primaryAPI(d.Config) == "" {
+		return nil, errors.New("api: ui.portal.api_base_url or ui.portal.public_url is required (import links, spec/10 AUTH-16)")
+	}
 	limiter := ratelimit.Limiter{KV: d.KV}
 	revocations := auth.Revocations{KV: d.KV}
 	outbox := notify.Outbox{Keys: d.Keys, Clock: d.Clock}
@@ -244,6 +248,7 @@ func apiHandler(d Deps, proxies httpx.Proxies, health http.Handler) (http.Handle
 			AppName:      d.Config.Client.AppName,
 			APIEndpoints: apiEndpoints(d.Config),
 		},
+		ExportBaseURL: primaryAPI(d.Config),
 	})
 	adminURL := d.Config.UI.Admin.URL()
 	if adminURL == "" {
@@ -355,16 +360,22 @@ type job struct {
 // apiEndpoints 是 /v1/config 的 api_endpoints（spec/30 API-11）：主地址取 ui.portal.api_base_url，
 // 未配置时取用户中心的公开地址；其后为 client.api_endpoints 中的备用地址，去重并保持顺序。
 func apiEndpoints(c config.Config) []string {
-	primary := c.UI.Portal.APIBaseURL
-	if primary == "" {
-		primary = c.UI.Portal.URL()
-	}
 	out := []string{}
-	for _, e := range append([]string{primary}, c.Client.APIEndpoints...) {
+	for _, e := range append([]string{primaryAPI(c)}, c.Client.APIEndpoints...) {
 		e = strings.TrimSuffix(e, "/")
 		if e != "" && !slices.Contains(out, e) {
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+// primaryAPI 是接口主地址（spec/30 API-11）：ui.portal.api_base_url，未配置时取用户中心的公开地址，去掉末尾的 /。
+// 导入链接同样以它为前缀（AUTH-16）。
+func primaryAPI(c config.Config) string {
+	primary := c.UI.Portal.APIBaseURL
+	if primary == "" {
+		primary = c.UI.Portal.URL()
+	}
+	return strings.TrimSuffix(primary, "/")
 }

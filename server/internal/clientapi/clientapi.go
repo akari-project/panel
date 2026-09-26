@@ -75,6 +75,8 @@ type Deps struct {
 	Sessions       *session.Service
 	MFA            *mfa.Service
 	Config         ConfigDeps
+	// ExportBaseURL 是导入链接的接口主地址（spec/30 API-11 api_endpoints 的第一项），不含 /v1 与末尾的 /。
+	ExportBaseURL string
 }
 
 // Server 实现 gen.StrictServerInterface。

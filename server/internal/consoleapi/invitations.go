@@ -26,6 +26,7 @@ import (
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
 	"github.com/akari-project/panel/server/internal/secretbox"
+	"github.com/akari-project/panel/server/internal/session"
 )
 
 // InvitationTTL 是邀请的有效期（AUTH-22）。
@@ -355,6 +356,9 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 			if _, err := account.CreateSharedCredential(ctx, q, s.d.Keys, id); err != nil {
 				return err
 			}
+			if err := account.CreateExportToken(ctx, q, s.d.Keys, id, now); err != nil {
+				return err
+			}
 		case err != nil:
 			return err
 		default:
@@ -382,7 +386,7 @@ func (s *Server) AcceptStaffInvitation(ctx context.Context, req gen.AcceptStaffI
 				if err := q.DeleteWebauthn(ctx, id); err != nil {
 					return err
 				}
-				if revoked, err = q.RevokeAccountSessions(ctx, sqlc.RevokeAccountSessionsParams{AccountID: id, Now: &now}); err != nil {
+				if revoked, err = session.RevokeAccountSessions(ctx, q, id, now); err != nil {
 					return err
 				}
 				if err := resetCredentials(ctx, q, s.d.Keys, id, now); err != nil {

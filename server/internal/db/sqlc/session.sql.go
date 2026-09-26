@@ -82,24 +82,6 @@ func (q *Queries) ChildSession(ctx context.Context, parentID *uuid.UUID) (ChildS
 	return i, err
 }
 
-const countActiveDevices = `-- name: CountActiveDevices :one
-SELECT count(*) FROM devices
-WHERE account_id = $1 AND platform <> 'web' AND revoked_at IS NULL AND id <> $2
-`
-
-type CountActiveDevicesParams struct {
-	AccountID uuid.UUID
-	Exclude   uuid.UUID
-}
-
-// 设备上限只统计未吊销的非 web 设备（AUTH-14）。
-func (q *Queries) CountActiveDevices(ctx context.Context, arg CountActiveDevicesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveDevices, arg.AccountID, arg.Exclude)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createDeviceCredential = `-- name: CreateDeviceCredential :one
 INSERT INTO proxy_credentials (account_id, device_id, secret_enc) VALUES ($1, $2, $3)
 RETURNING id
@@ -150,7 +132,7 @@ func (q *Queries) DeviceCredential(ctx context.Context, deviceID *uuid.UUID) (uu
 const deviceForReuse = `-- name: DeviceForReuse :one
 SELECT id, platform, public_key FROM devices
 WHERE id = $1 AND account_id = $2 AND revoked_at IS NULL
-FOR UPDATE
+FOR NO KEY UPDATE
 `
 
 type DeviceForReuseParams struct {
@@ -236,10 +218,12 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 }
 
 const lockAccount = `-- name: LockAccount :one
-SELECT id FROM accounts WHERE id = $1 FOR UPDATE
+SELECT id FROM accounts WHERE id = $1 FOR NO KEY UPDATE
 `
 
-// 串行化同一账号的设备凭据下发，使设备上限的计数与插入之间不会并发超额（AUTH-14）。
+// 串行化同一账号的设备凭据分配，使设备上限的计数与插入之间不会并发超额（AUTH-14）。锁的顺序：先账号行，再设备行。
+// 用 FOR NO KEY UPDATE 而不是 FOR UPDATE：前者不阻塞外键检查的 FOR KEY SHARE，持有会话行锁的刷新（AUTH-07）
+// 插入子会话时不必等待本锁，移除设备与登出在本锁之下吊销会话时就不会与之形成死锁。
 func (q *Queries) LockAccount(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, lockAccount, id)
 	var id_2 uuid.UUID

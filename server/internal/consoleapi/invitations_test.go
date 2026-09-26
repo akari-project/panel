@@ -14,6 +14,7 @@ import (
 
 	"github.com/akari-project/panel/server/internal/notify"
 	"github.com/akari-project/panel/server/internal/password"
+	"github.com/akari-project/panel/server/internal/testdb"
 )
 
 type captureSender struct {
@@ -208,6 +209,9 @@ func TestAcceptInvitation(t *testing.T) {
 		}
 		if n := e.count(t, `SELECT count(*) FROM proxy_credentials WHERE account_id = $1 AND device_id IS NULL`, id); n != 1 {
 			t.Fatal("shared credential missing (AUTH-13)")
+		}
+		if n := e.count(t, `SELECT count(*) FROM export_tokens WHERE account_id = $1`, id); n != 1 {
+			t.Fatal("export token missing (AUTH-16)")
 		}
 		if n := e.count(t, `SELECT count(*) FROM outbox WHERE topic = 'credential.changed' AND payload->>'account_id' = $1`, id.String()); n != 1 {
 			t.Fatal("credential.changed missing")
@@ -419,5 +423,39 @@ func TestAcceptConcurrentWithInviterRemoval(t *testing.T) {
 		if (acceptCode != 200 && acceptCode != 400) || removeCode != 204 {
 			t.Fatalf("iteration %d: accept %d, remove %d", i, acceptCode, removeCode)
 		}
+	}
+}
+
+// AUTH-22 第 3 项与刷新令牌并发：接受邀请先锁账号行再吊销会话，进行中的刷新持有会话行并插入子会话。
+// 账号行取 FOR NO KEY UPDATE，不阻塞子会话外键的 FOR KEY SHARE，两者都能完成，不形成死锁。
+func TestAcceptConcurrentWithRefresh(t *testing.T) {
+	e := newEnv(t)
+	super := e.staff(t, "superadmin")
+	e.stepUp(t, super)
+	a := e.account(t, false)
+	ctx := t.Context()
+	if _, err := e.pool.Exec(ctx, `UPDATE accounts SET email_verified_at = NULL WHERE id = $1`, a.id); err != nil {
+		t.Fatal(err)
+	}
+	var device uuid.UUID
+	if err := e.pool.QueryRow(ctx, `INSERT INTO devices (account_id, platform) VALUES ($1, 'ios') RETURNING id`, a.id).Scan(&device); err != nil {
+		t.Fatal(err)
+	}
+	hash := uuid.NewString()
+	if _, err := e.pool.Exec(ctx, `INSERT INTO sessions (account_id, device_id, audience, refresh_token_hash, expires_at) VALUES ($1, $2, 'client', $3, $4)`,
+		a.id, device, hash, e.clk.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	_, token := e.invite(t, super, a.email, "support")
+	var code int
+	if err := testdb.InFlightRefresh(t, e.pool, hash, func() error {
+		code, _, _ = e.accept(t, token, ptr("the real owner pw"))
+		return nil
+	}); err != nil || code != 200 {
+		t.Fatalf("accept during refresh: %d %v", code, err)
+	}
+	// 刷新在吊销之前提交：它插入的子会话同样被吊销。
+	if n := e.count(t, `SELECT count(*) FROM sessions WHERE account_id = $1 AND revoked_at IS NULL`, a.id); n != 0 {
+		t.Fatalf("%d sessions left unrevoked", n)
 	}
 }

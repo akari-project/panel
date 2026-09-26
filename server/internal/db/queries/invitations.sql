@@ -66,8 +66,9 @@ RETURNING id;
 UPDATE staff_invitations SET accepted_at = sqlc.arg(now), account_id = sqlc.arg(account_id) WHERE id = sqlc.arg(id);
 
 -- name: LockAccountByEmail :one
--- 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。
-SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower(sqlc.arg(email)::text) FOR UPDATE;
+-- 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。锁的模式与顺序同 LockAccount：FOR NO KEY UPDATE，
+-- 先账号行、再会话与设备行，不阻塞刷新令牌插入子会话时的外键检查。
+SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower(sqlc.arg(email)::text) FOR NO KEY UPDATE;
 
 -- name: RevokeAccountDevices :exec
 -- 接受邀请时重置未验证邮箱账号的凭据（AUTH-22 第 3 项）：吊销全部设备。

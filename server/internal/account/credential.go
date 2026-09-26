@@ -18,6 +18,26 @@ import (
 // CredentialSecretAD 是 proxy_credentials.secret_enc 的附加数据。
 var CredentialSecretAD = []byte("proxy_credentials.secret_enc")
 
+// OpenCredentialSecret 解密 proxy_credentials.secret_enc，返回 16 字节 UUIDv4 形式的凭据 secret（spec/21 AGT-15）。
+// 早期 `panel admin create` 写入的 36 字符文本形式同样接受并解析为 16 字节；其他长度或格式一律拒绝。
+func OpenCredentialSecret(keys *secretbox.Keyring, enc []byte) (uuid.UUID, error) {
+	pt, err := keys.Open(enc, CredentialSecretAD)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	switch len(pt) {
+	case 16:
+		return uuid.UUID(pt), nil
+	case 36:
+		if id, err := uuid.Parse(string(pt)); err == nil {
+			return id, nil
+		}
+	}
+	return uuid.Nil, errBadSecret
+}
+
+var errBadSecret = errors.New("account: credential secret is neither 16 raw bytes nor a 36-character UUID")
+
 // CreateSharedCredential 为账号生成第三方客户端共用的代理凭据（AUTH-13），并在同一事务中写入
 // credential.changed 事件（CONV-22，载荷见 CONV-34）。凭据明文为 16 字节原始 UUIDv4（spec/21 AGT-15），
 // 加密保存（CONV-19）。

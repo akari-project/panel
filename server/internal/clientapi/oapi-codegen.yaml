@@ -31,4 +31,8 @@ output-options:
     - reauthenticate
     - changePassword
     - listPlans
+    - listDevices
+    - removeDevice
+    - getExportLink
+    - rotateExportLink
 output: internal/clientapi/gen/api.gen.go

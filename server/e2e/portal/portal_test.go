@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package portal 在真实控制面上运行用户中心的 Playwright 测试（backlog M1-01 验收 4）。
+// Package portal 在真实控制面上运行用户中心的 Playwright 测试（backlog M1-01 验收 4、M1-03 验收 4）。
 //
-// 控制面与依赖由 e2e/realpanel 启动；运行 web/playwright.real.config.ts 中的 m1-01 测试，
+// 控制面与依赖由 e2e/realpanel 启动；每个测试各自启动一个控制面，运行 web/playwright.real.config.ts 中对应的测试文件，
 // 环境变量 PORTAL_URL、ADMIN_URL 与 MAILPIT_URL 指向本次启动的服务。
 //
 // 需要先构建前端（pnpm -r build），并设置 PANEL_E2E_PLAYWRIGHT=1；由 make e2e-portal 运行。
@@ -22,4 +22,13 @@ func TestM1_01_PortalPlaywright(t *testing.T) {
 	}
 	p := realpanel.Start(t, "../../../web")
 	p.Playwright(t, []string{"PORTAL_URL=" + p.PortalURL, "ADMIN_URL=" + p.AdminURL, "MAILPIT_URL=" + p.MailpitURL}, "m1-01")
+}
+
+// TestM1_03_PortalPlaywright：设备列表、移除其他浏览器登录、移除当前设备即登出（M1-03 验收 4）。
+func TestM1_03_PortalPlaywright(t *testing.T) {
+	if os.Getenv("PANEL_E2E_PLAYWRIGHT") != "1" {
+		t.Skip("set PANEL_E2E_PLAYWRIGHT=1 (make e2e-portal) to run the portal Playwright suite against a real control plane")
+	}
+	p := realpanel.Start(t, "../../../web")
+	p.Playwright(t, []string{"PORTAL_URL=" + p.PortalURL, "ADMIN_URL=" + p.AdminURL, "MAILPIT_URL=" + p.MailpitURL}, "m1-03")
 }

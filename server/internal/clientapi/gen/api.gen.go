@@ -469,11 +469,33 @@ type CookieTokenRefresh struct {
 }
 
 // CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
-// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+// `entitlement_inactive` 没有状态为 `active` 的权益（没有权益，或权益为 `over_quota`、`suspended`）；权益状态优先于凭据：
+// 设备已有凭据但权益不是 `active` 时同样为 `entitlement_inactive`，凭据不吊销，由节点侧停止下发（spec/11 ACS-01）；
+// `web_device` web 设备不生成凭据。只有 `issued` 时下发凭据。持有 `active` 的免费套餐权益时按免费套餐的设备上限
+// 下发凭据（AUTH-14）。
 type CredentialStatus string
 
 // Currency ISO 4217 货币代码
 type Currency = string
+
+// Device defines model for Device.
+type Device struct {
+	AppVersion nullable.Nullable[string] `json:"app_version,omitempty"`
+	CreatedAt  time.Time                 `json:"created_at"`
+
+	// HasCredential 是否持有已下发的代理凭据；web 设备恒为假
+	HasCredential bool               `json:"has_credential"`
+	Id            openapi_types.UUID `json:"id"`
+
+	// IpPrefix 最近一次活跃的 IP 前缀（CONV-24）
+	IpPrefix   nullable.Nullable[string]    `json:"ip_prefix,omitempty"`
+	IsCurrent  bool                         `json:"is_current"`
+	LastSeenAt nullable.Nullable[time.Time] `json:"last_seen_at,omitempty"`
+	Model      nullable.Nullable[string]    `json:"model,omitempty"`
+
+	// Platform 设备平台；`web` 为浏览器中的用户中心
+	Platform Platform `json:"platform"`
+}
 
 // DeviceInfo defines model for DeviceInfo.
 type DeviceInfo struct {
@@ -502,6 +524,16 @@ type DeviceInfo struct {
 // EntitlementStatus `none` 无权益；`free` 持有免费套餐权益；其余为付费权益的状态（spec/11 11.1）
 type EntitlementStatus string
 
+// ExportLink defines model for ExportLink.
+type ExportLink struct {
+	// CreatedAt 当前令牌生成或最近一次重置的时刻
+	CreatedAt time.Time `json:"created_at"`
+
+	// Url 接口根地址加 `/v1/configurations/<令牌>`。接口根地址与 `GET /v1/config` 的 `api_endpoints` 主地址相同（spec/30 API-11），
+	// 不取自请求的 Host。
+	Url string `json:"url"`
+}
+
 // FieldErrorCode `errors[].code`，取值见 spec/02 CONV-16
 type FieldErrorCode string
 
@@ -509,8 +541,10 @@ type FieldErrorCode string
 type Me struct {
 	CreatedAt           time.Time                    `json:"created_at"`
 	DeletionScheduledAt nullable.Nullable[time.Time] `json:"deletion_scheduled_at,omitempty"`
-	DeviceLimit         int                          `json:"device_limit"`
-	Email               openapi_types.Email          `json:"email"`
+
+	// DeviceLimit 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
+	DeviceLimit int                 `json:"device_limit"`
+	Email       openapi_types.Email `json:"email"`
 
 	// EntitlementStatus `none` 无权益；`free` 持有免费套餐权益；其余为付费权益的状态（spec/11 11.1）
 	EntitlementStatus EntitlementStatus  `json:"entitlement_status"`
@@ -693,7 +727,10 @@ type Session struct {
 	AccessToken *string `json:"access_token,omitempty"`
 
 	// CredentialStatus 本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
-	// `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+	// `entitlement_inactive` 没有状态为 `active` 的权益（没有权益，或权益为 `over_quota`、`suspended`）；权益状态优先于凭据：
+	// 设备已有凭据但权益不是 `active` 时同样为 `entitlement_inactive`，凭据不吊销，由节点侧停止下发（spec/11 ACS-01）；
+	// `web_device` web 设备不生成凭据。只有 `issued` 时下发凭据。持有 `active` 的免费套餐权益时按免费套餐的设备上限
+	// 下发凭据（AUTH-14）。
 	CredentialStatus CredentialStatus   `json:"credential_status"`
 	DeviceId         openapi_types.UUID `json:"device_id"`
 
@@ -758,6 +795,9 @@ type TokenPair struct {
 	TokenType    string              `json:"token_type"`
 }
 
+// Id defines model for Id.
+type Id = openapi_types.UUID
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = openapi_types.UUID
 
@@ -784,6 +824,9 @@ type LoginUnauthorized = Problem
 
 // MfaRequired RFC 9457 problem details（CONV-16）
 type MfaRequired = Problem
+
+// NotFound RFC 9457 problem details（CONV-16）
+type NotFound = Problem
 
 // OAuthError defines model for OAuthError.
 type OAuthError = OAuthErrorBody
@@ -1256,6 +1299,18 @@ type ServerInterface interface {
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// ListDevices 设备与登录会话列表
+	// (GET /v1/me/devices)
+	ListDevices(w http.ResponseWriter, r *http.Request)
+	// RemoveDevice 移除设备
+	// (DELETE /v1/me/devices/{id})
+	RemoveDevice(w http.ResponseWriter, r *http.Request, id Id)
+	// GetExportLink 第三方客户端导入链接
+	// (GET /v1/me/export-link)
+	GetExportLink(w http.ResponseWriter, r *http.Request)
+	// RotateExportLink 重置导入链接
+	// (POST /v1/me/export-link/rotation)
+	RotateExportLink(w http.ResponseWriter, r *http.Request)
 	// RegenerateRecoveryCodes 重新生成恢复码
 	// (POST /v1/me/mfa/recovery-codes)
 	RegenerateRecoveryCodes(w http.ResponseWriter, r *http.Request)
@@ -1475,6 +1530,74 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDevices operation middleware
+func (siw *ServerInterfaceWrapper) ListDevices(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDevices(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveDevice operation middleware
+func (siw *ServerInterfaceWrapper) RemoveDevice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveDevice(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetExportLink operation middleware
+func (siw *ServerInterfaceWrapper) GetExportLink(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetExportLink(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateExportLink operation middleware
+func (siw *ServerInterfaceWrapper) RotateExportLink(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateExportLink(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1845,6 +1968,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/accounts/verification/resend", wrapper.ResendVerification)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/config", wrapper.GetConfig)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/devices", wrapper.ListDevices)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/devices/{id}", wrapper.RemoveDevice)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/export-link", wrapper.GetExportLink)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/export-link/rotation", wrapper.RotateExportLink)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/recovery-codes", wrapper.RegenerateRecoveryCodes)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/me/mfa/totp", wrapper.DisableTotp)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/mfa/totp", wrapper.StartTotpEnrollment)
@@ -1889,6 +2016,8 @@ type InvalidStateApplicationProblemPlusJSONResponse struct {
 type LoginUnauthorizedApplicationProblemPlusJSONResponse Problem
 
 type MfaRequiredApplicationProblemPlusJSONResponse Problem
+
+type NotFoundApplicationProblemPlusJSONResponse Problem
 
 type NotModifiedResponseHeaders struct {
 	ETag *string
@@ -2381,6 +2510,284 @@ type GetMedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetMedefaultApplicationProblemPlusJSONResponse) VisitGetMeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevicesRequestObject struct {
+}
+
+type ListDevicesResponseObject interface {
+	VisitListDevicesResponse(w http.ResponseWriter) error
+}
+
+type ListDevices200JSONResponse struct {
+	// DeviceLimit 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
+	DeviceLimit int      `json:"device_limit"`
+	Items       []Device `json:"items"`
+}
+
+func (response ListDevices200JSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevices401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response ListDevices401ApplicationProblemPlusJSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDevicesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListDevicesdefaultApplicationProblemPlusJSONResponse) VisitListDevicesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDeviceRequestObject struct {
+	Id Id `json:"id"`
+}
+
+type RemoveDeviceResponseObject interface {
+	VisitRemoveDeviceResponse(w http.ResponseWriter) error
+}
+
+type RemoveDevice204ResponseHeaders struct {
+	SetCookie *string
+}
+
+type RemoveDevice204Response struct {
+	Headers RemoveDevice204ResponseHeaders
+}
+
+func (response RemoveDevice204Response) VisitRemoveDeviceResponse(w http.ResponseWriter) error {
+	if response.Headers.SetCookie != nil {
+		w.Header().Set("Set-Cookie", fmt.Sprint(*response.Headers.SetCookie))
+	}
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveDevice401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveDevice401ApplicationProblemPlusJSONResponse) VisitRemoveDeviceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDevice404ApplicationProblemPlusJSONResponse struct {
+	NotFoundApplicationProblemPlusJSONResponse
+}
+
+func (response RemoveDevice404ApplicationProblemPlusJSONResponse) VisitRemoveDeviceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveDevicedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RemoveDevicedefaultApplicationProblemPlusJSONResponse) VisitRemoveDeviceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetExportLinkRequestObject struct {
+}
+
+type GetExportLinkResponseObject interface {
+	VisitGetExportLinkResponse(w http.ResponseWriter) error
+}
+
+type GetExportLink200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type GetExportLink200JSONResponse struct {
+	Body    ExportLink
+	Headers GetExportLink200ResponseHeaders
+}
+
+func (response GetExportLink200JSONResponse) VisitGetExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetExportLink401ApplicationProblemPlusJSONResponse struct {
+	UnauthenticatedApplicationProblemPlusJSONResponse
+}
+
+func (response GetExportLink401ApplicationProblemPlusJSONResponse) VisitGetExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetExportLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetExportLinkdefaultApplicationProblemPlusJSONResponse) VisitGetExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateExportLinkRequestObject struct {
+}
+
+type RotateExportLinkResponseObject interface {
+	VisitRotateExportLinkResponse(w http.ResponseWriter) error
+}
+
+type RotateExportLink200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type RotateExportLink200JSONResponse struct {
+	Body    ExportLink
+	Headers RotateExportLink200ResponseHeaders
+}
+
+func (response RotateExportLink200JSONResponse) VisitRotateExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		w.Header().Set("Cache-Control", fmt.Sprint(*response.Headers.CacheControl))
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateExportLink401ApplicationProblemPlusJSONResponse struct {
+	MfaRequiredApplicationProblemPlusJSONResponse
+}
+
+func (response RotateExportLink401ApplicationProblemPlusJSONResponse) VisitRotateExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateExportLink429ApplicationProblemPlusJSONResponse struct {
+	TooManyRequestsApplicationProblemPlusJSONResponse
+}
+
+func (response RotateExportLink429ApplicationProblemPlusJSONResponse) VisitRotateExportLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	if response.Headers.RetryAfter != nil {
+		w.Header().Set("Retry-After", fmt.Sprint(*response.Headers.RetryAfter))
+	}
+	w.WriteHeader(429)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateExportLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RotateExportLinkdefaultApplicationProblemPlusJSONResponse) VisitRotateExportLinkResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -3502,6 +3909,18 @@ type StrictServerInterface interface {
 	// GetMe 当前账号信息
 	// (GET /v1/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// ListDevices 设备与登录会话列表
+	// (GET /v1/me/devices)
+	ListDevices(ctx context.Context, request ListDevicesRequestObject) (ListDevicesResponseObject, error)
+	// RemoveDevice 移除设备
+	// (DELETE /v1/me/devices/{id})
+	RemoveDevice(ctx context.Context, request RemoveDeviceRequestObject) (RemoveDeviceResponseObject, error)
+	// GetExportLink 第三方客户端导入链接
+	// (GET /v1/me/export-link)
+	GetExportLink(ctx context.Context, request GetExportLinkRequestObject) (GetExportLinkResponseObject, error)
+	// RotateExportLink 重置导入链接
+	// (POST /v1/me/export-link/rotation)
+	RotateExportLink(ctx context.Context, request RotateExportLinkRequestObject) (RotateExportLinkResponseObject, error)
 	// RegenerateRecoveryCodes 重新生成恢复码
 	// (POST /v1/me/mfa/recovery-codes)
 	RegenerateRecoveryCodes(ctx context.Context, request RegenerateRecoveryCodesRequestObject) (RegenerateRecoveryCodesResponseObject, error)
@@ -3727,6 +4146,104 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetMeResponseObject); ok {
 		if err := validResponse.VisitGetMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDevices operation middleware
+func (sh *strictHandler) ListDevices(w http.ResponseWriter, r *http.Request) {
+	var request ListDevicesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDevices(ctx, request.(ListDevicesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDevices")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDevicesResponseObject); ok {
+		if err := validResponse.VisitListDevicesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveDevice operation middleware
+func (sh *strictHandler) RemoveDevice(w http.ResponseWriter, r *http.Request, id Id) {
+	var request RemoveDeviceRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveDevice(ctx, request.(RemoveDeviceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveDevice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveDeviceResponseObject); ok {
+		if err := validResponse.VisitRemoveDeviceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetExportLink operation middleware
+func (sh *strictHandler) GetExportLink(w http.ResponseWriter, r *http.Request) {
+	var request GetExportLinkRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetExportLink(ctx, request.(GetExportLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetExportLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetExportLinkResponseObject); ok {
+		if err := validResponse.VisitGetExportLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateExportLink operation middleware
+func (sh *strictHandler) RotateExportLink(w http.ResponseWriter, r *http.Request) {
+	var request RotateExportLinkRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateExportLink(ctx, request.(RotateExportLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateExportLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateExportLinkResponseObject); ok {
+		if err := validResponse.VisitRotateExportLinkResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -226,7 +226,7 @@ func (q *Queries) ListInvitations(ctx context.Context, arg ListInvitationsParams
 }
 
 const lockAccountByEmail = `-- name: LockAccountByEmail :one
-SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower($1::text) FOR UPDATE
+SELECT id, status, email_verified_at, locale FROM accounts WHERE lower(email) = lower($1::text) FOR NO KEY UPDATE
 `
 
 type LockAccountByEmailRow struct {
@@ -236,7 +236,8 @@ type LockAccountByEmailRow struct {
 	Locale          string
 }
 
-// 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。
+// 接受邀请时锁定被邀请邮箱的账号（AUTH-22 按账号状态处理）。锁的模式与顺序同 LockAccount：FOR NO KEY UPDATE，
+// 先账号行、再会话与设备行，不阻塞刷新令牌插入子会话时的外键检查。
 func (q *Queries) LockAccountByEmail(ctx context.Context, email string) (LockAccountByEmailRow, error) {
 	row := q.db.QueryRow(ctx, lockAccountByEmail, email)
 	var i LockAccountByEmailRow

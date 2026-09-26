@@ -488,6 +488,7 @@ type ProxyCredential struct {
 	ID        uuid.UUID
 	AccountID uuid.UUID
 	DeviceID  *uuid.UUID
+	// AEAD ciphertext (CONV-19, CONV-30) whose plaintext is the raw 16-byte UUIDv4 credential secret (spec/21 AGT-15); protocol forms are derived per spec/23 EXP-09. Legacy rows may hold the 36-character text form, parsed on read.
 	SecretEnc []byte
 	RevokedAt *time.Time
 	CreatedAt time.Time

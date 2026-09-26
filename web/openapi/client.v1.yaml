@@ -2,7 +2,7 @@
 openapi: 3.1.0
 info:
   title: Client API
-  version: 0.8.0
+  version: 0.9.0
   summary: 用户中心与自研客户端共用的接口
   description: |
     面向用户中心（portal）与自研客户端的接口。规格依据为 spec/30，通用约定见 spec/02；本文件是字段级事实来源。
@@ -1524,7 +1524,8 @@ paths:
       description: |
         只返回未吊销的设备，包括 web 设备（浏览器登录），不分页（CONV-11）。非 web 设备数量受设备上限约束；
         web 设备不计入上限，服务端对每个账号未吊销的 web 设备最多保留 50 条（超出时吊销最久未活跃的一条），
-        因此列表总数不超过“设备上限 + 50”。`has_credential` 为假表示因设备上限未下发代理凭据（AUTH-14）。
+        因此列表总数不超过“设备上限 + 50”。`has_credential` 为假表示未持有代理凭据：web 设备、因设备上限未获得名额，
+        或没有状态为 `active` 的权益时尚未签发（AUTH-14）。占用名额的是持有凭据的非 web 设备。
       responses:
         '200':
           description: OK
@@ -1540,7 +1541,7 @@ paths:
                       $ref: '#/components/schemas/Device'
                   device_limit:
                     type: integer
-                    description: 当前设备上限（含额外设备名额）
+                    description: 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
               example:
                 device_limit: 3
                 items:
@@ -1571,12 +1572,20 @@ paths:
       tags: [devices]
       operationId: removeDevice
       summary: 移除设备
-      description: AUTH-15：吊销该设备的会话与代理凭据；因设备上限未获得凭据的其他设备随后自动获得凭据（AUTH-14）。
+      description: |
+        AUTH-15：吊销该设备的全部会话与代理凭据；在同一事务中把空余名额按 `last_seen_at` 从近到远分给未持有凭据的设备（AUTH-14）。
+        web 设备同样可以移除；移除当前设备等同登出，当前设备是 web 设备时同时清除认证 Cookie（与 `deleteCurrentSession` 相同）。
+        不需要重新验证。他人的设备返回 404（CONV-15）。
       parameters:
       - $ref: '#/components/parameters/Id'
       responses:
         '204':
           description: 已移除
+          headers:
+            Set-Cookie:
+              description: 仅当移除的是当前 web 设备：清除访问令牌与刷新令牌 Cookie（过期的同名 Cookie，与登出相同）
+              schema:
+                type: string
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '404':
@@ -1662,8 +1671,11 @@ paths:
       summary: 本设备的结构化连接配置
       description: |
         返回本设备的代理凭据、可连接的入站与规则集资源，带强 ETag（CONV-13）。未下发凭据时 `credential` 为 null，
-        `credential_status` 说明原因：`device_limit_reached`（AUTH-14）、`entitlement_inactive`（免费账号，或权益为
-        `over_quota`、`suspended`，spec/11 ACS-01）、`web_device`（web 设备不生成凭据）。客户端缓存最后一次结果（API-06）。
+        `credential_status` 说明原因：`device_limit_reached`（AUTH-14）、`entitlement_inactive`（没有权益，或权益为
+        `over_quota`、`suspended`，spec/11 ACS-01）、`web_device`（web 设备不生成凭据）。权益状态优先：设备已有凭据但权益不是
+        `active` 时，`credential_status` 为 `entitlement_inactive`，凭据不吊销；只要 `credential_status` 不是 `issued`，`credential`
+        就为 null。持有 `active` 的免费套餐权益（`entitlement_status` 为 `free`）的设备在免费套餐的设备上限内获得凭据与其可访问的入站。
+        客户端缓存最后一次结果（API-06）。
       parameters:
       - $ref: '#/components/parameters/IfNoneMatch'
       responses:
@@ -1737,7 +1749,10 @@ paths:
       tags: [connectivity]
       operationId: getExportLink
       summary: 第三方客户端导入链接
-      description: AUTH-16：用户中心随时可以读取，界面默认遮挡。
+      description: |
+        AUTH-16：用户中心随时可以读取，界面默认遮挡。每个账号一个导出令牌（32 字节随机值的 base64url，无填充），账号创建时生成；
+        缺失时（例如管理员邀请重置了账号凭据，AUTH-22）在本次读取时补建，重置时同样补建。没有权益的账号同样返回链接（EXP-06 返回不含入站的配置）。
+        响应不可缓存。
       responses:
         '200':
           description: OK
@@ -1752,7 +1767,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportLink'
               example:
-                url: https://api.example.invalid/v1/configurations/Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tU
+                url: https://api.example.invalid/v1/configurations/Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tUc7Hw5Ls0DgE
                 created_at: '2026-09-01T09:12:00+08:00'
         '401':
           $ref: '#/components/responses/Unauthenticated'
@@ -1764,7 +1779,8 @@ paths:
       operationId: rotateExportLink
       summary: 重置导入链接
       description: |
-        AUTH-16：需要重新验证（AUTH-23）。在同一事务中生成新令牌并轮换共用凭据；旧链接立即失效。
+        AUTH-16：需要重新验证（AUTH-23），未通过时返回 401 且不做任何修改。在同一事务中生成新令牌并轮换共用凭据；旧链接立即失效。
+        导出令牌缺失时（AUTH-22）重置同样生成新令牌（补建）。响应含导入链接，因此不接受 `Idempotency-Key`（CONV-12）。
       responses:
         '200':
           description: 新的导入链接
@@ -1779,7 +1795,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ExportLink'
               example:
-                url: https://api.example.invalid/v1/configurations/Hq8Zp3Lw6Nc1Vt9Ks4Rb7Jm2Xf5Yd0Ga
+                url: https://api.example.invalid/v1/configurations/Hq8Zp3Lw6Nc1Vt9Ks4Rb7Jm2Xf5Yd0GaT2Mx8Pe4Wn0
                 created_at: '2026-10-01T10:00:00+08:00'
         '401':
           $ref: '#/components/responses/MfaRequired'
@@ -1794,7 +1810,8 @@ paths:
       summary: 当前周期用量、每日用量与按地区分布
       description: |
         `cycle` 为当前流量周期（spec/11 BIL-16）；`daily` 覆盖最近 `days` 天（按用户时区分日）；`by_location` 为当前
-        周期内按地区的分布。`bytes_billed` 为乘以倍率后的计费字节。免费账号 `cycle` 为 null。
+        周期内按地区的分布。`bytes_billed` 为乘以倍率后的计费字节。只有没有当前权益（`entitlement_status` 为 `none`）时
+        `cycle` 为 null；持有免费套餐权益时返回免费套餐的流量周期。
       parameters:
       - name: days
         in: query
@@ -1888,19 +1905,19 @@ paths:
       description: |
         spec/23。令牌只按 SHA-256 查找，无效令牌返回 404（EXP-01）。格式由 `format` 决定，省略时等同于 `auto`，
         按 User-Agent 识别（EXP-02）；浏览器（User-Agent 以 `Mozilla/` 开头且 `Accept` 含 `text/html`）返回 302
-        到用户中心的导入页。强 ETag，支持 `If-None-Match` 与 304（EXP-04）。免费账号、权益为 `over_quota` 或
-        `suspended`、账号状态不是 `active` 时返回不含入站的配置（EXP-06）。限流：每个令牌每分钟 30 次，每个 IP
-        每分钟 60 次（EXP-01）。
+        到用户中心的导入页。强 ETag，支持 `If-None-Match` 与 304（EXP-04）。没有权益、权益为 `over_quota` 或
+        `suspended`、账号状态不是 `active` 时返回不含入站的配置；持有 `active` 的免费套餐权益时按其可访问的线路组返回
+        （EXP-06）。限流：每个令牌每分钟 30 次，每个 IP 每分钟 60 次（EXP-01）。
       security: []
       parameters:
       - name: token
         in: path
         required: true
-        description: 导出令牌
+        description: 导出令牌（32 字节随机值的 base64url，无填充，AUTH-16）
         schema:
           type: string
           pattern: ^[A-Za-z0-9_-]{16,128}$
-        example: Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tU
+        example: Zk3q9v8fJb1l0m9Kp3yVZ4aQeX2nR6tUc7Hw5Ls0DgE
       - name: format
         in: query
         schema:
@@ -3105,7 +3122,7 @@ components:
     UsageUserinfoHeader:
       description: |
         第三方客户端依赖的标准响应头（API-01 唯一例外）：`upload`、`download` 为本周期计费字节，`total` 为额度字节，
-        `expire` 为到期的 Unix 秒（EXP-05、EXP-06）。按实时用量生成。
+        `expire` 为到期的 Unix 秒（EXP-05、EXP-06）；权益没有到期时间（免费套餐权益）时省略 `expire`。按实时用量生成。
       schema:
         type: string
       example: upload=1610612736; download=95026151424; total=214748364800; expire=1793496730
@@ -3764,7 +3781,10 @@ components:
       type: string
       description: |
         本设备代理凭据的状态：`issued` 已下发；`device_limit_reached` 设备数已达上限（AUTH-14）；
-        `entitlement_inactive` 没有可下发凭据的权益（免费账号、`over_quota`、`suspended`）；`web_device` web 设备不生成凭据。
+        `entitlement_inactive` 没有状态为 `active` 的权益（没有权益，或权益为 `over_quota`、`suspended`）；权益状态优先于凭据：
+        设备已有凭据但权益不是 `active` 时同样为 `entitlement_inactive`，凭据不吊销，由节点侧停止下发（spec/11 ACS-01）；
+        `web_device` web 设备不生成凭据。只有 `issued` 时下发凭据。持有 `active` 的免费套餐权益时按免费套餐的设备上限
+        下发凭据（AUTH-14）。
       enum: [issued, device_limit_reached, entitlement_inactive, web_device]
     Session:
       type: object
@@ -4012,6 +4032,7 @@ components:
           $ref: '#/components/schemas/EntitlementStatus'
         device_limit:
           type: integer
+          description: 当前设备上限（含额外设备名额）；有权益（含免费套餐权益）时取权益快照，没有权益时为设置项 `free_device_limit`（只用于显示，AUTH-14）
         referral_code:
           type: [string, 'null']
           description: 邀请码；返利模块关闭时仍可用于“仅邀请码”注册（AUTH-02）
@@ -4195,9 +4216,13 @@ components:
         url:
           type: string
           format: uri
+          description: |
+            接口根地址加 `/v1/configurations/<令牌>`。接口根地址与 `GET /v1/config` 的 `api_endpoints` 主地址相同（spec/30 API-11），
+            不取自请求的 Host。
         created_at:
           type: string
           format: date-time
+          description: 当前令牌生成或最近一次重置的时刻
     LocationUsage:
       type: object
       required: [location_id, location_name, bytes_up, bytes_down, bytes_billed]

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -51,6 +52,8 @@ type env struct {
 	accounts *account.Service
 	// verifyCalls 统计密码校验（argon2id）的调用次数（AUTH-09 验收）。
 	verifyCalls atomic.Int32
+	// logs 收集处理器日志与访问日志，用于断言日志中不含秘密值（CONV-24）。
+	logs lockedBuffer
 	// ip 是本测试的客户端地址。各测试进程共享同一个 Valkey，按 IP 的限流计数互不干扰。
 	ip string
 }
@@ -90,10 +93,11 @@ func newEnv(t *testing.T) *env {
 		Password: fast, Invites: account.ReferralCodes{}, Captcha: account.NoCaptcha{}, PortalURL: "https://portal.example.com/",
 		Revoke: e.sessions.RevokeAccount, AfterRevoke: e.sessions.AfterRevoke}
 	d := Deps{
-		Log: slog.New(slog.DiscardHandler), Clock: clk, Pool: e.pool, Tokens: tokens,
+		Log: e.logger(), Clock: clk, Pool: e.pool, Tokens: tokens,
 		Revocations: e.rev, Limiter: limiter, IdempotencyKey: []byte("k"), Accounts: e.accounts, Sessions: e.sessions,
-		MFA:    e.sessions.MFA,
-		Config: ConfigDeps{Signer: e.signer, AppName: "Akari", APIEndpoints: []string{"https://api.example.com", "https://api-backup.example.net/panel"}},
+		MFA:           e.sessions.MFA,
+		Config:        ConfigDeps{Signer: e.signer, AppName: "Akari", APIEndpoints: []string{"https://api.example.com", "https://api-backup.example.net/panel"}},
+		ExportBaseURL: "https://api.example.com",
 	}
 	e.h = New(d)
 	e.server = e.h.(*router).s
@@ -363,4 +367,26 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("%s: %+v, want %+v", pattern, got, want)
 		}
 	}
+}
+
+// lockedBuffer 是可并发写入的日志缓冲。
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (e *env) logger() *slog.Logger {
+	return slog.New(slog.NewJSONHandler(&e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }

@@ -60,7 +60,7 @@ func (e *env) do(r req) *httptest.ResponseRecorder {
 		hr.AddCookie(c)
 	}
 	w := httptest.NewRecorder()
-	httpx.AccessLog(slog.New(slog.DiscardHandler), e.clk, e.h).ServeHTTP(w, hr)
+	httpx.AccessLog(e.logger(), e.clk, e.h).ServeHTTP(w, hr)
 	return w
 }
 
